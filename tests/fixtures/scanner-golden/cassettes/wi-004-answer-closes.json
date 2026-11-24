@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\"), keyed by the completion pass ledger hash. Re-key offline after a prompt or skill change: npm run eval:record. Replace with live replies: npm run eval:record -- --live --yes-spend (costs money).",
+  "entries": [
+    {
+      "hash": "8cc67a5850ea02dae37fb0ecbc545b45",
+      "label": "2026-10-28 00:42Z | Answer PERSON_S: how do member identities enter the POC org?",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"source\": \"s1\", \"basis\": \"delivered\", \"confidence\": 0.85, \"reason\": \"I answered how identities enter the POC org; the asker agreed\"}]}"
+    }
+  ]
+}

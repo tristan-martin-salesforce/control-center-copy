@@ -8,79 +8,94 @@
  * GET /activity/use-cases · POST /activity/use-cases/:key/pick · POST /activity/use-cases/:key/fix. Nothing is sent
  * from here: corrections ride the next canvas or the next VDP push, each with its own Apply.
  */
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import type { UseCaseDifference, UseCaseLanding } from '@/contract';
 import { api } from '@/client/api';
 import { useApi } from '@/client/hooks';
 import { toast } from '@/client/toast';
-import { ContextHead, ContextPage, useDetails } from '@/components/deals/context-frame';
+import { useDetails } from '@/components/deals/context-frame';
+import { ActionRow } from '@/components/kit';
 import { AppLink } from '@/components/shell/AppLink';
 import { errorText } from '@/lib/error-text';
-import { Button, cn, EmptyState, Icon, Skeleton, StatePill } from '@/ui';
+import { Button, cn, EmptyState, Skeleton, StatePill } from '@/ui';
 
 import { LandingPill, LandingPills, WriteList } from './LandingParts';
 import { ucGroups, UC_FILTERS, whereLine, type UcFilter } from './landing-derive';
+import { plainWords } from './plain';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function UseCasesView({ tabs }: { tabs: ReactNode }) {
+/**
+ * To log ▸ Use cases: every use case, filtered (all · in both · Org62 only · VDP only · neither · differ · ready ·
+ * questions), grouped by company; a row opens both systems side by side.
+ */
+export function UseCaseList() {
   const q = useApi('getUseCaseLandings', undefined);
   const [filter, setFilter] = useState<UcFilter>('all');
   const [open, setOpen] = useState<string | null>(null);
   const d = q.data;
   const c = d?.counts;
-  const sentence = c ? `${plural(d.items.length, 'use case')} · ${c.both} in both · ${c.org62} Org62 only · ${c.vdp} VDP only · ${c.neither} in neither${c.differs ? ` · ${c.differs} differ` : ''}` : 'Loading the use cases…';
   const groups = d ? ucGroups(d.items, filter) : [];
   return (
-    <ContextPage label="Activity" className="cc-scroll overflow-y-auto [scrollbar-gutter:stable]">
-      <ContextHead title="Activity" tabs={tabs} sentence={sentence} />
-      <div className="flex min-w-0 shrink-0 flex-col gap-4" data-testid="use-cases">
-        <p className="max-w-[72ch] text-caption text-muted">Each use case should be in Org62 (Use_Case__c, on its opportunity) and in VDP, with its assets in VDP. Open one to see both systems side by side, pick the right value where they differ, and every write that put it there.</p>
-        <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5" data-testid="use-case-filters">
-          {UC_FILTERS.map((f) => {
-            const n = !d ? null : f.value === 'all' ? d.items.length : f.value === 'differs' ? c!.differs : f.value === 'ready' ? c!.ready : f.value === 'questions' ? c!.questions : c![f.value];
-            return (
-              <button key={f.value} type="button" role="radio" aria-checked={filter === f.value} onClick={() => setFilter(f.value)} className={cn('h-7 rounded-full border px-3 text-caption font-bold transition-colors focus-visible:outline-none focus-visible:shadow-focus', filter === f.value ? 'border-accent bg-selected text-fg' : 'border-line bg-surface text-muted hover:bg-surface-muted')}>
-                {f.label}
-                {n !== null ? <span className="ml-1 tabular-nums">{n}</span> : null}
-              </button>
-            );
-          })}
-        </div>
-        {q.isLoading ? <Skeleton variant="block" className="h-64 w-full" /> : null}
-        {d && !d.items.length ? <EmptyState icon="clock" title="No use cases yet" body="Use cases come from your VDPs and from Org62 (Use_Case__c on your opps). They show here once the VDP mirror or the Org62 read-back has read them." /> : null}
-        {d && d.items.length && !groups.length ? <p className="text-caption text-muted">None match this filter.</p> : null}
-        {groups.map((g) => (
-          <section key={g.company} className="min-w-0 rounded-lg bg-surface" aria-label={g.company}>
-            <h3 className="px-4 pt-3 pb-1 text-body-lg font-bold text-fg-heading">{g.company}</h3>
-            <ul className="min-w-0">
-              {g.items.map((x) => (
-                <UseCaseRow key={x.key} x={x} open={open === x.key} onToggle={() => setOpen((cur) => (cur === x.key ? null : x.key))} />
-              ))}
-            </ul>
-          </section>
-        ))}
+    <div className="flex min-w-0 shrink-0 flex-col gap-4" data-testid="use-cases">
+      {c ? (
+        <p className="max-w-[72ch] text-caption text-muted" data-testid="use-cases-summary">
+          {`${plural(d!.items.length, 'use case')}: ${c.both} in both · ${c.org62} in Org62 only · ${c.vdp} in VDP only · ${c.neither} in neither${c.differs ? ` · ${c.differs} differ` : ''}. Each should be in Org62 (on its opportunity) and in VDP. Open one to see both side by side and pick the right value where they differ.`}
+        </p>
+      ) : null}
+      <div role="radiogroup" aria-label="Show" className="flex flex-wrap gap-1.5" data-testid="use-case-filters">
+        {UC_FILTERS.map((f) => {
+          const n = !d ? null : f.value === 'all' ? d.items.length : f.value === 'differs' ? c!.differs : f.value === 'ready' ? c!.ready : f.value === 'questions' ? c!.questions : c![f.value];
+          return (
+            <button key={f.value} type="button" role="radio" aria-checked={filter === f.value} onClick={() => setFilter(f.value)} className={cn('h-7 rounded-full border px-3 text-caption font-bold transition-colors focus-visible:outline-none focus-visible:shadow-focus', filter === f.value ? 'border-accent bg-selected text-fg' : 'border-line bg-surface text-muted hover:bg-surface-muted')}>
+              {f.label}
+              {n !== null ? <span className="ml-1 tabular-nums">{n}</span> : null}
+            </button>
+          );
+        })}
       </div>
-    </ContextPage>
+      {q.isLoading ? <Skeleton variant="block" className="h-64 w-full" /> : null}
+      {d && !d.items.length ? <EmptyState icon="clock" title="No use cases yet" body="Use cases come from your VDPs and from the use cases on your opportunities in Org62. They show here after the next VDP read or Org62 check finds them." /> : null}
+      {d && d.items.length && !groups.length ? <p className="text-caption text-muted">None match this filter.</p> : null}
+      {groups.map((g) => (
+        <section key={g.company} className="min-w-0 rounded-lg bg-surface" aria-label={g.company}>
+          <h3 className="px-4 pt-3 pb-1 text-body-lg font-bold text-fg-heading">{g.company}</h3>
+          <div role="grid" aria-label={`Use cases at ${g.company}`} className="min-w-0 px-1">
+            {g.items.map((x) => (
+              <UseCaseRow key={x.key} x={x} open={open === x.key} onToggle={() => setOpen((cur) => (cur === x.key ? null : x.key))} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 
+/** One use case, an ActionRow: its name, where it landed as the badge, what goes next as the why; Space or the row opens both sides. */
 function UseCaseRow({ x, open, onToggle }: { x: UseCaseLanding; open: boolean; onToggle: () => void }) {
   return (
-    <li className="min-w-0 border-t border-line px-4 py-2.5 first:border-t-0" data-testid="use-case-row" data-use-case={x.key}>
-      <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-sm text-left focus-visible:outline-none focus-visible:shadow-focus">
-        <Icon name={open ? 'chevrondown' : 'chevronright'} size="xs" />
-        <span className="min-w-0 flex-1 font-bold break-words text-fg">{x.title}</span>
-        <LandingPills org62={x.org62} vdp={x.vdp} />
-        {x.differences.length ? <StatePill tone="warn" size="xs" label={`${x.differences.length} differ`} icon={false} /> : null}
-        {x.ready ? <StatePill tone="neutral" size="xs" dashed label="next canvas" icon={false} /> : null}
-        {x.question ? <StatePill tone="warn" size="xs" label="needs you" icon={false} /> : null}
-      </button>
-      <p className="mt-0.5 ml-6 min-w-0 text-caption break-words text-muted">
-        {[x.oppName ?? 'No opportunity yet', x.accountName, x.sends ?? x.why].filter(Boolean).join(' · ')}
-      </p>
-      {open ? <UseCaseDetail x={x} /> : null}
-    </li>
+    <ActionRow
+      id={x.key}
+      data-testid="use-case-row"
+      data-use-case={x.key}
+      title={x.title}
+      aria-expanded={open}
+      edge={x.question ? 'warning' : x.differences.length ? 'warning' : 'none'}
+      badge={
+        <span className="flex flex-wrap items-center gap-1.5">
+          <LandingPills org62={x.org62} vdp={x.vdp} />
+          {x.differences.length ? <StatePill tone="warn" size="xs" label={`${x.differences.length} differ`} icon={false} /> : null}
+          {x.ready ? <StatePill tone="neutral" size="xs" dashed label="next batch" icon={false} /> : null}
+          {x.question ? <StatePill tone="warn" size="xs" label="needs you" icon={false} /> : null}
+        </span>
+      }
+      why={plainWords([x.oppName ?? 'No opportunity yet', x.accountName, x.sends ?? x.why].filter(Boolean).join(' · '))}
+      altVerb={{ label: open ? 'Hide' : 'Both sides', onClick: onToggle }}
+      expanded={open}
+      onExpandedChange={() => onToggle()}
+      expansion={<UseCaseDetail x={x} />}
+      onOpen={() => onToggle()}
+    />
   );
 }
 
@@ -88,7 +103,7 @@ function UseCaseRow({ x, open, onToggle }: { x: UseCaseLanding; open: boolean; o
 export function UseCaseDetail({ x }: { x: UseCaseLanding }) {
   const { open: openPanel } = useDetails();
   return (
-    <div className="mt-2 ml-6 grid min-w-0 gap-4 rounded-md bg-surface-muted p-3" data-testid="use-case-detail">
+    <div className="grid min-w-0 gap-4" data-testid="use-case-detail">
       <div className="grid min-w-0 gap-3 @container md:grid-cols-2">
         <LandingCard title="Org62" dest="org62" x={x} />
         <LandingCard title="VDP" dest="vdp" x={x} />
@@ -115,7 +130,7 @@ export function UseCaseDetail({ x }: { x: UseCaseLanding }) {
       </div>
       <div className="min-w-0">
         <h4 className="mb-1 text-caption font-bold text-fg-heading">Writes that put it there</h4>
-        <WriteList writes={x.writes} showLabel={false} showCanvas onCanvas={(id) => openPanel({ kind: 'draft', id, label: 'Logging canvas' })} empty="None yet: nothing the app staged has written it." />
+        <WriteList writes={x.writes} showLabel={false} showCanvas onCanvas={(id) => openPanel({ kind: 'draft', id, label: 'Logging batch' })} empty="None yet: nothing the app staged has written it." />
       </div>
     </div>
   );
@@ -147,7 +162,7 @@ function LandingCard({ title, dest, x }: { title: string; dest: 'org62' | 'vdp';
           ))}
         </dl>
       ) : (
-        <p className="text-caption text-muted">{l?.state === 'staged' ? 'On a canvas or item waiting for your Apply.' : l?.state === 'sent' ? 'Sent: waiting for the next read.' : l?.state === 'missing' ? 'Not found there any more.' : `Not in ${title}.`}</p>
+        <p className="text-caption text-muted">{l?.state === 'staged' ? 'In a batch or item waiting for your Apply.' : l?.state === 'sent' ? 'Sent: waiting for the next read.' : l?.state === 'missing' ? 'Not found there any more.' : `Not in ${title}.`}</p>
       )}
     </section>
   );
@@ -163,7 +178,7 @@ function Differences({ x }: { x: UseCaseLanding }) {
         key: `uc-pick:${x.key}:${d.field}`,
         tone: 'success',
         title: take ? `${x.title}: ${take === 'org62' ? 'Org62' : 'VDP'}’s ${d.label} is right` : `${x.title}: pick cleared`,
-        body: take === 'vdp' ? 'Org62 gets it on your next logging canvas (an UPDATE row you Apply).' : take === 'org62' ? 'VDP gets it on your next push (Activity ▸ VDP ▸ Changes).' : undefined,
+        body: take === 'vdp' ? 'Org62 gets it in your next batch (an UPDATE row you Apply).' : take === 'org62' ? 'VDP gets it on your next push (Activity ▸ VDP ▸ Changes).' : undefined,
         undo: r.auditId ? { auditId: r.auditId } : undefined,
       });
     } catch (err) {
@@ -199,7 +214,7 @@ function Differences({ x }: { x: UseCaseLanding }) {
                     <Button size="xs" variant={d.pick === 'org62' ? 'secondary' : 'quiet'} disabled={!!d.take.org62 || busy === d.field} title={d.take.org62 ?? 'Org62’s value is right: VDP is corrected on your next push'} onClick={() => void pick(d, d.pick === 'org62' ? null : 'org62')} data-testid="pick-org62">
                       {d.pick === 'org62' ? 'Org62’s ✓' : 'Use Org62’s'}
                     </Button>
-                    <Button size="xs" variant={d.pick === 'vdp' ? 'secondary' : 'quiet'} disabled={!!d.take.vdp || busy === d.field} title={d.take.vdp ?? 'VDP’s value is right: Org62 is corrected on your next canvas'} onClick={() => void pick(d, d.pick === 'vdp' ? null : 'vdp')} data-testid="pick-vdp">
+                    <Button size="xs" variant={d.pick === 'vdp' ? 'secondary' : 'quiet'} disabled={!!d.take.vdp || busy === d.field} title={d.take.vdp ?? 'VDP’s value is right: Org62 is corrected in your next batch'} onClick={() => void pick(d, d.pick === 'vdp' ? null : 'vdp')} data-testid="pick-vdp">
                       {d.pick === 'vdp' ? 'VDP’s ✓' : 'Use VDP’s'}
                     </Button>
                   </div>
@@ -233,7 +248,7 @@ function QuestionBox({ x, inline = false }: { x: UseCaseLanding; inline?: boolea
   return (
     <div className="min-w-0 rounded-md border border-warning-200 bg-surface p-3" data-testid="use-case-question">
       <p className="text-caption font-bold text-fg">{q.text}</p>
-      <p className="mt-0.5 text-caption text-muted">{x.why}</p>
+      <p className="mt-0.5 text-caption text-muted">{plainWords(x.why)}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {q.code === 'pick_opp' || q.code === 'no_account'
           ? q.opps.map((o) => (
@@ -283,7 +298,7 @@ function QuestionBox({ x, inline = false }: { x: UseCaseLanding; inline?: boolea
   );
 }
 
-/** Needs you ▸ Use cases: the ones with a question, each answered in place (they move to Log it ▸ Ready to log). */
+/** Needs you ▸ Use cases: the ones with a question, each answered in place (they move to To log ▸ Ready to log). */
 export function UseCaseQuestions({ items }: { items: readonly UseCaseLanding[] }) {
   const [open, setOpen] = useState<string | null>(null);
   return (

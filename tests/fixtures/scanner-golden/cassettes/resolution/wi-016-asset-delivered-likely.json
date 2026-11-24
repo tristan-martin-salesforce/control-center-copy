@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\") for the resolution check (skills/resolve-item.md), keyed by ledgerHash(model, skill, system, user). Re-key offline after a prompt or skill change: npx tsx tests/evals/scanner/record-resolution.ts.",
+  "entries": [
+    {
+      "hash": "8a6de200e18bdcf843054348ce560249",
+      "label": "claude-haiku-5-5 | 2026-11-18 15:02Z | Add a denied-claim handoff scenario to the Saltmere demo",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"basis\": \"delivered\", \"cite\": \"f1\", \"confidence\": 0.8, \"needs\": null}]}"
+    }
+  ]
+}

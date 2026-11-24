@@ -1,6 +1,6 @@
 /**
  * Job handler registry: handlers register by `jobs.kind`, each on one queue. The worker builds one
- * concurrency pool per queue (docs/ui/WORKER.md "Pools").
+ * concurrency pool per queue (docs/reference/WORKER.md "Pools").
  *
  * Kinds shipped by BE-1a:
  *   scan.<connector>, scan.reconcile    BE-2a ScannerRuntime.executeJob (deterministic + traversal scans, reconcile)

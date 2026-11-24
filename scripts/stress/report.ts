@@ -1,5 +1,5 @@
 /**
- * Assemble the private report (<stress>/reports/REPORT.md) and print the sanitized tables for docs/ui/STRESS.md:
+ * Assemble the private report (<stress>/reports/REPORT.md) and print the sanitized tables for docs/archive/2026-build/STRESS.md:
  * per-scenario invariant results, spend, and accuracy (score-*.json). The sanitized part carries counts,
  * percentages and check names only, never content, names or ids.
  *   npx tsx scripts/stress/report.ts

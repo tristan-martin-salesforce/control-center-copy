@@ -46,7 +46,7 @@ const DRAFT_STATE: Record<string, { label: string; tone?: 'good' | 'warn' | 'bad
   ready: { label: '✓ In the Outbox · waiting for your approval', tone: 'good' },
   scheduled: { label: '◷ Scheduled', tone: 'warn' },
   sending: { label: 'Sending…' },
-  staged: { label: '✓ Draft pushed', tone: 'good' },
+  staged: { label: '✓ Draft saved', tone: 'good' },
   sent: { label: '✓ Sent', tone: 'good' },
   verified: { label: '✓ Sent · verified', tone: 'good' },
   verify_failed: { label: '▲ Sent · not verified', tone: 'warn' },
@@ -252,13 +252,19 @@ export function SessionCard({ resource }: { resource: ChatResource }) {
   const run = agents.data?.runs.find((r) => r.id === resource.id) ?? null;
   const [clickedAt, setClickedAt] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  // SEC-10: the session runs with your permissions, so the first click shows the whole prompt; the next one opens it
+  const [reviewed, setReviewed] = useState(false);
   const now = Date.now();
-  const prompt = promptOf(run?.deepLink ?? null)?.replace(/\s*\[cc:[^\]]+\]\s*$/, '') ?? null;
+  // the preview drops the session's report-back tag; the review shows every character the session starts with
+  const whole = promptOf(run?.deepLink ?? null);
+  const prompt = whole?.replace(/\s*\[cc:[^\]]+\]\s*$/, '') ?? null;
+  const wholeLines = whole ? whole.replace(/\r\n/g, '\n').split('\n').length : 0;
   const folder = run?.cwd?.replace(/^\/Users\/[^/]+/, '~') ?? null;
   const status = run ? sessionStatus(run, now, ui.timeZone) : null;
 
   const openInClaude = () => {
     if (!run?.deepLink) return;
+    if (prompt && !reviewed) return setReviewed(true);
     setClickedAt(Date.now());
     openDeepLink(run.deepLink);
   };
@@ -271,7 +277,21 @@ export function SessionCard({ resource }: { resource: ChatResource }) {
         {folder ? <span className={`${s.r} ${s.mono}`}>{folder}</span> : null}
       </header>
       <div className={s.cardTitle}>{run?.title ?? resource.label}</div>
-      {prompt ? <p className={s.prompt}>{prompt}</p> : run?.lastEvent ? <p className={s.note}>{run.lastEvent}</p> : null}
+      {prompt && reviewed ? (
+        <>
+          <p className={s.note}>{`The whole prompt · ${wholeLines} line${wholeLines === 1 ? '' : 's'}`}</p>
+          <p className={`${s.prompt} ${s.promptWhole}`} data-prompt-whole>
+            {whole}
+          </p>
+          {!clickedAt ? (
+            <p className={s.note} data-launch-permissions>
+              This is the whole prompt the Assistant wrote in this thread. Claude Code runs it with your permissions: open it only if it is what you want.
+            </p>
+          ) : null}
+        </>
+      ) : prompt ? (
+        <p className={s.prompt}>{prompt}</p>
+      ) : run?.lastEvent ? <p className={s.note}>{run.lastEvent}</p> : null}
       {status ? (
         <div className={s.status} data-session-status>
           <span className={`${s.dot} ${status.dot}`} aria-hidden />
@@ -283,8 +303,8 @@ export function SessionCard({ resource }: { resource: ChatResource }) {
       ) : null}
       <div className={s.acts}>
         {run?.deepLink ? (
-          <Button variant="primary" size="sm" onClick={openInClaude} data-open-claude data-primary>
-            Open in Claude
+          <Button variant="primary" size="sm" onClick={openInClaude} data-open-claude={prompt && !reviewed ? 'review' : 'open'} data-primary>
+            {prompt && !reviewed ? 'Review prompt' : 'Open in Claude'}
           </Button>
         ) : null}
         {prompt ? (
@@ -305,13 +325,15 @@ export function SessionCard({ resource }: { resource: ChatResource }) {
           Open in Agents
         </AppLink>
       </div>
-      <p className={s.note}>
-        {clickedAt
-          ? `Opened in Claude at ${fmtTime(new Date(clickedAt).toISOString(), ui.timeZone)} when you clicked. It reports back here.`
-          : run?.state === 'queued'
-            ? 'Opens only when you click. Sessions never start on their own.'
-            : 'Runs in the background; it doesn’t count against your day. It never opens on its own.'}
-      </p>
+      {reviewed && !clickedAt ? null : (
+        <p className={s.note}>
+          {clickedAt
+            ? `Opened in Claude at ${fmtTime(new Date(clickedAt).toISOString(), ui.timeZone)} when you clicked. It reports back here.`
+            : run?.state === 'queued'
+              ? 'Opens only when you click. Sessions never start on their own.'
+              : 'Runs in the background; it doesn’t count against your day. It never opens on its own.'}
+        </p>
+      )}
     </div>
   );
 }

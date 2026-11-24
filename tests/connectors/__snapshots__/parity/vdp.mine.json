@@ -1,0 +1,156 @@
+{
+  "result": {
+    "items": [
+      {
+        "connector": "vdp",
+        "kind": "record_snapshot",
+        "externalId": "vdp:11111111-1111-4111-8111-111111111111@2026-11-05T15:30:00.000Z",
+        "dedupeKey": "vdp:11111111-1111-4111-8111-111111111111",
+        "contentHash": "0f59c2a261624c61",
+        "occurredAt": "2026-11-05T15:30:00.000Z",
+        "permalink": "https://vdp.example.test/vdp/acme-fy27-q4",
+        "title": "VDP · Acme Placeholder FY27 Q4",
+        "excerpt": "VDP Acme Placeholder FY27 Q4: use cases 2 (1 with AI); assets 0; AE yes; TA yes; opp linked",
+        "redacted": false,
+        "threadRef": "vdp:acme-fy27-q4",
+        "accountHints": [
+          "001PLACEHOLDER0001",
+          "Acme Placeholder"
+        ],
+        "oppHints": [
+          "006PLACEHOLDER0001"
+        ],
+        "payload": {
+          "vdpId": "11111111-1111-4111-8111-111111111111",
+          "slug": "acme-fy27-q4",
+          "fiscalYear": 27,
+          "fiscalQuarter": 4,
+          "salesforceAccountId": "001PLACEHOLDER0001",
+          "salesforceOpportunityId": "006PLACEHOLDER0001",
+          "salesforceOpportunityIds": [
+            "006PLACEHOLDER0001"
+          ],
+          "useCaseCount": 2,
+          "useCaseWithAiCount": 1,
+          "assetCount": 0,
+          "hasAe": true,
+          "hasTa": true,
+          "archived": false
+        }
+      },
+      {
+        "connector": "vdp",
+        "kind": "record_snapshot",
+        "externalId": "vdp:22222222-2222-4222-8222-222222222222@2026-10-01T16:00:00.000Z",
+        "dedupeKey": "vdp:22222222-2222-4222-8222-222222222222",
+        "contentHash": "abf9828e8b2817f7",
+        "occurredAt": "2026-10-01T16:00:00.000Z",
+        "permalink": "https://vdp.example.test/vdp/globex-fy27-q4",
+        "title": "VDP · Globex Placeholder",
+        "excerpt": "VDP Globex Placeholder: use cases 0 (0 with AI); assets 1; AE no; TA no; opp not linked",
+        "redacted": false,
+        "threadRef": "vdp:globex-fy27-q4",
+        "accountHints": [
+          "001PLACEHOLDER0002",
+          "Globex Placeholder"
+        ],
+        "oppHints": [],
+        "payload": {
+          "vdpId": "22222222-2222-4222-8222-222222222222",
+          "slug": "globex-fy27-q4",
+          "fiscalYear": null,
+          "fiscalQuarter": null,
+          "salesforceAccountId": "001PLACEHOLDER0002",
+          "salesforceOpportunityId": null,
+          "salesforceOpportunityIds": [],
+          "useCaseCount": 0,
+          "useCaseWithAiCount": 0,
+          "assetCount": 1,
+          "hasAe": false,
+          "hasTa": false,
+          "archived": false
+        }
+      }
+    ],
+    "coverage": [
+      {
+        "kind": "query_window",
+        "ref": "vdp:mine",
+        "from": "2026-11-10T16:30:00.000Z",
+        "to": "2026-11-10T17:00:00.000Z"
+      },
+      {
+        "kind": "record",
+        "ref": "vdp:11111111-1111-4111-8111-111111111111",
+        "meta": {
+          "useCases": 2,
+          "assets": 0
+        }
+      },
+      {
+        "kind": "record",
+        "ref": "vdp:22222222-2222-4222-8222-222222222222",
+        "meta": {
+          "useCases": 0,
+          "assets": 1
+        }
+      }
+    ],
+    "nextCursor": {
+      "value": "vdp:2026-11-10T17:00:00.000Z",
+      "at": "2026-11-10T17:00:00.000Z"
+    },
+    "complete": true,
+    "recordOnly": true
+  },
+  "calls": [
+    [
+      "search_vdps",
+      {
+        "limit": 50,
+        "offset": 0,
+        "include_archived": false
+      }
+    ],
+    [
+      "get_vdp",
+      {
+        "slug": "acme-fy27-q4"
+      }
+    ],
+    [
+      "get_use_case",
+      {
+        "id": "aaaaaaa1-0000-4000-8000-000000000001"
+      }
+    ],
+    [
+      "get_use_case",
+      {
+        "id": "aaaaaaa1-0000-4000-8000-000000000002"
+      }
+    ],
+    [
+      "get_vdp",
+      {
+        "slug": "globex-fy27-q4"
+      }
+    ],
+    [
+      "get_vdp",
+      {
+        "slug": "someone-elses-vdp"
+      }
+    ],
+    [
+      "tools/list",
+      {}
+    ]
+  ],
+  "batches": [
+    [
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222"
+    ]
+  ]
+}

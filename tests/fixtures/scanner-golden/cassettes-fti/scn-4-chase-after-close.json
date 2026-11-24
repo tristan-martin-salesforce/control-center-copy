@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "bf1708ec87529559f55d262b749fb9ff",
+      "label": "classify | D0PERSONC1:1794236400.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0PERSONC1:1794236400.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Send PERSON_C the ACME pricing deck link\", \"who\": \"PERSON_C\", \"deliverable\": \"link\", \"due\": null, \"conf\": 0.95, \"cite\": \"Can you send me the link to the pricing deck for ACME?\", \"link\": null, \"why\": \"direct ask in a DM\"}]}"
+    },
+    {
+      "hash": "8ce72f55e17a62bebc0375b4b61aee27",
+      "label": "classify | D0PERSONC1:1794237600.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0PERSONC1:1794237600.000000\", \"v\": \"completion\", \"due\": null, \"conf\": 0.93, \"cite\": \"Here it is: https://docs.google.com/presentation/d/FILE_PRICING_DECK_0001/edit\", \"link\": \"w1\", \"why\": \"my reply in the DM delivers the link\"}]}"
+    },
+    {
+      "hash": "eee34a61622ec993d4b9c9cbe58eb083",
+      "label": "classify | D0PERSONC1:1794301200.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0PERSONC1:1794301200.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Re-share the ACME pricing deck link with PERSON_C\", \"who\": \"PERSON_C\", \"deliverable\": \"link\", \"due\": null, \"conf\": 0.9, \"cite\": \"that link doesn't open for me, can you re-share the ACME pricing deck?\", \"link\": \"w1\", \"why\": \"chase: the link I sent does not open\"}]}"
+    }
+  ]
+}

@@ -92,10 +92,12 @@ export interface Tracking {
 /**
  * The quarter by the one count map (TL-45), against its target: in Org62 (the quarter's own logged hours, read back),
  * on its way (approved or handed to a canvas, not in Org62 yet), suggested (the app's proposals), needs input (missing
- * an opp, a type or hours, or not in Org62 after all). Segments with no hours are left out.
+ * an opp, a type or hours, or not in Org62 after all). Segments with no hours are left out. `taskType: false` (D-55: a
+ * persona that logs no task type, the AE's Sales Events) leaves "a type" out of the needs-input hint.
  */
-export function tracking(l: Pick<TimeLedger, 'totals'>, q: Pick<ActivityLogQuarter, 'loggedH' | 'verifiedH' | 'targetH'> | null): Tracking {
+export function tracking(l: Pick<TimeLedger, 'totals'>, q: Pick<ActivityLogQuarter, 'loggedH' | 'verifiedH' | 'targetH'> | null, opts: { taskType?: boolean } = {}): Tracking {
   const t = l.totals;
+  const missing = opts.taskType === false ? 'Missing an opp or hours' : 'Missing an opp, a type or hours';
   const loggedH = q ? q.loggedH : t.loggedH + t.earlierH;
   const targetH = q?.targetH ?? 0;
   const needsH = t.needsInputH + t.missingH;
@@ -104,10 +106,10 @@ export function tracking(l: Pick<TimeLedger, 'totals'>, q: Pick<ActivityLogQuart
   const seg = (id: TrackId, label: string, phrase: string, hint: string, hours: number, rows: number | null): TrackSegment => ({ id, label, phrase, hint, hours: Math.round(hours * 100) / 100, rows, pct: (hours / scaleH) * 100 });
   const verifiedH = q?.verifiedH ?? t.verifiedH;
   const segments = [
-    seg('org62', 'In Org62', 'in Org62', verifiedH > 0 ? `${fmtH(verifiedH)} verified by read-back` : 'Read back from Org62', loggedH, null),
+    seg('org62', 'In Org62', 'in Org62', verifiedH > 0 ? `${fmtH(verifiedH)} checked in Org62` : 'Read back from Org62', loggedH, null),
     seg('way', 'On its way', 'on its way', 'Approved, not in Org62 yet', t.approvedH, t.approvedRows),
     seg('suggested', 'Suggested', 'suggested', 'The app proposed them: approve or fix', t.proposedH, t.proposedRows),
-    seg('needs', 'Needs input', 'needs input', t.missingRows ? `Missing an opp, a type or hours · ${t.missingRows} not in Org62 after all` : 'Missing an opp, a type or hours', needsH, t.needsInputRows + t.missingRows),
+    seg('needs', 'Needs input', 'needs input', t.missingRows ? `${missing} · ${t.missingRows} not in Org62 after all` : missing, needsH, t.needsInputRows + t.missingRows),
   ].filter((s) => s.hours > 0 || s.id === 'org62');
   return { loggedH: Math.round(loggedH * 100) / 100, verifiedH: q?.verifiedH ?? t.verifiedH, targetH, leftH: targetH > 0 ? Math.max(0, r1(targetH - loggedH)) : 0, projectedH, segments, scaleH };
 }

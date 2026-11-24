@@ -4,14 +4,15 @@
  */
 import { PersonaFeature, type PersonaId, type PersonaLevel, type PersonaSettings } from '@/contract';
 import type { ConnectorId } from '@/scanner/types';
+import { priorityConfigOf } from '@/engines/priority/v2/config';
 import { AE_PERSONA } from './ae';
 import { SE_PERSONA } from './se';
 import { ALL_CONNECTORS, ALL_ORG62_SCOPES, type Org62Scope, type PersonaDefinition, type ResolvedPersona, type ResolvedRule } from './types';
 
-export { fillThresholds } from './text';
+export { fillThresholds, roleTitle } from './text';
 export * from './gates';
 export { renderPersonaBlock } from './prompt';
-export { adminOnTime, adminWaitingBySurface, connectorOfRow, connectorRowsFor, draftHasSurface, healthForPersona, staleFor } from './surfaces';
+export { adminOnTime, adminWaitingBySurface, connectorOfRow, connectorRowsFor, draftHasSurface, healthForPersona, setupDepsFor, staleFor } from './surfaces';
 
 export * from './types';
 export { AE_PERSONA } from './ae';
@@ -98,5 +99,6 @@ export function personaOf(s: PersonaInput): ResolvedPersona {
     duties: def.duties.map((d) => ({ ...d, active: !d.feature || features[d.feature] })),
     rules,
     thresholds,
+    priority: priorityConfigOf(def.priority),
   };
 }

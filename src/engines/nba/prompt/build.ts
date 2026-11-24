@@ -1,4 +1,5 @@
 import type { ResolvedPersona } from '../../../personas/types';
+import { cutHead } from '../../prompt-cut';
 import { nbaVerbAllowed } from './verbs';
 import { fitToBudget, hashInputs, type BudgetReport, type Section, type Unit } from './budget';
 import { ageDays, clean, localStamp, minutesBetween, person } from './render';
@@ -101,13 +102,13 @@ function initiativeUnits(input: NbaInput): Unit[] {
     units.push({
       label: 'assets',
       priority: 2,
-      text: `assets:\n${i.assets.slice(0, 12).map((a) => `- ${a.kind}: ${clean(a.label, 100)} → ${a.ref}`).join('\n')}`,
+      text: `assets:\n${cutHead('nba.assets', i.assets, 12).map((a) => `- ${a.kind}: ${clean(a.label, 100)} → ${a.ref}`).join('\n')}`,
     });
   if (i.siblings?.length)
     units.push({
       label: 'siblings',
       priority: 4,
-      text: `sibling tasks: ${i.siblings.slice(0, 10).map((s) => `${clean(s.title, 80)} (${s.state})`).join('; ')}`,
+      text: `sibling tasks: ${cutHead('nba.siblings', i.siblings, 10).map((s) => `${clean(s.title, 80)} (${s.state})`).join('; ')}`,
     });
   return units;
 }

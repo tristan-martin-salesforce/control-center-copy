@@ -8,6 +8,7 @@ import { useState } from "react";
 import type { Connector, WatchSubscription } from "@/contract";
 import { api, type ApiError } from "@/client/api";
 import { useApi } from "@/client/hooks";
+import { PersonaGate } from "@/client/persona";
 import { toast } from "@/client/toast";
 import { Button, cn, Skeleton, useNow, useTimeZone } from "@/ui";
 import { fmtClock, fmtDay } from "@/ui/format";
@@ -225,7 +226,7 @@ export function ConnectorsSection({
                             e.stopPropagation(),
                             a.scan.mutate(c)
                           )}
-                          aria-label={`Scan ${c.label} now`}
+                          aria-label={`Scan now: ${c.label}`}
                         >
                           Scan now
                         </Button>
@@ -238,7 +239,10 @@ export function ConnectorsSection({
           </div>
         )}
       </Block>
-      <VdpReauthBlock />
+      {/* D-55: the VDP source has no daily surface while it is not active (an AE's preset) */}
+      <PersonaGate gate={{ connector: "vdp" }}>
+        <VdpReauthBlock />
+      </PersonaGate>
     </Section>
   );
 }

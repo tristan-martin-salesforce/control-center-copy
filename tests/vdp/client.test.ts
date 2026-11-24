@@ -133,9 +133,10 @@ describe('auth errors', () => {
     await expectAuth(callVdpTool('get_vdp', { slug: 'x' }, 'read', { claudeJson: claudeJson(), fetch: html(), now: () => NOW }), 'sso_html');
   });
 
-  it('401', async () => {
+  it('401: the PAT when the cookie is fresh (CONN-11), ambiguous when it is about to lapse', async () => {
     const r401 = (async () => new Response('{"error":"Unauthorized"}', { status: 401, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
-    await expectAuth(callVdpTool('get_vdp', { slug: 'x' }, 'read', { claudeJson: claudeJson(), fetch: r401, now: () => NOW }), 'http_401');
+    await expectAuth(callVdpTool('get_vdp', { slug: 'x' }, 'read', { claudeJson: claudeJson(), fetch: r401, now: () => NOW }), 'pat_revoked');
+    await expectAuth(callVdpTool('get_vdp', { slug: 'x' }, 'read', { claudeJson: claudeJson({ cookieExpSec: NOW / 1000 + 30 }), fetch: r401, now: () => NOW }), 'http_401');
   });
 
   it('an expired cookie fails before any request; a missing PAT too', async () => {

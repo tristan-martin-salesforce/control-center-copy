@@ -1,0 +1,44 @@
+{
+  "id": "res-drive-revision-update-doc",
+  "title": "A Drive revision of the asked doc makes an \"update the doc\" ask likely done (one confirm), never a silent close",
+  "storyline": "03-scanner-quality.md R3 trigger 4 (a Drive revision by me of a referenced file), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-16T15:00:00.000Z",
+      "seen_at": "2026-11-16T15:05:00.000Z",
+      "from_me": false,
+      "body": "Can you update the ACME security doc with an SSO section before the review? https://docs.google.com/document/d/FILE_ACME_SECDOC_0001/edit",
+      "meta": { "channelId": "D0PERSOND1", "channelType": "im", "author": { "name": "PERSON_D", "email": "person_d@example.com", "externalId": "U0PERSOND" }, "participants": [{ "name": "PERSON_D", "externalId": "U0PERSOND" }] },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "drive",
+      "kind": "drive_file_revision",
+      "occurred_at": "2026-11-17T10:40:00.000Z",
+      "seen_at": "2026-11-17T10:45:00.000Z",
+      "from_me": true,
+      "title": "ACME Security Overview",
+      "body": "doc edited by me: added section 'SSO with SAML and SCIM provisioning' (2 pages)",
+      "url": "https://docs.google.com/document/d/FILE_ACME_SECDOC_0001/edit",
+      "meta": { "fileId": "FILE_ACME_SECDOC_0001" }
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Update the ACME security doc with an SSO section",
+      "keywords": ["security doc", "SSO"],
+      "origin": "s1",
+      "ask_quote": "update the ACME security doc"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "likely", "class": "settled", "cite": "s2", "why": "my revision adds the asked section (the drive_revision trigger runs the check, the model says done citing the revision), but a file edit alone never closes for me: Likely done, one confirm" }
+  ]
+}

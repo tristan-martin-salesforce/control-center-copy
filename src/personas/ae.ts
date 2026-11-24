@@ -44,6 +44,31 @@ export const AE_PERSONA: PersonaDefinition = {
     { id: 'product_asks', text: 'Asks to add Data 360 line items to an opportunity so it can be forecast are tasks', enabled: true, feature: 'specialistForecast' },
     { id: 'sales_events', text: 'Customer meetings are logged in Org62 as Sales Events', enabled: true, feature: 'activityLogging' },
   ],
+  // priority@2 (lane 07 §4.4): for a Specialist AE the deal is the job (forecast emphasis: lower tier bounds, more
+  // weight), partners count as customer-facing, and the weekly forecast notes are pay-linked admin
+  priority: {
+    template: 'ae@2',
+    weights: { who: 25, deal: 35, kind: 15, importance: 15, goal: 10 },
+    customerFacingTiers: ['customer', 'customer_exec', 'partner'],
+    dealTiersUsd: [1, 50_000, 250_000, 750_000, 2_000_000],
+    dealTierValues: [0, 0.3, 0.5, 0.7, 0.9, 1],
+    replySlaWorkH: { customer_exec: 4, leader: 4, customer: 8, partner: 8, manager: 8, ae: 24, teammate: 24 },
+    prepRules: [
+      { id: 'customer_pricing', meetingTitlePattern: 'pricing|proposal|negotiation|close|order form', customerFacing: true, importance: 'high', readyBeforeMin: 60 },
+      { id: 'forecast_call', meetingTitlePattern: '\\b(forecast|pipeline|qbr)\\b', importance: 'high', readyBeforeMin: 60 },
+    ],
+    admin: {
+      classes: [
+        { id: 'training', kinds: ['training'] },
+        { id: 'logging', titlePattern: '^log\\b|\\blog (this|last) week|\\blogging\\b' },
+        { id: 'forecast', titlePattern: 'forecast notes|deal role|specialist forecast' },
+        { id: 'vdp', titlePattern: '\\bVDP\\b' },
+        { id: 'expense', titlePattern: '\\bexpense' },
+      ],
+      payLinked: ['forecast', 'logging'],
+      promoteWithinH: 48,
+    },
+  },
   thresholds: [
     { key: 'staleNotesMinAmountUsd', label: 'Forecast notes: smallest deal that needs weekly notes', unit: 'usd', default: 100_000, min: 0, feature: 'specialistForecast' },
     { key: 'staleNotesDays', label: 'Forecast notes: stale after', unit: 'days', default: 7, min: 1, max: 60, feature: 'specialistForecast' },

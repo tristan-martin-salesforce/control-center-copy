@@ -274,7 +274,7 @@ describe('withdrawn and stale staged changes', () => {
   });
 });
 
-describe('mock side of the parity (the db side: tests/vdp/autopilot-db.test.ts)', () => {
+describe('mock side of the parity (the db side: tests/db/vdp/autopilot-db.test.ts)', () => {
   it('autopilot is off for a new user; the page carries its line, every item its policy', async () => {
     const s = await ds.getSettings({} as never);
     expect(s.sending.channels.vdp).toEqual({ mode: 'send', autopilot: false, dailyCap: 40 });

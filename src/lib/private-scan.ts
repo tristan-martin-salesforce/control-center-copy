@@ -8,7 +8,7 @@
 import { brandOf, companyQuery, coreQuery } from '@/lib/vdp/company-name';
 import { isOrdinaryNameWord, shortNames } from '@/projections/matching';
 
-export type PrivateCategory = 'accounts' | 'opportunities' | 'people' | 'owner' | 'knownIds' | 'org62Ids' | 'slackIds' | 'emails';
+export type PrivateCategory = 'accounts' | 'opportunities' | 'people' | 'owner' | 'knownIds' | 'org62Ids' | 'slackIds' | 'emails' | 'placeholderIds';
 
 export const CATEGORY_LABEL: Record<PrivateCategory, string> = {
   accounts: 'account names',
@@ -21,7 +21,12 @@ export const CATEGORY_LABEL: Record<PrivateCategory, string> = {
   org62Ids: 'Org62-id-shaped',
   slackIds: 'Slack-id-shaped',
   emails: 'salesforce.com emails',
+  /** Id-shaped, but in a placeholder shape (placeholderShape): counted, never a finding. */
+  placeholderIds: 'placeholder-shaped ids',
 };
+
+/** The categories that are findings (fail the run); placeholder-shaped ids are reported, not failed. */
+export const FINDING_CATEGORIES = (Object.keys(CATEGORY_LABEL) as PrivateCategory[]).filter((c) => c !== 'placeholderIds');
 
 export const CATEGORIES = Object.keys(CATEGORY_LABEL) as PrivateCategory[];
 
@@ -75,10 +80,78 @@ function countMatches(line: string, re: RegExp, keep: (m: string) => boolean): n
   return n;
 }
 
+/** The Salesforce 18-character suffix: per 5-character chunk, a bit per upper-case letter, read as A-Z0-5. */
+const CHECKSUM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
+export function org62Checksum(id15: string): string {
+  let out = '';
+  for (let chunk = 0; chunk < 3; chunk++) {
+    let bits = 0;
+    for (let i = 0; i < 5; i++) if (/[A-Z]/.test(id15[chunk * 5 + i] ?? '')) bits |= 1 << i;
+    out += CHECKSUM_ALPHABET[bits];
+  }
+  return out;
+}
+
+/**
+ * Words the repo's placeholders spell out; a real base-62 / base-36 id spells none of them by chance often enough to
+ * matter. Org62 ids are case-sensitive, so the word must be upper case there (a real id spelling `tEsT` in mixed case
+ * stays a hit, P35-3); Slack ids are upper case, so any case does.
+ */
+const PLACEHOLDER_WORD_SOURCE = 'SMPL|TEST|MOCK|SEED|DEMO|CHILD|PARENT|OTHER|STRESS|NOBODY|NOISE|PERSON|USER';
+const PLACEHOLDER_WORD = { org62: new RegExp(PLACEHOLDER_WORD_SOURCE), slack: new RegExp(PLACEHOLDER_WORD_SOURCE, 'i') };
+/**
+ * Salesforce writes an id's first fifteen in mixed case; one with no upper-case or no lower-case letter there was
+ * typed by hand or had its case changed on the way (a lower-cased URL, an "upper-case all"), so its checksum says
+ * nothing and it stays a hit (P35-3).
+ */
+const mixedCase = (id15: string) => /[A-Z]/.test(id15) && /[a-z]/.test(id15);
+/** Keyboard runs a person types for "any id" (U0123ABCD, C0ABCDEF12); 123456 is already a marker. */
+const PLACEHOLDER_RUN = /ABCD|0123|1234/;
+
+export type PlaceholderShape = 'marker' | 'sample' | 'xx-pod' | 'checksum' | 'word' | 'run' | 'sequence';
+
+/**
+ * Why an id-shaped value is a placeholder, or null when it could be real. Shapes, never a list of values:
+ *  - marker: isPlaceholderId (PLACEHOLDER, EXAMPLE, XXX, FAKE, 123456, a run of zeros);
+ *  - sample: `SMPL`, the sample-data kit's marker (sfId → 006SMPL00000007AAA; U0SMPL001, C0SMPL004, D0SMPL…);
+ *  - xx-pod (Org62): `XX` where the instance characters sit (001XX0000SEED01AAA), Salesforce's own documentation
+ *    placeholder; real Org62 ids carry a real instance there;
+ *  - checksum (Org62, 18 characters, first fifteen in mixed case): the last three characters are not the case
+ *    checksum of the first fifteen. Salesforce always writes a valid one, so a hand-typed …AAA cannot be a real id;
+ *    an id in one case only is not judged by it (a real id whose case was changed would fail it);
+ *  - word: a placeholder word spelled in the id (TEST, MOCK, SEED, DEMO, CHILD, PARENT, OTHER, STRESS, …; upper case
+ *    for Org62);
+ *  - run (Slack): a typed run, ABCD, 0123 or 1234 (U0123ABCD, C0ABCDEF12); Org62 sequences hold digit runs, so not there;
+ *  - sequence (Slack): letters, then a zero-led counter to the end (U0DANA0001, C0WATCH01, D0DM00011); real Slack ids
+ *    are random base 36 and almost never end that way.
+ * Pattern hits only: an exact id your database holds (knownIds) is matched whatever its shape.
+ */
+export function placeholderShape(id: string, kind: 'org62' | 'slack'): PlaceholderShape | null {
+  if (isPlaceholderId(id, kind)) return 'marker';
+  if (/SMPL/i.test(id)) return 'sample';
+  if (PLACEHOLDER_WORD[kind].test(id)) return 'word';
+  if (kind === 'slack' && PLACEHOLDER_RUN.test(id)) return 'run';
+  if (kind === 'org62') {
+    if (id.slice(3, 5) === 'XX') return 'xx-pod';
+    if (id.length === 18 && mixedCase(id.slice(0, 15)) && org62Checksum(id.slice(0, 15)) !== id.slice(15).toUpperCase()) return 'checksum';
+    return null;
+  }
+  return /^[A-Z]0[A-Z]{2,}0\d+$/.test(id) ? 'sequence' : null;
+}
+
+const isOrg62Shaped = (m: string) => digits(m) >= 4 && /[A-Za-z]/.test(m.slice(3));
+const isSlackShaped = (m: string) => digits(m.slice(2)) >= 2 && /[A-Z]/.test(m.slice(2));
+
 export const ID_MATCHERS: readonly Matcher[] = [
-  { category: 'org62Ids', count: (l) => countMatches(l, ORG62_ID, (m) => digits(m) >= 4 && /[A-Za-z]/.test(m.slice(3)) && !isPlaceholderId(m, 'org62')) },
-  { category: 'slackIds', count: (l) => countMatches(l, SLACK_ID, (m) => digits(m.slice(2)) >= 2 && /[A-Z]/.test(m.slice(2)) && !isPlaceholderId(m, 'slack')) },
+  { category: 'org62Ids', count: (l) => countMatches(l, ORG62_ID, (m) => isOrg62Shaped(m) && !placeholderShape(m, 'org62')) },
+  { category: 'slackIds', count: (l) => countMatches(l, SLACK_ID, (m) => isSlackShaped(m) && !placeholderShape(m, 'slack')) },
   { category: 'emails', count: (l) => countMatches(l, SF_EMAIL, (m) => !GENERIC_EMAIL_USER.test(m)) },
+  {
+    category: 'placeholderIds',
+    count: (l) =>
+      countMatches(l, ORG62_ID, (m) => isOrg62Shaped(m) && !isPlaceholderId(m, 'org62') && !!placeholderShape(m, 'org62')) +
+      countMatches(l, SLACK_ID, (m) => isSlackShaped(m) && !isPlaceholderId(m, 'slack') && !!placeholderShape(m, 'slack')),
+  },
 ];
 
 /** Corporate suffixes dropped to get the name people actually write ("Acme Corporation" → "Acme"). */
@@ -225,6 +298,9 @@ export function scanText(text: string, matchers: readonly Matcher[]): Counts {
 
 export const total = (c: Counts) => Object.values(c).reduce((a, b) => a + (b ?? 0), 0);
 
+/** Hits that fail the run: every category but placeholder-shaped ids. */
+export const findings = (c: Counts) => FINDING_CATEGORIES.reduce((a, k) => a + (c[k] ?? 0), 0);
+
 export function addCounts(into: Counts, more: Counts): Counts {
   for (const [k, v] of Object.entries(more) as [PrivateCategory, number][]) into[k] = (into[k] ?? 0) + v;
   return into;
@@ -253,4 +329,17 @@ export function formatHits(hits: readonly FileHit[]): string[] {
 /** Files git would never publish usefully, and that cannot hold names (lockfiles). */
 export function skipPath(path: string): boolean {
   return /(^|\/)(package-lock\.json|node_modules\/)/.test(path) || /\.(png|jpe?g|gif|webp|ico|woff2?|ttf|otf|pdf|zip|gz)$/i.test(path);
+}
+
+/**
+ * The database names Command Center has had (D-101): 1.x installs keep control_center until the rename runs. The scan
+ * reads names from whichever one answers, the resolved URL's own name first. Other names (a URL you set) stand alone.
+ */
+export const DB_NAME_PATTERN = /^(command|control)_center$/;
+export function databaseUrlCandidates(url: string): string[] {
+  const m = /^(postgres(?:ql)?:\/\/[^/?#]*\/)([^?#]*)(.*)$/.exec(url);
+  if (!m || !DB_NAME_PATTERN.test(decodeURIComponent(m[2]!))) return [url];
+  const name = decodeURIComponent(m[2]!);
+  const other = name === 'command_center' ? 'control_center' : 'command_center';
+  return [url, `${m[1]}${other}${m[3]}`];
 }

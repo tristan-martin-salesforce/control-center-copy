@@ -44,7 +44,15 @@ describe('the one table → topic map', () => {
   });
 
   it('every table the db DataSource publishes after an unaudited write resolves too', () => {
-    const src = ['src/server/datasource/db/index.ts', 'src/server/datasource/db/chat-be6.ts', 'src/server/datasource/db/vdp.ts', 'src/server/datasource/db/forecast.ts']
+    // R7: the db DataSource's domains live in db/domains/*.ts
+    const domains = (() => {
+      try {
+        return readdirSync(path.join(ROOT, 'src/server/datasource/db/domains')).map((f) => `src/server/datasource/db/domains/${f}`);
+      } catch {
+        return [];
+      }
+    })();
+    const src = ['src/server/datasource/db/index.ts', 'src/server/datasource/db/ctx.ts', ...domains, 'src/server/datasource/db/chat-be6.ts', 'src/server/datasource/db/vdp.ts', 'src/server/datasource/db/forecast.ts']
       .map((f) => path.join(ROOT, f))
       .filter((f) => {
         try {

@@ -18,7 +18,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, jsonb, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
-import { createdAt, ownerUserId, tstz, updatedAt } from './columns';
+import { createdAt, id15, ownerUserId, tstz, updatedAt } from './columns';
 
 export const useCases = pgTable(
   'use_cases',
@@ -35,6 +35,7 @@ export const useCases = pgTable(
     accountId: uuid('account_id'),
     opportunityId: uuid('opportunity_id'),
     org62OpportunityId: text('org62_opportunity_id'),
+    org62OpportunityId15: id15('org62_opportunity_id15', 'org62_opportunity_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

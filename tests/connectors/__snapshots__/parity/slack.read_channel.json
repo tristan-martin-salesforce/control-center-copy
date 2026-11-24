@@ -1,0 +1,20 @@
+{
+  "messages": [
+    {
+      "channelId": "C0PLACEHOLDER",
+      "authorId": "U0PERSONA",
+      "authorName": "PERSON_A",
+      "authorEmail": "person_a@example.com",
+      "ts": "1793893334.322509",
+      "text": "added you to the oppty"
+    },
+    {
+      "channelId": "C0PLACEHOLDER",
+      "authorId": "U0PERSONA",
+      "authorName": "PERSON_A",
+      "authorEmail": "person_a@example.com",
+      "ts": "1793893254.216309",
+      "text": "yes, I can do the slides and you do the demo"
+    }
+  ]
+}

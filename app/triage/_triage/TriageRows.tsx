@@ -1,25 +1,26 @@
 'use client';
 /**
- * Triage rows (design v2): every kind is a two-line LineRow with a dashed edge, because everything in
- * Triage is a guess until you confirm it (UI-SPEC §1.4). One verb per row, quiet until selected:
+ * Triage rows (design v2): every kind is a configuration of the kit's ActionRow (01-ui-audit R10) with a dashed edge,
+ * because everything in Triage is a guess until you confirm it (UI-SPEC §1.4). Confidence is a word (Sure / Likely /
+ * Guess, ActionRow's `confidence`), and a guess the AI made carries the ✦ AI chip. One verb per row, quiet until selected:
  *   looks done → Confirm (a) · Not done (n), both visible buttons · source (o)   (LD-1: green ✓ badge, the evidence as its why)
  *   still needed? → Keep (a) · Close (n), both visible buttons · edit (e) · merge (m) · source (o)   (DEEP-1: old asks)
  *   suggestion → Accept (a) · edit (e) · merge (m) · dismiss (n) · source (o)
  *   missed opp → Claim (a) · dismiss (n) · Space shows the evidence
  *   mapping    → its choices inline (1 2 …), never a filled default · not sure (n)
  *   closed for you → Open message (o) · Undo, or Reopen when there is nothing to undo   (SETTLE-1: a record, no Confirm)
- * Every row's hover / selected set carries its origin source ("Open in Slack", icon only, named for screen readers).
- * Click or Enter opens Details in the docked panel; ⇧Enter opens the item's page.
+ * Every row carries its origin source as the row's link ("Open in Slack", `o`). The inline editor (e) and a missed
+ * opp's evidence (Space) are the row's expansion. Click or Enter opens Details in the docked panel; ⇧Enter the page.
  */
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import type { SourceRef, TriageItem } from '@/contract';
 import { hm, itemIndicator, openInLabel, originSource, StatusBadge, useClock } from '@/components/domain';
 import { openDeepLink } from '@/components/detail/nba/ClaudeLaunchPanel';
 import { dayDiff, wallParts } from '@/components/detail/lib/tz';
-import { LineRow, type LineRowAction } from '@/components/lists/LineRow';
+import { ActionRow, type ActionRowOverflow, type ActionRowSource } from '@/components/kit';
 import { money } from '@/components/lists/triage-panels';
 import { closedBadge } from '@/engines/home/closed';
-import { fmtDay, Icon, Kbd } from '@/ui';
+import { fmtDay, Icon, Kbd, type ConfidenceValue } from '@/ui';
 
 export interface TriageRowProps {
   item: TriageItem;
@@ -43,10 +44,16 @@ export interface TriageRowProps {
 /** ROW-1: a mouse press on a row button must not move focus (the selected row redraws its buttons; the click is lost). */
 const keepFocus = (e: MouseEvent<HTMLButtonElement>) => e.preventDefault();
 
-/** The origin source as the row's icon action: "Open in Slack" (o), through the app's deep-link helper. */
-function sourceAction(sources: SourceRef[] | undefined, k: string | undefined = 'o'): LineRowAction[] {
+/** The origin source as the row's link: "Open in Slack" (o). */
+function sourceLink(sources: SourceRef[] | undefined): ActionRowSource | null {
   const src = originSource(sources);
-  return src ? [{ label: openInLabel(src.kind), k, icon: 'new_window', onClick: () => openDeepLink(src.url), testId: 'row-source' }] : [];
+  return src ? { label: openInLabel(src.kind), url: src.url } : null;
+}
+
+/** The origin source as an overflow icon (a Closed for you row, whose own link is the message that settled it). */
+function sourceOverflow(sources: SourceRef[] | undefined): ActionRowOverflow[] {
+  const src = originSource(sources);
+  return src ? [{ id: 'source', label: openInLabel(src.kind), icon: 'new_window', onClick: () => openDeepLink(src.url), testId: 'row-source' }] : [];
 }
 
 /** SETTLE-1: the message that settled a closed row: the cited one, else the item's origin source. */
@@ -69,16 +76,8 @@ export function closedDayLabel(iso: string, now: string, tz?: string): string {
 /** SETTLE-1: when a Closed for you row closed (its day header). */
 export const closedAt = (it: TriageItem) => it.workItem?.doneAt ?? it.createdAt;
 
-const CONFIDENCE: Record<string, string> = { sure: 'Sure', likely: 'Likely', guess: 'Guess' };
-
-/** Confidence as a word, never a colour: the dashed edge already says "unconfirmed". */
-function Confidence({ value }: { value: string }) {
-  return (
-    <span className={value === 'guess' ? 'underline decoration-dashed decoration-1 underline-offset-2' : undefined} title={value === 'guess' ? 'Weak evidence: check before accepting' : undefined}>
-      {CONFIDENCE[value] ?? value}
-    </span>
-  );
-}
+/** Confidence as a word (ActionRow draws it with ConfidenceWord); anything else draws none. */
+const confidenceOf = (v: string | null | undefined): ConfidenceValue | undefined => (v === 'sure' || v === 'likely' || v === 'guess' ? v : undefined);
 
 export function TriageRow(p: TriageRowProps) {
   const { item } = p;
@@ -102,11 +101,11 @@ function ClosedRow({ item, rowProps, selected, inPanel, onOpen, onUndo }: Triage
   const message = closedMessageUrl(item);
   const origin = originSource(w.sources);
   // the origin link only when it is not the message itself (Open message already opens that)
-  const actions = origin && origin.url !== message ? sourceAction(w.sources, undefined) : [];
+  const overflow = origin && origin.url !== message ? sourceOverflow(w.sources) : [];
   const canUndo = !!item.undoAuditId;
   return (
-    <LineRow
-      rowId={item.id}
+    <ActionRow
+      id={item.id}
       data-kind="closed_for_you"
       {...rowProps}
       title={w.title}
@@ -120,7 +119,7 @@ function ClosedRow({ item, rowProps, selected, inPanel, onOpen, onUndo }: Triage
       }
       meta={w.sources[0] ? <span className="min-w-0 truncate">{w.sources[0].label}</span> : null}
       edge="none"
-      actions={actions}
+      overflow={overflow}
       trailing={
         <>
           {message ? (
@@ -163,57 +162,57 @@ function ClosedRow({ item, rowProps, selected, inPanel, onOpen, onUndo }: Triage
 function StillNeededRow({ item, rowProps, selected, emphasis, inPanel, onOpen, onAccept, onDismiss, onEdit, onMerge, editor }: TriageRowProps) {
   const w = item.workItem!;
   const src = w.sources[0];
-  const actions: LineRowAction[] = [
-    { label: 'Edit, then keep', k: 'e', icon: 'edit', onClick: onEdit, testId: 'triage-edit' },
-    { label: 'Merge into an existing item', k: 'm', icon: 'merge', onClick: onMerge, testId: 'triage-merge' },
-    ...sourceAction(w.sources),
+  const overflow: ActionRowOverflow[] = [
+    { id: 'edit', label: 'Edit, then keep', k: 'e', icon: 'edit', onClick: onEdit, testId: 'triage-edit' },
+    { id: 'merge', label: 'Merge into an existing item', k: 'm', icon: 'merge', onClick: onMerge, testId: 'triage-merge' },
   ];
   return (
-    <>
-      <LineRow
-        rowId={item.id}
-        data-kind="still_needed"
-        {...rowProps}
-        title={w.title}
-        why={item.why}
-        meta={
-          <>
-            {src ? <span className="min-w-0 truncate">{src.label}</span> : null}
-            <span className="tabular-nums">you ~{hm(w.effort.youMin)}</span>
-          </>
-        }
-        edge="none"
-        dashed
-        actions={actions}
-        trailing={
-          <>
-            <button
-              type="button"
-              onClick={onDismiss}
-              title="Not needed any more: close it (n; Undo on the toast)"
-              data-testid="triage-close"
-              className="inline-flex h-8 items-center rounded-md px-2 text-caption font-bold text-link hover:bg-surface-muted focus-visible:outline-none focus-visible:shadow-focus"
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              onClick={onAccept}
-              title="Still needed: make it open work (a; Undo on the toast)"
-              data-testid="triage-keep"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-caption font-bold text-fg hover:bg-surface-muted focus-visible:outline-none focus-visible:shadow-focus"
-            >
-              <Kbd>a</Kbd> Keep
-            </button>
-          </>
-        }
-        selected={selected}
-        emphasis={emphasis}
-        inPanel={inPanel}
-        onOpen={onOpen}
-      />
-      {editor}
-    </>
+    <ActionRow
+      id={item.id}
+      data-kind="still_needed"
+      {...rowProps}
+      title={w.title}
+      why={item.why}
+      meta={
+        <>
+          {src ? <span className="min-w-0 truncate">{src.label}</span> : null}
+          <span className="tabular-nums">you ~{hm(w.effort.youMin)}</span>
+        </>
+      }
+      edge="none"
+      dashed
+      tint="ai"
+      source={sourceLink(w.sources)}
+      overflow={overflow}
+      expansion={editor ?? undefined}
+      expanded={!!editor}
+      trailing={
+        <>
+          <button
+            type="button"
+            onClick={onDismiss}
+            title="Not needed any more: close it (n; Undo on the toast)"
+            data-testid="triage-close"
+            className="inline-flex h-8 items-center rounded-md px-2 text-caption font-bold text-link hover:bg-surface-muted focus-visible:outline-none focus-visible:shadow-focus"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={onAccept}
+            title="Still needed: make it open work (a; Undo on the toast)"
+            data-testid="triage-keep"
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-caption font-bold text-fg hover:bg-surface-muted focus-visible:outline-none focus-visible:shadow-focus"
+          >
+            <Kbd>a</Kbd> Keep
+          </button>
+        </>
+      }
+      selected={selected}
+      emphasis={emphasis}
+      inPanel={inPanel}
+      onOpen={onOpen}
+    />
   );
 }
 
@@ -224,8 +223,8 @@ function StillNeededRow({ item, rowProps, selected, emphasis, inPanel, onOpen, o
 function LooksDoneRow({ item, rowProps, selected, inPanel, onOpen, onAccept, onDismiss }: TriageRowProps) {
   const w = item.workItem!;
   return (
-    <LineRow
-      rowId={item.id}
+    <ActionRow
+      id={item.id}
       data-kind="looks_done"
       {...rowProps}
       title={w.title}
@@ -237,7 +236,7 @@ function LooksDoneRow({ item, rowProps, selected, inPanel, onOpen, onAccept, onD
       }
       meta={w.sources[0] ? <span className="min-w-0 truncate">{w.sources[0].label}</span> : null}
       edge="success"
-      actions={sourceAction(w.sources)}
+      source={sourceLink(w.sources)}
       trailing={
         <>
           <button
@@ -273,38 +272,38 @@ function SuggestionRow({ item, rowProps, selected, emphasis, inPanel, onOpen, on
   const w = item.workItem!;
   const late = itemIndicator(w, now) === 'danger';
   const src = w.sources[0];
-  const actions: LineRowAction[] = [
-    { label: 'Edit, then accept', k: 'e', icon: 'edit', onClick: onEdit, testId: 'triage-edit' },
-    { label: 'Merge into an existing item', k: 'm', icon: 'merge', onClick: onMerge, testId: 'triage-merge' },
-    { label: 'Dismiss', k: 'n', icon: 'close', onClick: onDismiss, testId: 'triage-dismiss' },
-    ...sourceAction(w.sources),
+  const overflow: ActionRowOverflow[] = [
+    { id: 'edit', label: 'Edit, then accept', k: 'e', icon: 'edit', onClick: onEdit, testId: 'triage-edit' },
+    { id: 'merge', label: 'Merge into an existing item', k: 'm', icon: 'merge', onClick: onMerge, testId: 'triage-merge' },
+    { id: 'dismiss', label: 'Dismiss', k: 'n', icon: 'close', onClick: onDismiss, testId: 'triage-dismiss' },
   ];
   return (
-    <>
-      <LineRow
-        rowId={item.id}
-        data-kind="work_item"
-        {...rowProps}
-        title={w.title}
-        why={w.why}
-        meta={
-          <>
-            <Confidence value={w.confidence} />
-            {src ? <span className="min-w-0 truncate">{src.label}</span> : null}
-            <span className="tabular-nums">you ~{hm(w.effort.youMin)}</span>
-          </>
-        }
-        edge={late ? 'danger' : 'none'}
-        dashed
-        verb={{ label: 'Accept', kbd: 'a', onClick: onAccept, title: 'Make it a task (Undo on the toast)' }}
-        actions={actions}
-        selected={selected}
-        emphasis={emphasis}
-        inPanel={inPanel}
-        onOpen={onOpen}
-      />
-      {editor}
-    </>
+    <ActionRow
+      id={item.id}
+      data-kind="work_item"
+      {...rowProps}
+      title={w.title}
+      why={w.why}
+      confidence={confidenceOf(w.confidence)}
+      tint="ai"
+      source={sourceLink(w.sources)}
+      meta={
+        <>
+          {src ? <span className="min-w-0 truncate">{src.label}</span> : null}
+          <span className="tabular-nums">you ~{hm(w.effort.youMin)}</span>
+        </>
+      }
+      edge={late ? 'danger' : 'none'}
+      dashed
+      verb={{ label: 'Accept', kbd: 'a', onClick: onAccept, title: 'Make it a task (Undo on the toast)' }}
+      overflow={overflow}
+      expansion={editor ?? undefined}
+      expanded={!!editor}
+      selected={selected}
+      emphasis={emphasis}
+      inPanel={inPanel}
+      onOpen={onOpen}
+    />
   );
 }
 
@@ -312,31 +311,32 @@ function MissedOppRow({ item, rowProps, selected, emphasis, inPanel, expanded, o
   const m = item.missedOpp!;
   const amount = money(m.amount);
   return (
-    <>
-      <LineRow
-        rowId={item.id}
-        data-kind="missed_opp"
-        {...rowProps}
-        title={m.oppName}
-        why={m.evidence.length ? m.evidence.join(' · ') : item.why}
-        meta={
-          <>
-            <Confidence value={item.confidence} />
-            <span className="min-w-0 truncate">{m.accountName}</span>
-            {amount ? <span className="tabular-nums">{amount}</span> : null}
-            {m.closeDate ? <span className="tabular-nums">closes {fmtDay(`${m.closeDate}T12:00:00Z`, 'UTC')}</span> : null}
-          </>
-        }
-        dashed
-        verb={{ label: m.verdict === 'claim' ? 'Claim' : 'Check, then claim', kbd: 'a', onClick: onAccept, title: 'Adds a DC request for your next logging canvas at 100% (edit it in Deals ▸ DCs; Undo on the toast)' }}
-        actions={[{ label: 'Dismiss', k: 'n', icon: 'close', onClick: onDismiss, testId: 'triage-dismiss' }, ...sourceAction(item.sources)]}
-        selected={selected}
-        emphasis={emphasis}
-        inPanel={inPanel}
-        onOpen={onOpen}
-      />
-      {expanded ? (
-        <div className="cc-row-more space-y-1.5" data-testid="row-expansion">
+    <ActionRow
+      id={item.id}
+      data-kind="missed_opp"
+      {...rowProps}
+      title={m.oppName}
+      why={m.evidence.length ? m.evidence.join(' · ') : item.why}
+      confidence={confidenceOf(item.confidence)}
+      tint="ai"
+      source={sourceLink(item.sources)}
+      meta={
+        <>
+          <span className="min-w-0 truncate">{m.accountName}</span>
+          {amount ? <span className="tabular-nums">{amount}</span> : null}
+          {m.closeDate ? <span className="tabular-nums">closes {fmtDay(`${m.closeDate}T12:00:00Z`, 'UTC')}</span> : null}
+        </>
+      }
+      dashed
+      verb={{ label: m.verdict === 'claim' ? 'Claim' : 'Check, then claim', kbd: 'a', onClick: onAccept, title: 'Adds a DC request for your next logging canvas at 100% (edit it in Deals ▸ DCs; Undo on the toast)' }}
+      overflow={[{ id: 'dismiss', label: 'Dismiss', k: 'n', icon: 'close', onClick: onDismiss, testId: 'triage-dismiss' }]}
+      selected={selected}
+      emphasis={emphasis}
+      inPanel={inPanel}
+      onOpen={onOpen}
+      expanded={expanded}
+      expansion={
+        <div className="space-y-1.5" data-testid="row-expansion">
           <p className="text-caption text-muted">
             {m.stage}
             {m.otherDcs.length ? ` · other DCs on it: ${m.otherDcs.join(', ')}` : ''}
@@ -350,8 +350,8 @@ function MissedOppRow({ item, rowProps, selected, emphasis, inPanel, expanded, o
             ))}
           </ul>
         </div>
-      ) : null}
-    </>
+      }
+    />
   );
 }
 
@@ -367,8 +367,8 @@ function MappingRow({ item, rowProps, selected, inPanel, onOpen, onDismiss, onCh
     }
   };
   return (
-    <LineRow
-      rowId={item.id}
+    <ActionRow
+      id={item.id}
       data-kind="mapping"
       {...rowProps}
       onKeyDown={onKeyDown}
@@ -380,7 +380,7 @@ function MappingRow({ item, rowProps, selected, inPanel, onOpen, onDismiss, onCh
       }
       whyTitle={`About ${q.subject.label} · ${q.source.label}`}
       dashed
-      actions={sourceAction([q.source])}
+      source={sourceLink([q.source])}
       selected={selected}
       inPanel={inPanel}
       onOpen={onOpen}

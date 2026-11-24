@@ -13,7 +13,7 @@ import { slackRecallDefaults } from '../../src/scanner/runtime/connectors';
 import { InMemoryScannerStore } from '../../src/scanner/store-memory';
 import { cleanPayload, logFields, MemoryTraceSink, setTraceSink, trace, withTraceContext, annotateTraceContext, type TraceSink } from '../../src/scanner/trace';
 import { keyFromUrl, passSkill, passSpendOf, splitByPasses } from '../../src/scanner/trace/queries';
-import { PROFILE } from '../be2a/helpers/world';
+import { PROFILE } from '../scanner/runtime/helpers/world';
 
 import { escalateSteps, fakeCli, perma, replay, traversal, triageSteps, ts, WINDOW } from './fake-cli';
 

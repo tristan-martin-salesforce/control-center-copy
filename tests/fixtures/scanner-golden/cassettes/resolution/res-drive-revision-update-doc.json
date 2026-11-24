@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\") for the resolution check (skills/resolve-item.md), keyed by ledgerHash(model, skill, system, user). Re-key offline after a prompt or skill change: npx tsx tests/evals/scanner/record-resolution.ts.",
+  "entries": [
+    {
+      "hash": "1d8be5b61871cfb28f4d81817dd862b4",
+      "label": "claude-haiku-5-5 | 2026-11-17 10:47Z | Update the ACME security doc with an SSO section",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"basis\": \"delivered\", \"cite\": \"f1\", \"confidence\": 0.85, \"needs\": null}]}"
+    }
+  ]
+}

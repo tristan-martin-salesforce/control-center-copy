@@ -14,7 +14,7 @@ import { ChatIcon } from './icons';
 import { useDictation } from './useDictation';
 import s from './assistant.module.css';
 
-export type ComposerModel = 'Sonnet' | 'Opus';
+export type ComposerModel = 'Auto' | 'Haiku' | 'Sonnet' | 'Opus';
 
 export interface ChatComposerProps {
   value: string;
@@ -60,7 +60,7 @@ type Item = { kind: 'command'; cmd: SlashCommand } | { kind: 'mention'; hit: Sea
 
 export const COMPOSER_FOOTNOTE = 'Can change tasks, priorities, links and policy, with undo. Never sends.';
 
-const MODEL_NOTE: Record<ComposerModel, string> = { Sonnet: 'faster', Opus: 'deeper' };
+const MODEL_NOTE: Record<ComposerModel, string> = { Auto: 'picks per message', Haiku: 'quickest', Sonnet: 'drafts', Opus: 'deepest' };
 
 function CommandName({ cmd }: { cmd: SlashCommand }) {
   return (
@@ -92,7 +92,7 @@ export function ChatComposer({
   maxHeight = 168,
   defaultCaret = 0,
   model,
-  models = ['Sonnet', 'Opus'],
+  models = ['Auto', 'Haiku', 'Sonnet', 'Opus'],
   onModelChange,
   onEditLast,
   onEditEnd,

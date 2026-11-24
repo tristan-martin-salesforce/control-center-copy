@@ -140,12 +140,13 @@ function checkCapacity(inp: PriorityInputs, res: RankingResult): void {
     }
     const d = s.deadline ? Date.parse(s.deadline.at) : null;
     const startBy = s.startBy ? Date.parse(s.startBy) : null;
+    // PRIO-3 (lane 07): a start-by at or before the end of today is today's load, whenever the item is due
     const expected =
       s.status !== 'likely_done' &&
-      (pinned.has(s.workItemId) || (d !== null && d >= start && d < end) || (d !== null && d >= end + DAY && startBy !== null && startBy < end));
+      (pinned.has(s.workItemId) || (d !== null && d >= start && d < end) || (d !== null && d >= end && startBy !== null && startBy < end));
     expect(today.has(s.workItemId), s.workItemId).toBe(expected);
-    // an item due tomorrow is never in youMinToday (unless you pinned it to today)
-    if (d !== null && d >= end && d < end + DAY && !pinned.has(s.workItemId)) expect(today.has(s.workItemId)).toBe(false);
+    // an item due tomorrow is in youMinToday only when it must start today (or you pinned it to today)
+    if (d !== null && d >= end && d < end + DAY && !pinned.has(s.workItemId)) expect(today.has(s.workItemId)).toBe(startBy !== null && startBy < end);
   }
 
   // chores: a draft of an item that is already today's load is not counted twice
@@ -280,17 +281,25 @@ describe('priority engine properties (500 random days)', () => {
     expect(changedBackground).toBeGreaterThan(0); // the background lane did move
   }, 60_000);
 
-  it('an item due tomorrow is never in youMinToday, however big or urgent it is', () => {
+  // PRIO-3 (lane 07, docs/reviews/2026-11-20-holistic/07-prioritization.md): this test used to lock the opposite
+  // ("an item due tomorrow is never in youMinToday, however big or urgent it is"), which let Home say "fits, 35 min
+  // open" on the day a 150-minute demo build due tomorrow 09:30 had to be built. Work that must start today is
+  // today's load, and when it does not fit the day reads overbooked, never "fits".
+  it('an item due tomorrow that must start today is in youMinToday, and an overbooked day never fits', () => {
     for (let seed = 1; seed <= 300; seed++) {
       const inp = gen(seed);
       const { end } = dayOf(inp);
       const tomorrow = new Date(end + 10 * 60 * MIN).toISOString(); // 10:00 tomorrow
       const big = { id: 'zz-tomorrow', title: 'Due tomorrow', kind: 'ask' as const, status: 'open' as const, due: tomorrow, effort: { youMin: 600, agentMin: 600 }, importance: 'critical' as const, createdAt: inp.now };
       const res = rankWork({ ...inp, items: [...inp.items, big], pinnedToday: (inp.pinnedToday ?? []).filter((id) => id !== big.id) });
-      expect(res.capacity.todayItemIds).not.toContain(big.id);
+      const s = res.scores[big.id]!;
+      const mustStartToday = s.startBy !== null && Date.parse(s.startBy) < end;
+      if (res.capacity.day !== 'today') continue; // after hours the next working day is counted (MIN-22)
+      expect(res.capacity.todayItemIds.includes(big.id)).toBe(mustStartToday);
       const without = rankWork(inp);
-      expect(res.capacity.youMinToday).toBe(without.capacity.youMinToday);
-      expect(res.capacity.fits).toBe(without.capacity.fits);
+      if (mustStartToday) expect(res.capacity.youMinToday).toBe(without.capacity.youMinToday + s.effort.youMin);
+      else expect(res.capacity.youMinToday).toBe(without.capacity.youMinToday);
+      expect(res.capacity.fits).toBe(res.capacity.youMinToday <= res.capacity.freeMin);
     }
   }, 60_000);
 

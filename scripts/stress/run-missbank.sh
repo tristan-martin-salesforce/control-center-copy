@@ -5,7 +5,7 @@
 cd "$(dirname "$0")/../.." || exit 1
 REPS=${1:-"1 2 3"}
 VARIANTS=${2:-"rec tri esc"}
-LOGS="$HOME/Library/Application Support/control-center/stress/missbank/logs"
+LOGS="$HOME/Library/Application Support/command-center/stress/missbank/logs"
 mkdir -p "$LOGS" && chmod 700 "$LOGS"
 load1() { sysctl -n vm.loadavg | awk '{print int($2)}'; }
 for rep in $REPS; do

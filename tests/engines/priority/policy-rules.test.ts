@@ -36,9 +36,13 @@ describe("manager_asks_within_24h (SLA rule)", () => {
     const late = { ...fromManager, askedAt: at('08:00', yesterday) };
     const r = rankWork(inputs({ items: [late] }));
     const s = r.scores.mgr!;
-    expect(s.ruleHits[0]!.explanation).toContain('overdue since 08:00');
+    // R1 (priority@1.1): late text reads "N late", never "start by …"; still inside its grace working day here
+    expect(s.ruleHits[0]!.explanation).toContain('late (since 08:00)');
+    expect(s.late).toMatchObject({ kind: 'grace', urgency: 1 });
     expect(s.components.find((c) => c.key === 'deadlineProximity')!.feature).toBe(1);
-    expect(s.slackMinutes!).toBeLessThan(0);
+    // a late item has no start-by (it would read "start by yesterday"): the late state carries the urgency
+    expect(s.startBy).toBeNull();
+    expect(s.slackMinutes).toBeNull();
   });
 
   it('takes the earlier of the SLA and the real due date', () => {

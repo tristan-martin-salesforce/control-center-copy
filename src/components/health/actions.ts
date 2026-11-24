@@ -13,6 +13,7 @@ import type { Connector, ScanRun } from '@/contract';
 import { ApiError, api } from '@/client/api';
 import { toast } from '@/client/toast';
 import { copyToClipboard } from '@/components/panels/bits';
+import { errorCode, problemOf, problemToast } from '@/client/health-setup';
 import { reauthErrorToast, reauthToastCopy } from './derive';
 
 const SCAN_WORD: Record<ScanRun['status'], string> = {
@@ -41,7 +42,8 @@ export function useConnectorActions() {
       const copy = reauthToastCopy(c, kind);
       toast({ key: `reauth-${c.id}`, tone: 'info', title: copy.title, body: copy.body });
     },
-    onError: (e: ApiError, c) => toast(reauthErrorToast(c, e.message)),
+    // the catalog's words for what failed, never the raw error text (01 UI-7)
+    onError: (e: ApiError, c) => toast(reauthErrorToast(c, problemOf(errorCode(e), { source: c.label }).title)),
     onSettled: refresh,
   });
 
@@ -57,7 +59,7 @@ export function useConnectorActions() {
         body: failed ? 'The scan was recorded as failed in the ledger.' : 'Its state updates in the scan ledger.',
       });
     },
-    onError: (e: ApiError, c) => toast({ key: `scan-${c.id}`, tone: 'error', title: `Couldn’t rescan ${c.label}`, body: e.message, durationMs: null }),
+    onError: (e: ApiError, c) => toast(problemToast(e, { key: `scan-${c.id}`, source: c.label, title: `Couldn’t rescan ${c.label}` })),
     onSettled: refresh,
   });
 
@@ -74,7 +76,7 @@ export function useConnectorActions() {
         body: failed ? 'The check was recorded as failed in the ledger.' : 'Edits and deletions made in Org62 reach Time and Deals when it finishes.',
       });
     },
-    onError: (e: ApiError, c) => toast({ key: `recheck-${c.id}`, tone: 'error', title: `Couldn’t re-check ${c.label}`, body: e.message, durationMs: null }),
+    onError: (e: ApiError, c) => toast(problemToast(e, { key: `recheck-${c.id}`, source: c.label, title: `Couldn’t re-check ${c.label}` })),
     onSettled: refresh,
   });
 

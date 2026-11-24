@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildEstimateEntries, parseBuildEstimates, proposeActivity, applyRules, finalizeStatus, type BuildEstimate, type EvidenceBundle } from '@/engines/activity';
+import { buildEstimateEntries, parseBuildEstimates, type BuildEstimate } from '@/engines/activity/estimates';
+import { proposeActivity, applyRules, finalizeStatus } from '@/engines/activity/propose';
+import type { EvidenceBundle } from '@/engines/activity/types';
 import { CFG, MAPPINGS, NOW, OPP_ACME, cal, entry, ev62 } from '../fixtures/org62/activity';
 
 const EMPTY: EvidenceBundle = { calendar: [], claude: [], drive: [], slack: [], git: [] };

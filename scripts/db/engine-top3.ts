@@ -9,12 +9,13 @@ import { createDb, resolveDatabaseUrl } from '../../src/db/client';
 import { rankWork } from '../../src/engines/priority';
 import { DbDataSource } from '../../src/server/datasource/db';
 import { priorityInputs } from '../../src/server/datasource/db/rank';
+import { everything } from '../../src/server/datasource/db/reads/scope';
 
 async function main() {
-  const handle = createDb({ url: resolveDatabaseUrl(), max: 2, applicationName: 'control-center-engine-top3' });
+  const handle = createDb({ url: resolveDatabaseUrl(), max: 2, applicationName: 'command-center-engine-top3' });
   const ds = new DbDataSource({ handle });
   try {
-    const m = await ds.model();
+    const m = await ds.model(everything('engine top 3 script'));
     const fresh = rankWork(priorityInputs(m, m.settings().policy, ds.now()));
     const stored = m
       .all('workItems')

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { applySignal } from '../../src/engines/closure';
+import { applySignal } from '../../src/engines/closure/machine';
 import type { ClosureItem } from '../../src/engines/types';
 import { DONE_CHECK_PREFIX, gateVerdict, parseVerdicts, renderBatch, runCompletionPass, type CompletionModel, type CompletionModelRequest } from '../../src/scanner/completion';
 import { InMemoryScannerStore } from '../../src/scanner/store-memory';
@@ -16,6 +16,7 @@ const ts = (min: number) => ((T0 + min * 60_000) / 1000).toFixed(6);
 const iso = (min: number) => new Date(T0 + min * 60_000).toISOString();
 const ASKER = { name: 'PERSON_A', externalId: 'U0PERSONA' };
 const ME = { name: 'ME', externalId: 'U0ME00001', isMe: true };
+const OTHER = { name: 'PERSON_B', externalId: 'U0PERSONB' };
 
 function world() {
   let now = T0;
@@ -69,6 +70,13 @@ const doneIfMine = fakeModel((r) => ({
 }));
 
 describe('completion pass (in-memory store, fake model)', () => {
+  it('caps audit: every live item is read (was the newest 400)', async () => {
+    const w = world();
+    for (let i = 0; i < 405; i += 1) await w.scan(i, [w.msg(i, { text: `Can you send deck ${i}?`, ch: `D0DM${String(i).padStart(5, '0')}` })], { kind: 'ask', title: `Send deck ${i}`, originIdx: 0 });
+    expect(await w.store.completionItems({})).toHaveLength(405);
+    expect(await w.store.completionItems({ limit: 3 })).toHaveLength(3);
+  });
+
   it('a promise kept two days later → one Sure completion with the done_check: prefix; the promise itself is not done', async () => {
     const w = world();
     const { model, calls } = doneIfMine;
@@ -95,6 +103,20 @@ describe('completion pass (in-memory store, fake model)', () => {
     expect(w.store.getWorkItem(s1.workItemId!)!.state).toBe('open');
     // Spend recorded like the scanner's.
     expect(w.store.spendToday()).toBeGreaterThan(0);
+  });
+
+  it('R1: an item the user reopened gets at most Likely (user_corrected); one accepted from Triage may still close', async () => {
+    const w = world();
+    const { model } = doneIfMine;
+    const reopened = await w.scan(0, [w.msg(0, { text: 'Can you send me the HIPAA answer for ACME?' })], { kind: 'ask', title: 'Send PERSON_A the HIPAA answer', originIdx: 0 });
+    const accepted = await w.scan(1, [w.msg(1, { ch: 'D0DM00002', text: 'Can you send me the INITECH sizing?', author: OTHER, participants: [OTHER, ME] })], { kind: 'ask', title: 'Send PERSON_A the INITECH sizing', originIdx: 0 });
+    w.store.setWorkItemState(reopened.workItemId!, 'open', { correction: 'reopened' });
+    w.store.setWorkItemState(accepted.workItemId!, 'open'); // accepting from Triage is not a correction
+    await w.scan(30, [w.msg(28, { text: 'Confirmed: here is the answer', author: ME }), w.msg(29, { ch: 'D0DM00002', text: 'Confirmed: here is the sizing', author: ME, participants: [OTHER, ME] })]);
+    w.setNow(35);
+    const p = await runCompletionPass({ store: w.store, model, now: w.now(), watermark: null, limits: { settleMs: 0 } });
+    expect(p.signals.find((s) => s.workItemId === reopened.workItemId)).toMatchObject({ confidence: 'likely', gate: 'user_corrected' });
+    expect(p.signals.find((s) => s.workItemId === accepted.workItemId)).toMatchObject({ confidence: 'sure', gate: 'strong_mine' });
   });
 
   it('nothing related → no model call; a second pass with nothing new → no call either', async () => {

@@ -7,7 +7,7 @@
 import { AppLink } from '@/components/shell/AppLink';
 import type { ReactNode } from 'react';
 import type { WorkItem } from '@/contract';
-import { resolutionLabel } from '@/components/domain';
+import { resolutionLabel } from '@/components/domain/vocab';
 import { useApi } from '@/client/hooks';
 import { fmtAgo, fmtClock, fmtDay, SourceChip } from '@/ui';
 
@@ -31,7 +31,13 @@ export function resolutionWhy(item: WorkItem, now: string): ReactNode {
   ].filter(Boolean);
   return (
     <span data-testid="resolution-line">
-      <b className="font-bold text-fg">{resolutionLabel(item.resolution, who)}</b> · {parts.join(' · ')}
+      {/* a done row's badge already says how it ended ("Done by Raj"); a dismissed row's says only "Dismissed" */}
+      {item.state === 'done' ? null : (
+        <>
+          <b className="font-bold text-fg">{resolutionLabel(item.resolution, who)}</b> ·{' '}
+        </>
+      )}
+      {parts.join(' · ')}
       {item.loopedBackIn ? <b className="font-bold text-fg"> · Looped back in: {item.loopedBackIn.byPersonName} asked you directly</b> : null}
     </span>
   );

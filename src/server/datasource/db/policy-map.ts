@@ -31,18 +31,9 @@
  *   sources → source ∈ · dueWithinH → due_within_hours ≤ (no due date never matches).
  */
 import type { PolicyRule as ContractRule, PolicyWeightKey, PolicyWeights as ContractWeights, PriorityPolicy as ContractPolicy } from '@/contract';
-import {
-  DEFAULT_TUNING,
-  parsePolicy,
-  POINTS_PER_WEIGHT,
-  SE_IC_WEIGHTS,
-  type ComponentKey,
-  type FieldPredicate,
-  type PolicyRule as EngineRule,
-  type PolicyWeights as EngineWeights,
-  type Predicate,
-  type PriorityPolicy as EnginePolicy,
-} from '@/engines/priority';
+import { DEFAULT_TUNING, parsePolicy, SE_IC_WEIGHTS, type FieldPredicate, type PolicyRule as EngineRule, type PolicyWeights as EngineWeights, type Predicate, type PriorityPolicy as EnginePolicy } from '@/engines/priority/policy';
+import { POINTS_PER_WEIGHT } from '@/engines/priority/score';
+import type { ComponentKey } from '@/engines/priority/types';
 
 export type EngineWeightKey = keyof EngineWeights;
 

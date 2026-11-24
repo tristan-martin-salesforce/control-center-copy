@@ -14,8 +14,12 @@
 import { redactText } from '@/llm/redact';
 
 export const SFR_PAGE = 25;
-/** At most this many pages (200 records) per sync; more is reported as a partial read. */
-export const SFR_MAX_PAGES = 8;
+/**
+ * A runaway guard only (caps audit 2026-11-21: was 8 pages, so a book past 200 records was read in part every sync):
+ * the sync pages until Org62 has no more, and stops here (10,000 records) or when a page's last id does not advance,
+ * reporting a partial read.
+ */
+export const SFR_MAX_PAGES = 400;
 
 export const SFR_FIELDS = [
   'Id',

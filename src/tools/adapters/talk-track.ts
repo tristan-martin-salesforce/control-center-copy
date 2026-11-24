@@ -29,7 +29,7 @@ export class TalkTrackAdapter extends BaseAdapter {
   protected plan(input: Record<string, unknown>): string[] {
     const steps = [
       `POST ${this.base}/api/talk-tracks {name, customer}`,
-      `POST ${this.base}/api/talk-tracks/<id>/references (context bundle, ${String(input.context ?? '').length} chars, as control-center-context.md)`,
+      `POST ${this.base}/api/talk-tracks/<id>/references (context bundle, ${String(input.context ?? '').length} chars, as command-center-context.md)`,
     ];
     const refs = ([] as unknown[]).concat(input.references ?? []);
     if (refs.length) steps.push(`  + ${refs.length} extra reference file(s)`);
@@ -65,7 +65,7 @@ export class TalkTrackAdapter extends BaseAdapter {
 
     ctx.emit('uploading context bundle', 4);
     const form = new FormData();
-    form.append('files', new Blob([String(input.context)], { type: 'text/markdown' }), 'control-center-context.md');
+    form.append('files', new Blob([String(input.context)], { type: 'text/markdown' }), 'command-center-context.md');
     for (const r of refs) form.append('files', new Blob([new Uint8Array(r.data)]), r.name);
     await toolFetch(http, `${tBase}/references`, { method: 'POST', body: form });
 

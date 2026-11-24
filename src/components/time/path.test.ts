@@ -1,13 +1,15 @@
 /**
- * Time ▸ Log hours, the one path (./path-derive.ts, docs/ui/time-redesign.md): Needs you groups (one group per row,
+ * Time ▸ Log hours, the one path (./path-derive.ts, docs/archive/2026-build/time-redesign.md): Needs you groups (one group per row,
  * in fixing order, bulk only where one pick fits many), the fix that approves a held row it completes, the stepper's
  * counts and its one current stop, the quarter header (waiting on you this quarter, on its way, where a canvas's
  * hours landed) and the selected week's Suggested line. Placeholder data only.
  */
 import { describe, expect, it } from 'vitest';
 import type { ActivityEntry, LogCanvas, SourceRef, TimeWeek } from '@/contract';
+import { NOT_IN_ORG62_FLAG } from '@/engines/activity/org62-check';
 import { quartersOf } from '@/server/datasource/log-canvases';
-import { fixPatch, logPath, missingOf, needsYou, quarterSplitLine, quarterTruth, spillLine, weekSuggested, type PathInput } from './path-derive';
+import { batchDone, fixRowsOf, lanesOf } from './lanes-derive';
+import { fixPatch, logPath, missingOf, needsYou, quarterTruth, spillLine, weekSuggested, type PathInput } from './path-derive';
 
 const NOW = '2026-11-11T22:00:00.000Z';
 const src = (kind: SourceRef['kind']): SourceRef[] => [{ kind, label: kind }];
@@ -44,7 +46,7 @@ const canvas = (o: Partial<LogCanvas>): LogCanvas => ({ draftId: 'd1', title: 'A
 
 const week = (logCanvases: LogCanvas[] = [], quarter: Partial<TimeWeek['quarter']> = {}): PathInput['week'] => ({
   entries: [],
-  canvas: { lastSyncedAt: null, rowsChangedSince: 0, confirmRequired: false, label: 'Work-order canvas' },
+  canvas: { lastSyncedAt: null, rowsChangedSince: 0, confirmRequired: false, label: 'Work-order batch' },
   quarter: { label: 'Q4 FY27', loggedH: 12.5, targetH: 250, due: '2027-01-31T02:00:00.000Z', ...quarter },
   logCanvases,
 });
@@ -78,18 +80,9 @@ describe('Needs you: grouped by what is missing', () => {
     expect(r.hours).toBe(6);
   });
 
-  it('offers a bulk fix only where one pick fits many: a cluster of 2+ rows from one source or account', () => {
-    const opp = needsYou(rows, { canvases }).groups.find((g) => g.kind === 'opp')!;
-    expect(opp.clusters.map((c) => [c.label, c.ids.length, c.bulk])).toEqual([
-      ['Slack', 3, 'Set opp for these 3 Slack rows'],
-      ['CUSTOMER_1', 1, null],
-    ]);
+  it('names each group plainly', () => {
     const type = needsYou([entry({ id: 't1', taskType: null }), entry({ id: 't2', taskType: null })]).groups[0]!;
-    expect(type).toMatchObject({ kind: 'type', title: 'No task type' });
-    expect(type.clusters[0]!.bulk).toBe('Set type for these 2 CUSTOMER_1 rows');
-    // hours and the scan's questions are row by row
-    const hours = needsYou([entry({ durationH: 0 }), entry({ durationH: 0 })]).groups[0]!;
-    expect(hours.clusters.every((c) => c.bulk === null)).toBe(true);
+    expect(type).toMatchObject({ kind: 'type', title: 'No task type', ids: ['t1', 't2'] });
   });
 
   it('an AE (Sales Events, no task type) never has a task-type group', () => {
@@ -135,15 +128,15 @@ describe('Log it: the stepper', () => {
     const canvases = [canvas({ draftId: 'p1', state: 'pending', url: null, appliedAt: null, rowIds: ['h1'], rows: 1, hours: 1 }), canvas({ draftId: 'c1', rowIds: ['t1'], rows: 1, hours: 3 })];
     const p = logPath({ rows, week: week(canvases), nowIso: NOW });
     const by = Object.fromEntries(p.stages.map((s) => [s.id, s]));
-    expect(p.stages.map((s) => s.title)).toEqual(['Ready to log', 'Apply', 'Tell Slackbot', 'Verified']);
+    expect(p.stages.map((s) => s.title)).toEqual(['Ready to log', 'Apply', 'Send to Org62 via Slackbot', 'Verified']);
     // an approved row without its opp is not ready: it needs you
     expect(p.readyIds).toEqual(['r1', 'r2']);
     expect(p.needs.ids).toEqual(['no-opp']);
     expect(by.ready).toMatchObject({ rows: 2, hours: 3.5, count: '2 rows · 3.5 h', state: 'current' });
     expect(by.ready.step?.verb).toBe('Log the 2 rows ready to Slackbot');
     expect(by.ready.secondary.map((s) => s.verb)).toEqual(['Approve 1 now']);
-    expect(by.apply).toMatchObject({ rows: 1, count: '1 canvas · 1 row', state: 'later' });
-    expect(by.tell).toMatchObject({ rows: 1, count: '1 row on 1 canvas', state: 'later' });
+    expect(by.apply).toMatchObject({ rows: 1, count: '1 batch · 1 row', state: 'later' });
+    expect(by.tell).toMatchObject({ rows: 1, count: '1 row on 1 batch', state: 'later' });
     // verified: in Org62 this quarter only (the Q3 row counts toward Q3)
     expect(by.verified).toMatchObject({ rows: 1, hours: 4, state: 'done', step: null });
     expect(p.stages.filter((s) => s.state === 'current')).toHaveLength(1);
@@ -161,17 +154,17 @@ describe('Log it: the stepper', () => {
     expect(empty.stages.find((s) => s.id === 'ready')).toMatchObject({ count: 'Nothing ready', state: 'done' });
   });
 
-  it('counts the DC requests waiting for a canvas on Ready, with a link to them (55 claims never hide)', () => {
+  it('counts the DC requests waiting for a batch on Ready, with a link to them (55 claims never hide)', () => {
     const rows = [entry({ id: 'r1' }), entry({ id: 'r2' })];
     const withRows = logPath({ rows, week: week(), nowIso: NOW, dcPending: 55 });
-    expect(withRows.stages.find((s) => s.id === 'ready')).toMatchObject({ count: '2 rows · 2 h · 55 DCs', why: 'Log to Slackbot puts them and your 55 DC requests on a new private canvas', dcs: 55, state: 'current' });
+    expect(withRows.stages.find((s) => s.id === 'ready')).toMatchObject({ count: '2 rows · 2 h · 55 DCs', why: 'Log to Slackbot puts them and your 55 DC requests in a new batch', dcs: 55, state: 'current' });
     // with use cases too, each is named
-    expect(logPath({ rows, week: week(), nowIso: NOW, dcPending: 1, ucPending: 2 }).stages.find((s) => s.id === 'ready')!.why).toBe('Log to Slackbot puts them, your 1 DC request and your 2 VDP use cases on a new private canvas');
+    expect(logPath({ rows, week: week(), nowIso: NOW, dcPending: 1, ucPending: 2 }).stages.find((s) => s.id === 'ready')!.why).toBe('Log to Slackbot puts them, your 1 DC request and your 2 VDP use cases in a new batch');
     // no rows ready: the DCs wait (counted, never "Nothing ready", never a muted done: 2026-11-13 audit C2). Log DCs now
     // is the stop's button, and the page's filled default only while nothing else waits on a click
     const only = logPath({ rows: [], week: week(), nowIso: NOW, dcPending: 3 });
     const ready = only.stages.find((s) => s.id === 'ready')!;
-    expect(ready).toMatchObject({ count: '3 DCs waiting', why: 'They ride on your next canvas with rows; Log DCs now puts them on one of their own', dcs: 3, state: 'current' });
+    expect(ready).toMatchObject({ count: '3 DCs waiting', why: 'They ride in your next batch with rows; Log DCs now puts them on one of their own', dcs: 3, state: 'current' });
     expect(ready.step?.verb).toBe('Log DCs now');
     expect(ready.secondary).toEqual([]);
     expect(only.current?.id).toBe('ready');
@@ -215,7 +208,7 @@ describe('the quarter header tells the truth', () => {
         { id: 'needs', label: 'need you', rows: 1, hours: 2 },
         { id: 'ready', label: 'ready to log', rows: 1, hours: 4 },
         { id: 'apply', label: 'to apply', rows: 1, hours: 1.5 },
-        { id: 'tell', label: 'to tell Slackbot', rows: 1, hours: 7 },
+        { id: 'tell', label: 'to send to Org62 via Slackbot', rows: 1, hours: 7 },
       ],
     });
     expect(t).toMatchObject({ loggedH: 12.5, targetH: 250, leftH: 237.5, verifiedH: 9 });
@@ -227,7 +220,7 @@ describe('the quarter header tells the truth', () => {
     expect(c.onItsWay).toEqual({ rows: 1, hours: 7 });
   });
 
-  it('says where a canvas that spans quarters put its hours: 31.8 h landed in Q3 FY27', () => {
+  it('says where a batch that spans quarters put its hours: 31.8 h landed in Q3 FY27', () => {
     const spanning = canvas({ draftId: 'c9', title: 'Activity log · 40 rows', rows: 40, hours: 44.25, quarters: [{ label: 'Q4 FY27', rows: 11, hours: 12.45 }, { label: 'Q3 FY27', rows: 29, hours: 31.8 }] });
     const waiting = canvas({ draftId: 'p9', state: 'pending', url: null, appliedAt: null, quarters: [{ label: 'Q3 FY27', rows: 2, hours: 3 }] });
     const inQ = canvas({ draftId: 'c8', quarters: [{ label: 'Q4 FY27', rows: 3, hours: 3 }] });
@@ -237,8 +230,6 @@ describe('the quarter header tells the truth', () => {
     expect(t.spill[0]).toMatchObject({ applied: true, hours: 44.25, hereH: 12.45, elsewhere: [{ label: 'Q3 FY27', rows: 29, hours: 31.8 }] });
     expect(spillLine(t.spill[0]!)).toBe('31.8 h landed in Q3 FY27');
     expect(spillLine(t.spill[1]!)).toBe('3 h will land in Q3 FY27');
-    expect(quarterSplitLine(spanning)).toBe('12.45 h in Q4 FY27 · 31.8 h in Q3 FY27');
-    expect(quarterSplitLine(inQ)).toBeNull();
   });
 
   it('a role without a target shows hours alone: nothing to go, no pace', () => {
@@ -246,7 +237,7 @@ describe('the quarter header tells the truth', () => {
     expect(quarterTruth(input, logPath(input))).toMatchObject({ targetH: 0, leftH: 0, pct: 0, pace: null });
   });
 
-  it('the canvas split (LogCanvas.quarters) counts its rows by the fiscal quarter of their day, newest first', () => {
+  it('the batch split (LogCanvas.quarters) counts its rows by the fiscal quarter of their day, newest first', () => {
     const rows = new Map(
       [
         { id: 'oct1', status: 'synced_to_canvas' as const, date: '2026-10-29', durationH: 20 },
@@ -281,5 +272,53 @@ describe('Suggested: the selected week', () => {
       ['way', 1],
       ['org62', 1],
     ]);
+  });
+});
+
+describe('C1 one count: lanesOf (AX-2)', () => {
+  const rows = [
+    entry({ id: 'f1', status: 'needs_input', oppId: null, oppName: null, issues: ['Needs an opp (WhatId)'] }),
+    entry({ id: 'f2', status: 'approved', taskType: null, durationH: 2 }),
+    entry({ id: 'i1', status: 'needs_input', internal: true, oppId: null, oppName: null }),
+    entry({ id: 'i2', status: 'proposed', internal: true, oppId: null, oppName: null }),
+    entry({ id: 'r1', status: 'approved' }),
+    entry({ id: 'r2', status: 'approved', durationH: 1.5 }),
+    entry({ id: 's1', status: 'synced_to_canvas', canvasDraftId: 'b1' }),
+    entry({ id: 's2', status: 'synced_to_canvas', canvasDraftId: 'b1' }),
+    entry({ id: 'ok2', status: 'logged', canvasDraftId: 'b2' }),
+    entry({ id: 'nf', status: 'synced_to_canvas', canvasDraftId: 'b2', issues: [NOT_IN_ORG62_FLAG] }),
+  ];
+  const canvases = [
+    canvas({ draftId: 'b1', rowIds: ['s1', 's2'], rows: 2, hours: 2, org62: { logged: 0, waiting: 2, missing: 0 } }),
+    canvas({ draftId: 'b2', rowIds: ['ok2', 'nf'], rows: 2, hours: 2, org62: { logged: 1, waiting: 0, missing: 1 } }),
+    canvas({ draftId: 'b3', rowIds: [], rows: 3, hours: 3, org62: { logged: 3, waiting: 0, missing: 0 } }),
+  ];
+  const input = { rows, week: week(canvases), nowIso: NOW };
+  const path = logPath(input);
+  const lanes = lanesOf({ path, rows, canvases });
+
+  it('counts each lane once: fix without Internal or not-found rows, ready, open batches with their failures', () => {
+    expect(lanes.fix).toMatchObject({ rows: 2, hours: 3 });
+    expect([...lanes.fix.ids].sort()).toEqual(['f1', 'f2']);
+    expect(lanes.ready).toEqual({ rows: 2, hours: 2.5 });
+    expect(lanes.sending).toEqual({ batches: 2, rows: 4, hours: 4, failed: 1, notFound: 1, failedBatches: 0 });
+    expect(lanes.internal).toEqual({ rows: 1 });
+    expect(lanes.badge).toBe(3);
+  });
+
+  it('every surface reads it: the quarter card, Select all and the path agree with the lanes', () => {
+    const t = quarterTruth(input, path);
+    expect(t.waiting.parts.find((p) => p.id === 'needs')!.rows).toBe(lanes.fix.rows + lanes.sending.notFound);
+    expect(t.waiting.parts.find((p) => p.id === 'ready')!.rows).toBe(lanes.ready.rows);
+    expect(fixRowsOf(path.needs)).toHaveLength(lanes.fix.rows);
+    expect(path.readyIds).toHaveLength(lanes.ready.rows);
+  });
+
+  it('a batch that failed as a whole is a failure; a checked one leaves the lane', () => {
+    const l = lanesOf({ path, rows, canvases: [...canvases, canvas({ draftId: 'b4', state: 'retry', url: null, rows: 1, hours: 1 })] });
+    expect(l.sending).toMatchObject({ batches: 3, failed: 2, failedBatches: 1 });
+    expect(l.badge).toBe(4);
+    expect(batchDone(canvases[2]!)).toBe(true);
+    expect(batchDone(canvas({ progress: { state: 'in_org62' } as LogCanvas['progress'], org62: { logged: 0, waiting: 2, missing: 0 } }))).toBe(true);
   });
 });

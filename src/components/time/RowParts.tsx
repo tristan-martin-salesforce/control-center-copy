@@ -9,14 +9,16 @@
 import { useState } from 'react';
 import type { ActivityEntry } from '@/contract';
 import { isOverlapInfo } from '@/engines/activity/overlap-flags';
-import { plainIssues } from '@/lib/time-issues';
+import { plainIssues } from './plain';
 import { clock, dayLabel } from '@/components/domain/lib/time';
 import { Button, cn, FieldConflict, Icon, SourceChip } from '@/ui';
 import { mergeField } from '@/components/lists/live-merge';
 import { usePatchRows, type Shown } from './bulk';
 import { OppPicker } from './OppPicker';
+import { OppRundown } from './OppRundown';
 import { fixPatch, type FixPatch } from './path-derive';
 import { acceptPatch, acceptShown, pct, suggestionLabel, sureWord, type RowLock } from './rows-derive';
+import { hasTarget } from '@/lib/time-internal';
 
 export const FIELD = 'h-9 w-full min-w-0 rounded-md border bg-surface-input px-2 text-body text-fg hover:border-line-strong focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-70';
 export const FIELD_CALM = 'border-line-input';
@@ -75,6 +77,41 @@ export function SuggestionLine({ e, taskTypeRequired, compact, onAccepted }: { e
           Accept
         </Button>
       ) : null}
+      <Alternates e={e} taskTypeRequired={taskTypeRequired} onAccepted={onAccepted} />
+    </div>
+  );
+}
+
+/**
+ * The attribution engine's alternates (its ranked top 3 after the suggestion), one click each, and the rundown of
+ * opps when the engine is unsure (under the settle line, or a close second): the likely opps with my recent work.
+ */
+function Alternates({ e, taskTypeRequired, onAccepted }: { e: ActivityEntry; taskTypeRequired: boolean; onAccepted?: () => void }) {
+  const { one } = usePatchRows();
+  const [rundown, setRundown] = useState(false);
+  const alts = (e.suggestions ?? []).filter((x) => x.kind === 'opp' && x.oppId && x.oppId !== e.suggestion?.oppId).slice(0, 2);
+  const unsure = (e.suggestion?.confidence ?? 0) < 0.75 || alts.length > 0;
+  if (!alts.length && !unsure) return null;
+  const take = async (oppId: string, shown: Parameters<typeof one>[2]) => {
+    await one(e, fixPatch(e, { oppId }, taskTypeRequired), shown);
+    onAccepted?.();
+  };
+  return (
+    <div className="flex w-full min-w-0 flex-col gap-1" data-testid="row-alternates" data-no-open>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        {alts.length ? <span className="text-muted">or</span> : null}
+        {alts.map((a) => (
+          <button key={a.oppId} type="button" className="max-w-full truncate rounded-full border border-line px-2 py-0.5 text-fg hover:bg-surface hover:underline" title={a.reason} onClick={() => void take(a.oppId!, acceptShown(a))} data-testid="accept-alternate">
+            {`${suggestionLabel(a)} · ${pct(a.confidence)}`}
+          </button>
+        ))}
+        {unsure ? (
+          <button type="button" className="font-bold text-link hover:underline" aria-expanded={rundown} onClick={() => setRundown((v) => !v)} data-testid="rundown-toggle">
+            {rundown ? 'Hide the rundown' : 'Not sure? See the likely opps'}
+          </button>
+        ) : null}
+      </div>
+      {rundown ? <OppRundown e={e} onPick={(oppId) => void take(oppId, undefined)} /> : null}
     </div>
   );
 }
@@ -283,7 +320,8 @@ export function DescriptionInput({ e, disabled, onSave }: { e: ActivityEntry; di
 
 /** The opportunity field of a row: the picker (suggestion first, Internal near the top, Org62 search). */
 export function OppField({ e, pick, disabled, save, className }: { e: ActivityEntry; pick: Pickers; disabled?: boolean; save: (p: FixPatch, shown?: Shown) => void; className?: string }) {
-  const needs = !e.oppId && !e.internal;
+  const needs = !hasTarget(e);
+  const { one } = usePatchRows();
   return (
     <OppPicker
       entry={e}
@@ -292,16 +330,8 @@ export function OppField({ e, pick, disabled, save, className }: { e: ActivityEn
       className={cn(FIELD, 'h-auto min-h-9 py-1', needs ? FIELD_NEEDS : FIELD_CALM, className)}
       onPick={(oppId, shown) => save({ oppId }, { oppName: shown.oppName, accountName: shown.accountName ?? undefined })}
       onInternal={pick.internalActivity ? () => save({ internal: true }, { oppName: null, accountName: null }) : undefined}
+      // D-103 (c): an account from Org62 the app has: the row logs to the account itself
+      onAccount={(id, name) => void one(e, { target: { kind: 'account', id } }, { oppName: null, accountName: name })}
     />
-  );
-}
-
-/** "Wed, Nov 12 · 10:00–11:30" */
-export function WhenText({ e, tz }: { e: ActivityEntry; tz?: string }) {
-  return (
-    <span className="flex min-w-0 flex-col text-caption tabular-nums">
-      <span className="font-bold text-fg">{dayLabel(`${e.date}T12:00:00Z`, 'UTC')}</span>
-      <span className="text-muted">{`${clock(e.start, tz)}–${clock(e.end, tz)}`}</span>
-    </span>
   );
 }

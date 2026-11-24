@@ -1,5 +1,6 @@
 /**
- * Getting started: the guided path a new teammate works through, one ordered list of two kinds of items.
+ * Getting started: five outcomes (01 R9, UX.md "Getting started"), each made of the guided path's steps. The card and
+ * the page count the outcomes ("2 of 5"); the steps are each outcome's detail, in one ordered list of two kinds:
  *
  *   action    something to do, ticked from real state (never by hand, except "your role looks right", a judgement
  *             only they can make): sources, role, first scan, first draft, first batch, Assistant, feedback
@@ -9,7 +10,15 @@
  * Every item's button plays guidance on its page (CoachMarks): an explore item its whole tour, an action item a tip
  * that points at the element to use (items.ts). Pure: both DataSources gather the inputs and call `guidePayload`.
  * Persona-aware (D-55): an AE's batch is forecast notes, an SE's is the activity log, and a step or page whose
- * feature is inactive is left out.
+ * feature is inactive is left out (an outcome with none of its required steps is not counted: an AE has four).
+ *
+ *   Connect your sources       sources · firstScan     (tours: Home, Work, Health)
+ *   Pick your role             persona                 (tour: Settings; Report a bug)
+ *   Approve your first draft   draft                   (tours: Triage, Outbox, Briefs, Agents; the Assistant)
+ *   Log a week                 batch                   (tour: Activity)
+ *   Claim a deal contribution  dc                      (tour: Deals)
+ *
+ * An outcome is done when its required steps are; tours, the Assistant and feedback stay on demand and never hold one.
  */
 import type { ChecklistItem, ChecklistItemId, Connector, Draft, FirstScanProgress, GuidePayload, GuideSettings, GuideSignals } from '@/contract';
 import { featureActive, type ResolvedPersona } from '@/personas';
@@ -31,7 +40,16 @@ const APPLIED_CANVAS = new Set<Draft['status']>(['sent', 'staged', 'verified', '
 /** The "seen" key the Role step's "Looks right" button writes. */
 export const PERSONA_REVIEWED_KEY = 'checklist.persona';
 /** The "seen" key Done on an item's "Show me" tip writes: that item is done from then on (the Role step's is the same). */
-export const itemDoneKey = (id: ChecklistItemId): string => `checklist.${id}`;
+export const itemDoneKey = (id: GuideItemId): string => `checklist.${id}`;
+
+/**
+ * The deal-contribution step: not in the contract's ChecklistItemId (the payload's `acknowledged` stays as it is), so
+ * its state reaches the client on the item itself. Done when a DC request exists (`dcRequests`, when the DataSource
+ * passes it) or Done on its tip / "I've claimed one" recorded `checklist.dc`.
+ */
+export const DC_STEP = 'dc';
+/** An action step's id: the contract's, or the DC step. */
+export type GuideItemId = ChecklistItemId | typeof DC_STEP;
 /** Items Done on a tip can tick. Not the first scan: it is done when the scan is, never by a click. */
 const ACKNOWLEDGEABLE: readonly ChecklistItemId[] = ['sources', 'persona', 'draft', 'batch', 'assistant', 'feedback'];
 
@@ -45,6 +63,8 @@ export interface GuideInputs {
   /** The persona section's version (> 1 = saved at least once). */
   personaVersion: number;
   guide: Pick<GuideSettings, 'seen' | 'checklistDismissed'>;
+  /** DC requests made in the app (any state): the DC step ticks on one. Optional until both DataSources pass it. */
+  dcRequests?: number;
 }
 
 const actionOf = (d: Pick<Draft, 'destination'>): string | null => (d.destination.kind === 'action' ? d.destination.action : null);
@@ -124,14 +144,15 @@ export const CHECKLIST_ORDER: readonly string[] = [
   exploreId('time'),
   'batch',
   exploreId('deals'),
+  DC_STEP,
   'assistant',
   'feedback',
 ];
 
-type Action = Omit<ChecklistItem, 'kind' | 'action'> & { id: ChecklistItemId; action?: ChecklistItem['action'] };
+type Action = Omit<ChecklistItem, 'kind' | 'action'> & { id: GuideItemId; action?: ChecklistItem['action'] };
 const action = (x: Action): ChecklistItem => ({ kind: 'action', ...x, action: x.action ?? null });
 
-function actionItems(sig: GuideSignals, persona: ResolvedPersona, roleSection: string): ChecklistItem[] {
+function actionItems(sig: GuideSignals, persona: ResolvedPersona, roleSection: string, dc: DcState): ChecklistItem[] {
   const items: ChecklistItem[] = [];
   const s = sig.sources;
   items.push(
@@ -201,13 +222,29 @@ function actionItems(sig: GuideSignals, persona: ResolvedPersona, roleSection: s
           : sig.batchesStaged
             ? `${plural(sig.batchesStaged, 'batch', 'batches')} staged: Apply ${sig.batchesStaged === 1 ? 'it' : 'them'} on ${kind === 'logging' ? 'Activity' : 'Activity ▸ Forecast'}.`
             : kind === 'logging'
-              ? 'On Time, approve a week of activity rows, stage them as one logging canvas and Apply it.'
-              : 'On Activity ▸ Forecast, draft the week’s notes, approve them, stage one canvas and Apply it.',
+              ? 'On Activity, review a week of rows, log them as one batch and Apply it.'
+              : 'On Activity ▸ Forecast, draft the week’s notes, approve them, stage one batch and Apply it.',
         state: sig.batches ? 'done' : 'todo',
         // an AE's /time opens on Forecast; anyone else's on Week, where the quarter log is
         href: kind === 'logging' ? '/activity' : '/activity?view=forecast',
         page: 'time',
         cta: kind === 'logging' ? 'Show me on Activity' : 'Show me on Forecast',
+      }),
+    );
+  }
+
+  if (featureActive(persona, 'dealContributions')) {
+    const done = dc.requests > 0 || dc.claimed;
+    items.push(
+      action({
+        id: DC_STEP,
+        title: 'Claim a deal contribution',
+        detail: dc.requests > 0 ? `${plural(dc.requests, 'DC request')} made. Your hours count where they should.` : done ? 'Claimed. Your hours count where they should.' : 'Claim the opps you really worked on (an account page, Missed opportunities or the Assistant). It goes in your next batch.',
+        state: done ? 'done' : 'todo',
+        href: '/deals/dcs',
+        page: 'deals',
+        cta: 'Show me on DCs',
+        action: done ? null : 'confirm',
       }),
     );
   }
@@ -258,11 +295,19 @@ function exploreItems(sig: GuideSignals, persona: ResolvedPersona): ChecklistIte
   });
 }
 
+/** The DC step's facts (outside GuideSignals: the contract's signals stay as they are). */
+interface DcState {
+  requests: number;
+  /** Done on its tip, or "I've claimed one". */
+  claimed: boolean;
+}
+
 /** The whole guided path, in order (CHECKLIST_ORDER, then the other tours). Role & rules has its own section. */
-export function buildChecklist(sig: GuideSignals, persona: ResolvedPersona, opts: { roleSection?: string } = {}): ChecklistItem[] {
+export function buildChecklist(sig: GuideSignals, persona: ResolvedPersona, opts: { roleSection?: string; dc?: Partial<DcState> } = {}): ChecklistItem[] {
   // Done on an item's "Show me" tip ticks it at once, whatever the state says (real use ticks it too)
   const acked = new Set(sig.acknowledged ?? []);
-  const actions = actionItems(sig, persona, opts.roleSection ?? 'role').map((x) => (x.state !== 'done' && acked.has(x.id as ChecklistItemId) ? { ...x, state: 'done' as const, action: null } : x));
+  const dc: DcState = { requests: opts.dc?.requests ?? 0, claimed: opts.dc?.claimed ?? false };
+  const actions = actionItems(sig, persona, opts.roleSection ?? 'role', dc).map((x) => (x.state !== 'done' && acked.has(x.id as ChecklistItemId) ? { ...x, state: 'done' as const, action: null } : x));
   const all = [...actions, ...exploreItems(sig, persona)];
   const byId = new Map(all.map((x) => [x.id, x] as const));
   const ordered = CHECKLIST_ORDER.map((id) => byId.get(id)).filter((x): x is ChecklistItem => Boolean(x));
@@ -278,14 +323,104 @@ export function foldChecklist<T extends Pick<ChecklistItem, 'state'>>(items: rea
   return { open: items.filter((x) => x.state !== 'done'), done: items.filter((x) => x.state === 'done') };
 }
 
-/** The first step still to do (waiting steps come after todo ones: there is nothing to do but wait). */
-export function nextStep<T extends Pick<ChecklistItem, 'state'>>(g: { items: readonly T[] }): T | null {
-  return g.items.find((i) => i.state === 'todo') ?? g.items.find((i) => i.state === 'waiting') ?? null;
+// ---- the five outcomes ------------------------------------------------------------------------------------------
+
+export type OutcomeId = 'sources' | 'role' | 'draft' | 'week' | 'dc';
+
+export interface OutcomeDef {
+  id: OutcomeId;
+  title: string;
+  /** What you get once it is done. */
+  why: string;
+  /** The steps that make it done (those this persona has). */
+  required: readonly string[];
+  /** The steps that explain it, on demand (tours, the Assistant, feedback): never hold it open. */
+  detail: readonly string[];
+}
+
+export const OUTCOMES: readonly OutcomeDef[] = [
+  {
+    id: 'sources',
+    title: 'Connect your sources',
+    why: 'Slack, Gmail, Calendar, Drive and the rest, read only, so the list is built from what really happened.',
+    required: ['sources', 'firstScan'],
+    detail: [exploreId('home'), exploreId('work'), exploreId('health')],
+  },
+  { id: 'role', title: 'Pick your role', why: 'Solutions Engineer or Specialist AE decides what is scanned, what Home shows and what gets logged.', required: ['persona'], detail: [exploreId('settings'), 'feedback'] },
+  {
+    id: 'draft',
+    title: 'Approve your first draft',
+    why: 'Replies wait in the Outbox until you approve each one. Nothing leaves without you.',
+    required: ['draft'],
+    detail: [exploreId('triage'), exploreId('outbox'), exploreId('briefs'), exploreId('agents'), 'assistant'],
+  },
+  { id: 'week', title: 'Log a week', why: 'Your meetings and work become the activity log for Org62, reviewed and applied in one batch.', required: ['batch'], detail: [exploreId('time')] },
+  { id: 'dc', title: 'Claim a deal contribution', why: 'Opps you work on get your DC, so your hours count where they should.', required: [DC_STEP], detail: [exploreId('deals')] },
+];
+
+/** The 'week' outcome for a persona whose batch is the forecast notes (the Specialist AE's, D-55). */
+const FORECAST_WEEK: Pick<OutcomeDef, 'title' | 'why'> = {
+  title: 'Update your forecast notes',
+  why: 'Fresh notes on your in-quarter Specialist Forecasts, drafted from your week, reviewed and applied in one batch.',
+};
+
+/**
+ * The outcomes in this persona's words (D-55): an AE's "Log a week" is the week's forecast notes, the batch its step
+ * stages (`batchKind`). No persona (still loading): the default words.
+ */
+export function outcomesFor(persona: ResolvedPersona | null | undefined): readonly OutcomeDef[] {
+  if (!persona || batchKind(persona) !== 'forecast') return OUTCOMES;
+  return OUTCOMES.map((o) => (o.id === 'week' ? { ...o, ...FORECAST_WEEK } : o));
+}
+
+export interface OutcomeView<T> extends OutcomeDef {
+  /** Done when every required step this persona has is done; waiting when only a waiting one is left. */
+  state: ChecklistItem['state'];
+  /** Its steps, in the guided path's order (required and detail). */
+  items: T[];
+  /** The step to do next: a required one first, then a tour or extra still to do. */
+  next: T | null;
+}
+
+/**
+ * The outcomes this persona has (an outcome with none of its required steps is left out), each with its steps, plus
+ * the steps no counted outcome holds (`extra`: a tour added later, a tour whose outcome the role doesn't have).
+ */
+export function outcomesOf<T extends Pick<ChecklistItem, 'id' | 'state'>>(items: readonly T[], persona?: ResolvedPersona | null): { outcomes: OutcomeView<T>[]; extra: T[] } {
+  const placed = new Set<string>();
+  const outcomes: OutcomeView<T>[] = [];
+  for (const o of outcomesFor(persona)) {
+    const req = items.filter((i) => o.required.includes(i.id));
+    if (!req.length) continue;
+    const mine = items.filter((i) => o.required.includes(i.id) || o.detail.includes(i.id));
+    for (const i of mine) placed.add(i.id);
+    const state: ChecklistItem['state'] = req.every((i) => i.state === 'done') ? 'done' : req.some((i) => i.state === 'todo') ? 'todo' : 'waiting';
+    const next = req.find((i) => i.state === 'todo') ?? req.find((i) => i.state === 'waiting') ?? mine.find((i) => i.state === 'todo') ?? null;
+    outcomes.push({ ...o, state, items: mine, next });
+  }
+  return { outcomes, extra: items.filter((i) => !placed.has(i.id)) };
+}
+
+/** "2 of 5": the outcomes done, of those this persona has. */
+export function outcomeCount(items: readonly Pick<ChecklistItem, 'id' | 'state'>[]): { done: number; total: number } {
+  const { outcomes } = outcomesOf(items);
+  return { done: outcomes.filter((o) => o.state === 'done').length, total: outcomes.length };
+}
+
+/**
+ * The step to do next: the first outcome not done, its next required step (a waiting one only when nothing else is
+ * left to do). Null once every outcome is done, whatever tours are left.
+ */
+export function nextStep<T extends Pick<ChecklistItem, 'id' | 'state'>>(g: { items: readonly T[] }): T | null {
+  const open = outcomesOf(g.items).outcomes.filter((o) => o.state !== 'done');
+  return open.find((o) => o.state === 'todo')?.next ?? open[0]?.next ?? null;
 }
 
 export function guidePayload(i: GuideInputs, opts: { roleSection?: string } = {}): GuidePayload {
   const signals = guideSignals(i);
-  const items = buildChecklist(signals, i.persona, opts);
-  return { items, done: items.filter((x) => x.state === 'done').length, total: items.length, dismissed: i.guide.checklistDismissed, signals };
+  const items = buildChecklist(signals, i.persona, { ...opts, dc: { requests: i.dcRequests ?? 0, claimed: Boolean(i.guide.seen[itemDoneKey(DC_STEP)]) } });
+  // the card and the page count the outcomes; the steps are their detail
+  const { done, total } = outcomeCount(items);
+  return { items, done, total, dismissed: i.guide.checklistDismissed, signals };
 }
 

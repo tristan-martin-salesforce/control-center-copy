@@ -27,7 +27,7 @@ export interface NotifyRequest {
   body: string;
   /** App-relative path ("/agents?run=123") or a full http://localhost:4327 URL. */
   url?: string;
-  /** Is the Control Center window focused right now? waiting_on_you is suppressed when it is. */
+  /** Is the Command Center window focused right now? waiting_on_you is suppressed when it is. */
   appFocused?: boolean;
 }
 
@@ -124,7 +124,7 @@ export function buildNotifyCommand(opts: { title: string; body: string; url: str
     cmd: '/usr/bin/osascript',
     args: [
       '-e', 'on run argv',
-      '-e', 'display notification (item 1 of argv) with title (item 2 of argv) subtitle "Control Center"',
+      '-e', 'display notification (item 1 of argv) with title (item 2 of argv) subtitle "Command Center"',
       '-e', 'end run',
       opts.body,
       opts.title,

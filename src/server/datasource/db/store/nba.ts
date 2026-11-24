@@ -14,7 +14,7 @@
  *   Ext: destination display fields (channelName, target, workspace, inReplyTo, names), threadContext,
  *   savedAt, attempt details.
  */
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { ActionDestination, type DispatchAttempt, type Draft, type NbaCard, type Rendition, type TipTapDoc } from '@/contract';
 import { actionFamily, actionTargetId, type ActionFamily } from '@/lib/actions';
@@ -45,8 +45,10 @@ interface NbaPayload {
   versions: NbaCard['versions'];
 }
 
-export async function loadNbas(rc: ReadCtx): Promise<NbaCard[]> {
-  const rows = await rc.db.select().from(nextBestActions).where(eq(nextBestActions.ownerUserId, rc.userId)).orderBy(asc(nextBestActions.createdAt), asc(nextBestActions.id));
+/** `itemIds`: only those items' cards (and cards on no item), for a page scope (reads/scope.ts); omitted = all. */
+export async function loadNbas(rc: ReadCtx, itemIds?: readonly string[]): Promise<NbaCard[]> {
+  const where = itemIds ? and(eq(nextBestActions.ownerUserId, rc.userId), or(isNull(nextBestActions.workItemId), itemIds.length ? inArray(nextBestActions.workItemId, [...itemIds]) : sql`false`)) : eq(nextBestActions.ownerUserId, rc.userId);
+  const rows = await rc.db.select().from(nextBestActions).where(where).orderBy(asc(nextBestActions.createdAt), asc(nextBestActions.id));
   return rows.map((r) => {
     const p = (r.payload ?? {}) as Partial<NbaPayload>;
     return {
@@ -151,6 +153,8 @@ const ACTION_DB: Record<ActionFamily, { channel: 'vdp' | 'slack_canvas' | 'slack
   slack_canvas: { channel: 'slack_canvas', actionType: 'canvas_rewrite', verify: 'canvas_read' },
   // D-56: a feedback report is one Slack message (its whole report rides in the payload column, like every action)
   feedback: { channel: 'slack', actionType: 'slack_message', verify: 'slack_read' },
+  // D-90: a release announcement is one Slack message too; the upload hand-off rides the same enums (it never sends)
+  release: { channel: 'slack', actionType: 'slack_message', verify: 'slack_read' },
 };
 
 const LOCK_COL: Record<Draft['userLockedFields'][number], string> = { doc: 'doc_json', destination: 'destination', mode: 'delivery_mode' };

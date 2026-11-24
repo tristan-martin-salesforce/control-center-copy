@@ -21,7 +21,7 @@ import { AppLink } from '@/components/shell/AppLink';
 import { FeatureInactive } from '@/components/shell/FeatureInactive';
 import { StatusBadge } from '@/components/domain';
 import { navigate } from '@/components/shell/router';
-import { Button, EmptyState, fmtAgo, Icon, PanelBoundary, PanelError, ShowMore, usePanelState, useShowMore } from '@/ui';
+import { Button, fmtAgo, Icon, PanelBoundary, PanelError, ShowMore, usePanelState, useShowMore } from '@/ui';
 import { ContextHead, ContextPage, ContextRow, Pane, QuietLine, SectionHead } from './context-frame';
 import { DealsTabs } from './DealsHeader';
 import { ClaimDcDialog, useClaimDc, type ClaimTarget } from './ClaimDc';
@@ -39,11 +39,11 @@ export function dcGroupOf(r: Pick<DcRequest, 'stage'>): Group {
   return 'withdrawn';
 }
 
-const GROUP_TITLE: Record<Group, string> = { not_created: 'Not created in Org62', requested: 'Requested', on_canvas: 'On a canvas', confirmed: 'Confirmed in Org62', withdrawn: 'Withdrawn' };
+const GROUP_TITLE: Record<Group, string> = { not_created: 'Not created in Org62', requested: 'Requested', on_canvas: 'In a batch', confirmed: 'Confirmed in Org62', withdrawn: 'Withdrawn' };
 const GROUP_SUB: Record<Group, string> = {
   not_created: 'Slackbot had it, and Org62 still shows no DC: ask again, or set the opp aside on Deals',
-  requested: 'go on your next logging canvas with rows (or Log DCs now on Activity)',
-  on_canvas: 'Apply the canvas on Activity, then Slackbot runs it',
+  requested: 'go in your next batch with your hours (or Log DCs now on Activity)',
+  on_canvas: 'Apply the batch on Activity, then Slackbot sends it to Org62',
   confirmed: 'the Org62 scan read the DC',
   withdrawn: 'never sent',
 };
@@ -85,7 +85,7 @@ function RequestRow({ r, onEdit, onWithdraw, onAskAgain }: { r: DcRequest; onEdi
           : !r.lockedReason
             ? { label: 'Edit', onClick: () => onEdit(r) }
             : r.canvasUrl
-              ? { label: 'Canvas', icon: 'new_window', onClick: () => window.open(r.canvasUrl!, '_blank', 'noopener,noreferrer') }
+              ? { label: 'Open in Slack', icon: 'new_window', onClick: () => window.open(r.canvasUrl!, '_blank', 'noopener,noreferrer') }
               : r.stage === 'in_canvas'
                 ? { label: 'Review on Activity', onClick: () => navigate('/activity?view=week') }
                 : undefined
@@ -182,7 +182,7 @@ export function DcView() {
       setBusy(true);
       try {
         const res = await api('patchDcRequest', { params: { id: editing.id }, body: { split: v.split, role: v.role, ...(v.comment ? { comment: v.comment } : {}) } });
-        toast({ key: `dc-edit:${editing.id}`, tone: 'success', title: `DC request saved: ${dcRequestLine(res.entity)}`, body: 'It goes on your next logging canvas.', undo: res.auditId ? { auditId: res.auditId } : undefined });
+        toast({ key: `dc-edit:${editing.id}`, tone: 'success', title: `DC request saved: ${dcRequestLine(res.entity)}`, body: 'It goes in your next batch.', undo: res.auditId ? { auditId: res.auditId } : undefined });
         await q.refetch();
       } catch (err) {
         toast({ key: `dc-edit-err:${editing.id}`, tone: 'error', durationMs: null, title: "Couldn't save the request", body: errorText(err, 240) });
@@ -200,7 +200,7 @@ export function DcView() {
     <ContextPage label="Deal contributions">
       <ContextHead
         title="Deals"
-        sentence={q.data ? `${mine.length} ${mine.length === 1 ? 'DC' : 'DCs'} of yours in Org62 · ${inFlight} ${inFlight === 1 ? 'request' : 'requests'} in flight. A request goes on your next logging canvas; nothing is sent from here.` : 'Loading your DCs…'}
+        sentence={q.data ? `${mine.length} ${mine.length === 1 ? 'DC' : 'DCs'} of yours in Org62 · ${inFlight} ${inFlight === 1 ? 'request' : 'requests'} in flight. A request goes in your next batch; nothing is sent from here.` : 'Loading your DCs…'}
         tabs={<DealsTabs tab="dcs" />}
       />
       <PanelBoundary name="deals.dcs">
@@ -209,8 +209,15 @@ export function DcView() {
         ) : state === 'loading' ? (
           <QuietLine>Loading…</QuietLine>
         ) : (
-          <div className="grid min-h-0 flex-1 gap-5 @min-[1000px]/main:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-            <Pane as="section" aria-label="DC requests" head={<SectionHead title="Requests" count={requests.length} sub="requested → on a canvas → confirmed in Org62" />} bodyClassName="pb-3">
+          <div className={groups.length ? 'grid min-h-0 flex-1 gap-5 @min-[1000px]/main:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]' : 'flex min-h-0 flex-1 flex-col gap-3'}>
+            {/* 01-ui-audit UI-20: no requests is one quiet line, not an empty half of the page; Your DCs then gets the width */}
+            {groups.length ? null : (
+              <p className="text-body text-muted" data-testid="dc-requests-empty">
+                <b className="font-bold text-fg">No DC requests in flight.</b> Claim one from an account page, Missed opportunities or the Assistant: it shows here, then goes in your next batch.
+              </p>
+            )}
+            {groups.length ? (
+            <Pane as="section" aria-label="DC requests" head={<SectionHead title="Requests" count={requests.length} sub="requested → in a batch → confirmed in Org62" />} bodyClassName="pb-3">
               {groups.length ? (
                 groups
                   .filter((x) => x.g !== 'withdrawn' || showWithdrawn)
@@ -229,15 +236,14 @@ export function DcView() {
                       <GroupRows rows={rows} render={(r) => <RequestRow key={r.id} r={r} onEdit={setEditing} onWithdraw={(x) => void withdraw(x)} onAskAgain={(x) => claim.open({ oppId: x.oppId, oppName: x.oppName, myDc: x.dc, comment: x.comment ?? '', split: x.splitPercent, role: x.role })} />} />
                     </div>
                   ))
-              ) : (
-                <EmptyState size="inline" icon="opportunity" title="No DC requests" body="Claim a DC from an account page, Missed opportunities or the Assistant: it lands here, then rides on your next logging canvas." />
-              )}
+              ) : null}
               {groups.some((x) => x.g === 'withdrawn') ? (
                 <button type="button" onClick={() => setShowWithdrawn((v) => !v)} className="mx-5 mt-2 rounded-sm text-caption font-bold text-link hover:underline focus-visible:outline-none focus-visible:shadow-focus">
                   {showWithdrawn ? 'Hide withdrawn' : 'Show withdrawn'}
                 </button>
               ) : null}
             </Pane>
+            ) : null}
             <Pane as="aside" aria-label="Your DCs" head={<SectionHead title="Your DCs" count={mine.length} sub="as the Org62 scans read them" />} bodyClassName="pb-3">
               {mine.length ? (
                 <div role="list" aria-label="Your DCs">

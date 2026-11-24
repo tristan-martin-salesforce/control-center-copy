@@ -6,8 +6,9 @@
  *
  * The orchestrator owns this file. If you need to change it, raise a `blocker`.
  * CONTRACT-1 folded in BE-2a's optional extensions (formerly runtime/contract-ext.ts, which now re-exports).
- * Spec: docs/ui/SCANNER.md. Schema: docs/ui/DATA-MODEL.md.
+ * Spec: docs/reference/SCANNER.md. Schema: docs/reference/DATA-MODEL.md.
  */
+import type { CallMeasurement } from '../db/ledger';
 import type { ResolvedPersona } from '../personas/types';
 
 export type ConnectorId =
@@ -426,6 +427,8 @@ export interface SpendBooked {
   modelReason: string;
   outcome: string;
   contentHash: string;
+  /** 0027: what the call measured (booked on a row no pass trace row covers). */
+  measure?: CallMeasurement;
 }
 
 // ---------- Skill runner: one Agent SDK call per scan step ----------
@@ -493,6 +496,8 @@ export interface SkillRunResult {
   /** From `cc_finish`: false = the window was not finished; the runtime continues from `proposedCursor.at`. */
   complete?: boolean;
   counts?: SkillRunCounts;
+  /** 0027: what the run measured (per-request prompt sizes, turns, tools, prefix hash, items); src/db/ledger.ts. */
+  measure?: CallMeasurement;
 }
 
 export interface SkillRunner {

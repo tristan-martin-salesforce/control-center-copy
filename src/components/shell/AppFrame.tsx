@@ -42,6 +42,7 @@ import { ShellProvider, useShell } from './ShellContext';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { BuildWatch } from './BuildWatch';
+import { SkipLink } from '@/components/kit/SkipLink';
 
 void DETAIL_RENDERERS_REGISTERED;
 
@@ -80,10 +81,12 @@ function Workspace({ children, chatRail, devToolbar }: { children: ReactNode; ch
           <main
             ref={mainRef}
             id="cc-main"
+            // the skip link's target: focusable from script only, never a tab stop of its own
+            tabIndex={-1}
             data-slot="main"
             data-panel={visible ? 'open' : 'closed'}
             data-nav-pending={pendingPath ?? undefined}
-            className="cc-scroll @container/main relative min-w-0 flex-1 overflow-y-auto"
+            className="cc-scroll @container/main relative min-w-0 flex-1 overflow-y-auto focus:outline-none"
           >
             <PanelBoundary name="page" resetKeys={[pathname]}>
               {/* While a navigation is pending the old page stays mounted but hidden (an abandoned navigation puts
@@ -147,6 +150,8 @@ export function AppFrame({ children, chatRail, devToolbar }: AppFrameProps) {
   useResumeTracker();
   return (
     <div ref={rootRef} data-frame className="flex h-dvh w-full overflow-hidden">
+      {/* WCAG 2.4.1: the first tab stop on every framed page */}
+      <SkipLink />
       {/* The root layout mounts RightPanelProvider above ChatProvider; this only covers frames rendered elsewhere. */}
       <EnsureRightPanelProvider>
         <ShellProvider width={width}>

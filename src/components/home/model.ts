@@ -2,7 +2,7 @@
  * Pure helpers for the Home view: selection targets, optimistic cache edits and display formatting.
  * Kept free of React so tests/home can exercise them directly.
  */
-import type { HomeCard, HomePayload, HomeRibbonBlock, HomeRow, HomeSectionId, HomeState, NotNowReason } from '@/contract';
+import type { HomeCard, HomeClosedNow, HomePayload, HomeRibbonBlock, HomeRow, HomeSectionId, HomeState, NotNowReason } from '@/contract';
 import { overlapClusters, overlapsBox, packColumns } from '@/components/domain/lib/lanes';
 
 /** A selectable thing on Home: a Do now card or a section row. j/k walks them in DOM order. */
@@ -94,6 +94,38 @@ export function notNowToast(reason: NotNowReason, title: string, moveShort?: str
     default:
       return `Dismissed: ${t}`;
   }
+}
+
+/** A Do-now card that was closed for you while Home was open: it stays in its slot with the tag and Undo (HM-05). */
+export interface ClosedInPlace {
+  card: HomeCard;
+  /** Its slot when it left (0-based). */
+  index: number;
+  closed: HomeClosedNow;
+}
+
+/**
+ * Pure: the cards closed for you between two payloads. A card that was on screen, is gone from the new payload and is
+ * in its `closedNow` list stays where it was; one already kept stays kept until it comes back (reopened) or is undone.
+ */
+export function closedInPlace(prev: readonly HomeCard[], next: Pick<HomePayload, 'doNow' | 'closedNow'>, kept: readonly ClosedInPlace[]): ClosedInPlace[] {
+  const nowIds = new Set(next.doNow.cards.map((c) => c.id));
+  const closed = new Map((next.closedNow ?? []).map((c) => [c.id, c]));
+  const out = kept.filter((k) => !nowIds.has(k.card.id) && closed.has(k.card.id));
+  const have = new Set(out.map((k) => k.card.id));
+  prev.forEach((card, index) => {
+    const hit = closed.get(card.id);
+    if (card.kind === 'item' && hit && !nowIds.has(card.id) && !have.has(card.id)) out.push({ card, index, closed: hit });
+  });
+  return out;
+}
+
+/** The cards to draw: the live cards with the closed ones back in their slots, three at most. */
+export function cardsWithClosed(cards: readonly HomeCard[], kept: readonly ClosedInPlace[]): Array<{ card: HomeCard; closed: HomeClosedNow | null }> {
+  const keptIds = new Set(kept.map((k) => k.card.id));
+  const out: Array<{ card: HomeCard; closed: HomeClosedNow | null }> = cards.filter((c) => !keptIds.has(c.id)).map((card) => ({ card, closed: null }));
+  for (const k of [...kept].sort((a, b) => a.index - b.index)) out.splice(Math.min(k.index, out.length), 0, { card: k.card, closed: k.closed });
+  return out.slice(0, 3);
 }
 
 /** "1h 30m", "45m", "5h". */

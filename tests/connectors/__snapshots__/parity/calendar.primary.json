@@ -1,0 +1,714 @@
+{
+  "items": [
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_attended",
+      "dedupeKey": "cal:evt_attended",
+      "contentHash": "6c30c427db72d299",
+      "occurredAt": "2026-03-10T16:00:00.000Z",
+      "author": {
+        "email": "ae.one@example.com",
+        "isMe": false
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "ae.one@example.com",
+          "isMe": false,
+          "isExternal": false
+        },
+        {
+          "email": "cust.one@customer.example",
+          "isMe": false,
+          "isExternal": true
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_attended",
+      "title": "ACME_CORP Discovery Call",
+      "excerpt": "ACME_CORP Discovery Call",
+      "redacted": false,
+      "threadRef": "calendar:evt_attended",
+      "payload": {
+        "eventId": "evt_attended",
+        "start": "2026-03-10T16:00:00.000Z",
+        "end": "2026-03-10T16:45:00.000Z",
+        "allDay": false,
+        "location": "",
+        "meetingLink": "https://meet.google.com/abc-defg-hij",
+        "conferencing": "meet",
+        "organizerEmail": "ae.one@example.com",
+        "iAmOrganizer": false,
+        "attendeeCount": 3,
+        "external": true,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": false
+          },
+          {
+            "email": "ae.one@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          },
+          {
+            "email": "cust.one@customer.example",
+            "response": "accepted",
+            "optional": false,
+            "organizer": false
+          }
+        ],
+        "myResponse": "accepted",
+        "attachments": [],
+        "description": "",
+        "ended": true,
+        "minutesSinceEnd": 75,
+        "attendance": "attended",
+        "attendanceReason": "accepted",
+        "hints": [
+          "notes-poll"
+        ]
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_declined",
+      "dedupeKey": "cal:evt_declined",
+      "contentHash": "039e9bd24db98081",
+      "occurredAt": "2026-03-10T15:00:00.000Z",
+      "author": {
+        "email": "se.two@example.com",
+        "isMe": false
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "se.two@example.com",
+          "isMe": false,
+          "isExternal": false
+        },
+        {
+          "email": "ae.one@example.com",
+          "isMe": false,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_declined",
+      "title": "INT: ACME_CORP deal planning",
+      "excerpt": "INT: ACME_CORP deal planning",
+      "redacted": false,
+      "threadRef": "calendar:evt_declined",
+      "fileRefs": [
+        "1RecordingFileId00000000000000",
+        "1GeminiNotesDocId0000000000000"
+      ],
+      "payload": {
+        "eventId": "evt_declined",
+        "start": "2026-03-10T15:00:00.000Z",
+        "end": "2026-03-10T15:30:00.000Z",
+        "allDay": false,
+        "location": "",
+        "meetingLink": "https://meet.google.com/zzz-yyyy-xxx",
+        "conferencing": "meet",
+        "organizerEmail": "se.two@example.com",
+        "iAmOrganizer": false,
+        "attendeeCount": 3,
+        "external": false,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "declined",
+            "optional": false,
+            "organizer": false
+          },
+          {
+            "email": "se.two@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          },
+          {
+            "email": "ae.one@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": false
+          }
+        ],
+        "myResponse": "declined",
+        "attachments": [
+          {
+            "title": "INT: ACME_CORP deal planning - 2026/03/10 08:00 PDT - Recording",
+            "fileId": "1RecordingFileId00000000000000",
+            "mimeType": "video/mp4"
+          },
+          {
+            "title": "INT: ACME_CORP deal planning - 2026/03/10 08:00 PDT - Notes by Gemini",
+            "fileId": "1GeminiNotesDocId0000000000000",
+            "mimeType": "application/vnd.google-apps.document"
+          }
+        ],
+        "geminiNotesDocId": "1GeminiNotesDocId0000000000000",
+        "description": "",
+        "ended": true,
+        "minutesSinceEnd": 150,
+        "attendance": "missed",
+        "attendanceReason": "declined",
+        "hints": [
+          "missed-meeting"
+        ]
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_noresp",
+      "dedupeKey": "cal:evt_noresp",
+      "contentHash": "36983addd4ea2fbe",
+      "occurredAt": "2026-03-10T14:00:00.000Z",
+      "author": {
+        "email": "host@partner.example",
+        "isMe": false
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "host@partner.example",
+          "isMe": false,
+          "isExternal": true
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_noresp",
+      "title": "Partner enablement webinar",
+      "excerpt": "Partner enablement webinar",
+      "redacted": false,
+      "threadRef": "calendar:evt_noresp",
+      "payload": {
+        "eventId": "evt_noresp",
+        "start": "2026-03-10T14:00:00.000Z",
+        "end": "2026-03-10T14:30:00.000Z",
+        "allDay": false,
+        "location": "",
+        "meetingLink": "https://meet.google.com/ppp-qqqq-rrr",
+        "conferencing": "meet",
+        "organizerEmail": "host@partner.example",
+        "iAmOrganizer": false,
+        "attendeeCount": 2,
+        "external": true,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "needsAction",
+            "optional": false,
+            "organizer": false
+          },
+          {
+            "email": "host@partner.example",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          }
+        ],
+        "myResponse": "needsAction",
+        "attachments": [],
+        "description": "",
+        "ended": true,
+        "minutesSinceEnd": 210,
+        "attendance": "missed",
+        "attendanceReason": "no_response",
+        "hints": [
+          "missed-meeting"
+        ]
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_overlap_a",
+      "dedupeKey": "cal:evt_overlap_a",
+      "contentHash": "529ecd6160d42dc2",
+      "occurredAt": "2026-03-10T17:00:00.000Z",
+      "author": {
+        "email": "ae.one@example.com",
+        "isMe": false
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "ae.one@example.com",
+          "isMe": false,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_overlap_a",
+      "title": "Customer A sync",
+      "excerpt": "Customer A sync",
+      "redacted": false,
+      "threadRef": "calendar:evt_overlap_a",
+      "payload": {
+        "eventId": "evt_overlap_a",
+        "start": "2026-03-10T17:00:00.000Z",
+        "end": "2026-03-10T17:30:00.000Z",
+        "allDay": false,
+        "location": "",
+        "meetingLink": "https://meet.google.com/aaa-bbbb-ccc",
+        "conferencing": "meet",
+        "organizerEmail": "ae.one@example.com",
+        "iAmOrganizer": false,
+        "attendeeCount": 2,
+        "external": false,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": false
+          },
+          {
+            "email": "ae.one@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          }
+        ],
+        "myResponse": "accepted",
+        "attachments": [],
+        "description": "",
+        "ended": true,
+        "minutesSinceEnd": 30,
+        "attendance": "uncertain",
+        "attendanceReason": "overlapping_accepted",
+        "overlapWith": [
+          "evt_overlap_b"
+        ],
+        "hints": [
+          "notes-poll"
+        ]
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_overlap_b",
+      "dedupeKey": "cal:evt_overlap_b",
+      "contentHash": "2a15f9bb4bea7863",
+      "occurredAt": "2026-03-10T17:00:00.000Z",
+      "author": {
+        "email": "se.two@example.com",
+        "isMe": false
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "se.two@example.com",
+          "isMe": false,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_overlap_b",
+      "title": "Customer B sync",
+      "excerpt": "Customer B sync",
+      "redacted": false,
+      "threadRef": "calendar:evt_overlap_b",
+      "payload": {
+        "eventId": "evt_overlap_b",
+        "start": "2026-03-10T17:00:00.000Z",
+        "end": "2026-03-10T17:30:00.000Z",
+        "allDay": false,
+        "location": "",
+        "meetingLink": "https://meet.google.com/ddd-eeee-fff",
+        "conferencing": "meet",
+        "organizerEmail": "se.two@example.com",
+        "iAmOrganizer": false,
+        "attendeeCount": 2,
+        "external": false,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": false
+          },
+          {
+            "email": "se.two@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          }
+        ],
+        "myResponse": "accepted",
+        "attachments": [],
+        "description": "",
+        "ended": true,
+        "minutesSinceEnd": 30,
+        "attendance": "uncertain",
+        "attendanceReason": "overlapping_accepted",
+        "overlapWith": [
+          "evt_overlap_a"
+        ],
+        "hints": [
+          "notes-poll"
+        ]
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_tentative",
+      "dedupeKey": "cal:evt_tentative",
+      "contentHash": "010e743e1a106d91",
+      "occurredAt": "2026-03-10T16:50:00.000Z",
+      "author": {
+        "email": "ae.one@example.com",
+        "isMe": false
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "ae.one@example.com",
+          "isMe": false,
+          "isExternal": false
+        },
+        {
+          "email": "cust.one@customer.example",
+          "isMe": false,
+          "isExternal": true
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_tentative",
+      "title": "ACME_CORP architecture review",
+      "excerpt": "ACME_CORP architecture review - Review the zero-copy flow. Notes: https://docs.google.com/document/d/1PrepDocId000000000000000000/edit",
+      "redacted": false,
+      "threadRef": "calendar:evt_tentative",
+      "fileRefs": [
+        "1PrepDocId000000000000000000"
+      ],
+      "payload": {
+        "eventId": "evt_tentative",
+        "start": "2026-03-10T16:50:00.000Z",
+        "end": "2026-03-10T17:05:00.000Z",
+        "allDay": false,
+        "location": "",
+        "meetingLink": "https://meet.google.com/ggg-hhhh-iii",
+        "conferencing": "meet",
+        "organizerEmail": "ae.one@example.com",
+        "iAmOrganizer": false,
+        "attendeeCount": 3,
+        "external": true,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "tentative",
+            "optional": false,
+            "organizer": false
+          },
+          {
+            "email": "ae.one@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          },
+          {
+            "email": "cust.one@customer.example",
+            "response": "accepted",
+            "optional": false,
+            "organizer": false
+          }
+        ],
+        "myResponse": "tentative",
+        "attachments": [],
+        "description": "Review the zero-copy flow. Notes: https://docs.google.com/document/d/1PrepDocId000000000000000000/edit",
+        "ended": true,
+        "minutesSinceEnd": 55,
+        "attendance": "uncertain",
+        "attendanceReason": "tentative",
+        "overlapWith": [],
+        "hints": [
+          "notes-poll"
+        ]
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_ooo",
+      "dedupeKey": "cal:evt_ooo",
+      "contentHash": "80b8649306655479",
+      "occurredAt": "2026-03-08T00:00:00.000Z",
+      "author": {
+        "email": "me@example.com",
+        "isMe": true
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_ooo",
+      "title": "Out of office - offsite",
+      "excerpt": "Out of office - offsite",
+      "redacted": false,
+      "threadRef": "calendar:evt_ooo",
+      "payload": {
+        "eventId": "evt_ooo",
+        "start": "2026-03-08T00:00:00.000Z",
+        "end": "2026-03-09T00:00:00.000Z",
+        "allDay": true,
+        "location": "",
+        "organizerEmail": "me@example.com",
+        "iAmOrganizer": true,
+        "attendeeCount": 1,
+        "external": false,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          }
+        ],
+        "myResponse": "accepted",
+        "attachments": [],
+        "description": "",
+        "ended": true,
+        "minutesSinceEnd": 2520,
+        "attendance": "n/a",
+        "attendanceReason": "not a meeting with other attendees",
+        "hints": []
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_hotel",
+      "dedupeKey": "cal:evt_hotel",
+      "contentHash": "8081a86cd2d47f52",
+      "occurredAt": "2026-03-10T00:00:00.000Z",
+      "author": {
+        "email": "me@example.com",
+        "isMe": true
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_hotel",
+      "title": "Stay at Example Hotel",
+      "excerpt": "Stay at Example Hotel - This event was created from an email you received in Gmail.",
+      "redacted": false,
+      "threadRef": "calendar:evt_hotel",
+      "payload": {
+        "eventId": "evt_hotel",
+        "start": "2026-03-10T00:00:00.000Z",
+        "end": "2026-03-12T00:00:00.000Z",
+        "allDay": true,
+        "location": "",
+        "organizerEmail": "me@example.com",
+        "iAmOrganizer": true,
+        "attendeeCount": 1,
+        "external": false,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          }
+        ],
+        "myResponse": "accepted",
+        "attachments": [],
+        "description": "This event was created from an email you received in Gmail.",
+        "ended": false,
+        "attendance": "n/a",
+        "attendanceReason": "not a meeting with other attendees",
+        "hints": []
+      }
+    },
+    {
+      "connector": "calendar",
+      "kind": "calendar_event",
+      "externalId": "evt_future",
+      "dedupeKey": "cal:evt_future",
+      "contentHash": "ccb3f3289030f92e",
+      "occurredAt": "2026-03-11T16:00:00.000Z",
+      "author": {
+        "email": "ae.one@example.com",
+        "isMe": false
+      },
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "ae.one@example.com",
+          "isMe": false,
+          "isExternal": false
+        },
+        {
+          "email": "cust.one@customer.example",
+          "isMe": false,
+          "isExternal": true
+        }
+      ],
+      "permalink": "https://www.google.com/calendar/event?eid=evt_future",
+      "title": "ACME_CORP workshop",
+      "excerpt": "ACME_CORP workshop",
+      "redacted": false,
+      "threadRef": "calendar:evt_future",
+      "fileRefs": [
+        "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+      ],
+      "payload": {
+        "eventId": "evt_future",
+        "start": "2026-03-11T16:00:00.000Z",
+        "end": "2026-03-11T18:00:00.000Z",
+        "allDay": false,
+        "location": "Conference room 4",
+        "meetingLink": "https://meet.google.com/jjj-kkkk-lll",
+        "conferencing": "meet",
+        "organizerEmail": "ae.one@example.com",
+        "iAmOrganizer": false,
+        "attendeeCount": 3,
+        "external": true,
+        "responses": [
+          {
+            "email": "me@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": false
+          },
+          {
+            "email": "ae.one@example.com",
+            "response": "accepted",
+            "optional": false,
+            "organizer": true
+          },
+          {
+            "email": "cust.one@customer.example",
+            "response": "needsAction",
+            "optional": false,
+            "organizer": false
+          }
+        ],
+        "myResponse": "accepted",
+        "attachments": [
+          {
+            "title": "ACME_CORP workshop deck.pptx",
+            "fileId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+            "mimeType": "application/vnd.google-apps.presentation"
+          }
+        ],
+        "description": "",
+        "ended": false,
+        "attendance": "upcoming",
+        "attendanceReason": "has not started",
+        "hints": []
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "kind": "calendar_range",
+      "ref": "primary",
+      "from": "2026-03-08T18:00:00.000Z",
+      "to": "2026-03-24T18:00:00.000Z",
+      "meta": {
+        "count": 9,
+        "truncated": false
+      }
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_attended",
+      "from": "2026-03-10T16:00:00.000Z",
+      "to": "2026-03-10T16:45:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_declined",
+      "from": "2026-03-10T15:00:00.000Z",
+      "to": "2026-03-10T15:30:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_noresp",
+      "from": "2026-03-10T14:00:00.000Z",
+      "to": "2026-03-10T14:30:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_overlap_a",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:30:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_overlap_b",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:30:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_tentative",
+      "from": "2026-03-10T16:50:00.000Z",
+      "to": "2026-03-10T17:05:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_ooo",
+      "from": "2026-03-08T00:00:00.000Z",
+      "to": "2026-03-09T00:00:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_hotel",
+      "from": "2026-03-10T00:00:00.000Z",
+      "to": "2026-03-12T00:00:00.000Z"
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "event:evt_future",
+      "from": "2026-03-11T16:00:00.000Z",
+      "to": "2026-03-11T18:00:00.000Z"
+    }
+  ],
+  "nextCursor": {
+    "value": "{\"events\":{\"evt_attended\":{\"h\":\"6c30c427db72d299\",\"s\":\"2026-03-10T16:00:00.000Z\"},\"evt_declined\":{\"h\":\"039e9bd24db98081\",\"s\":\"2026-03-10T15:00:00.000Z\"},\"evt_noresp\":{\"h\":\"36983addd4ea2fbe\",\"s\":\"2026-03-10T14:00:00.000Z\"},\"evt_overlap_a\":{\"h\":\"529ecd6160d42dc2\",\"s\":\"2026-03-10T17:00:00.000Z\"},\"evt_overlap_b\":{\"h\":\"2a15f9bb4bea7863\",\"s\":\"2026-03-10T17:00:00.000Z\"},\"evt_tentative\":{\"h\":\"010e743e1a106d91\",\"s\":\"2026-03-10T16:50:00.000Z\"},\"evt_ooo\":{\"h\":\"80b8649306655479\",\"s\":\"2026-03-08T00:00:00.000Z\"},\"evt_hotel\":{\"h\":\"8081a86cd2d47f52\",\"s\":\"2026-03-10T00:00:00.000Z\"},\"evt_future\":{\"h\":\"ccb3f3289030f92e\",\"s\":\"2026-03-11T16:00:00.000Z\"}}}",
+    "at": "2026-03-10T18:00:00.000Z"
+  },
+  "complete": true
+}

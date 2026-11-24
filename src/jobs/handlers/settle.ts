@@ -1,5 +1,5 @@
 /**
- * `settle.check` (queue `settle`, concurrency 1): the Settle pass (SETTLE-1, docs/ui/SCANNER.md §4.11).
+ * `settle.check` (queue `settle`, concurrency 1): the Settle pass (SETTLE-1, docs/reference/SCANNER.md §4.11).
  *
  * After the first scan finishes, it judges every live or suggested item once with the whole conversation around it
  * (src/engines/settle), then the policy closes for you, asks, reopens or leaves each one (Closing settings). Later
@@ -25,7 +25,9 @@ import type { DbHandle, DbOrTx } from '@/db/client';
 import { enqueueJob } from '@/db/queue';
 import { loadSkill } from '@/engines/nba/prompt/skills';
 import { loadSettleRaw, loadSettleUser } from '@/engines/settle/load-db';
+import { closureSettingsFrom } from '@/engines/closure/signals';
 import { decideSettle } from '@/engines/settle/policy';
+import { CLOSURE_SETTING_KEYS } from '@/engines/types';
 import { SETTLE_SKILL, SETTLE_STRONG_MODEL, settleMany } from '@/engines/settle/run';
 import { loadClosingSettings, policyFacts, selectSettleItems } from '@/engines/settle/select-db';
 import type { JobContext, JobHandler, JobHandlerDef } from '@/jobs/types';
@@ -247,11 +249,14 @@ export function settleHandler(deps: SettleHandlerDeps): JobHandler {
     const startedAt = ctx.clock();
     const since = await lastSettleThrough(ctx.db, ctx.userId);
     const firstPass = !since;
-    const user = await loadSettleUser(ctx.db);
+    const user = await loadSettleUser(ctx.db, ctx.userId);
     const settings = await loadClosingSettings(ctx.db, ctx.userId);
+    const reopenWindowDays = closureSettingsFrom(
+      Object.fromEntries((await ctx.db.execute<{ key: string; value: unknown }>(sql`select key, value from user_settings where owner_user_id = ${ctx.userId} and key = ${CLOSURE_SETTING_KEYS.reopenWindowDays}`)).rows.map((r) => [r.key, r.value])),
+    ).reopenWindowDays;
     const picked = deps.ids?.length
       ? (await ctx.db.execute<{ id: string; status: string }>(sql`select id::text as id, status::text as status from work_items where owner_user_id = ${ctx.userId} and id::text = any(${sql`array[${sql.join(deps.ids.map((i) => sql`${i}`), sql`, `)}]::text[]`})`)).rows
-      : await selectSettleItems(ctx.db, ctx.userId, since, startedAt, deps.maxItems ?? 600);
+      : await selectSettleItems(ctx.db, ctx.userId, since, startedAt, deps.maxItems ?? 600, { reopenOnFollowUp: settings.reopenOnFollowUp, reopenWindowDays });
     if (!picked.length) return { status: 'nothing_to_do', through: startedAt.toISOString(), firstPass, judged: 0 };
     const budget: SettleBudget = firstPass ? 'first_scan' : 'daily';
     const store = new DbScannerStore({ db: ctx.db, userId: ctx.userId, clock: ctx.clock });
@@ -344,6 +349,7 @@ export function settleJobDef(deps: SettleHandlerDeps): JobHandlerDef {
     kind: SETTLE_JOB_KIND,
     queue: SETTLE_QUEUE,
     wired: true,
+    spends: true,
     description: 'Settle pass: judge each item with the whole conversation around it, then close for you, ask or leave it (SETTLE-1)',
     handler: settleHandler(deps),
   };

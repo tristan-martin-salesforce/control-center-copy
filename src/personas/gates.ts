@@ -35,18 +35,6 @@ export function visibleConnectors(p: ResolvedPersona | null | undefined): Connec
   return p ? [...p.connectors] : [];
 }
 
-/** Assistant tools that belong to a feature (filtered once per persona, so the tool list stays a stable prefix). */
-export const TOOL_GATES: Readonly<Record<string, Gate>> = {
-  chat_vdp_update: { feature: 'vdp' },
-  chat_vdp_find_assets: { feature: 'vdp' },
-  // D-58: the Assistant's live Google reads follow their sources
-  chat_gmail_search: { connector: 'gmail' },
-  chat_gmail_thread: { connector: 'gmail' },
-  chat_drive_search: { connector: 'drive' },
-  chat_drive_read: { connector: 'drive' },
-  chat_calendar_events: { connector: 'calendar' },
-};
-
 /** Assistant read pages (`chat_app_read` page names) that belong to a feature. */
 export const READ_PAGE_GATES: Readonly<Record<string, Gate>> = {
   vdp: { feature: 'vdp' },

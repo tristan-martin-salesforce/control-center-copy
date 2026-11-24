@@ -26,11 +26,17 @@ import { ClosingReason } from './settings';
 // People and assets
 // ---------------------------------------------------------------------------
 
+/** `people.tier`: stakeholder importance (D-24 VIP list), an input to priority (lane 07 R2). */
+export const StakeholderTier = z.enum(['leader', 'manager', 'ae', 'teammate', 'customer_exec', 'customer', 'partner', 'normal', 'low']);
+export type StakeholderTier = z.infer<typeof StakeholderTier>;
+
 export const Person = PersonRef.extend({
   email: z.string().optional(),
   slackHandle: z.string().optional(),
   accountId: Id.nullable().default(null),
   title: z.string().optional(),
+  /** Absent = the default tier (`normal`). */
+  tier: StakeholderTier.optional(),
 });
 export type Person = z.infer<typeof Person>;
 
@@ -229,7 +235,18 @@ export const WorkItemRecord = z.object({
   rank: z.number().int().min(1).nullable(),
   rankReasons: z.array(RankReason),
   score: z.number().nullable().default(null),
+  /**
+   * Derived view field (lane 07 R2): high for ranks 1-5, medium for 6-15, low below, medium while unranked. It is
+   * never stored; `importance` holds the extractor's judgment and no re-rank writes it.
+   */
   priority: z.enum(['high', 'medium', 'low']).default('medium'),
+  /**
+   * `work_items.importance`: the extractor's (or your) judgment, an input to priority. Never a function of rank.
+   * Absent = normal (additive: older records and seeds carry none).
+   */
+  importance: z.enum(['critical', 'high', 'normal', 'low']).optional(),
+  /** `work_items.due_kind`: hard, soft or inferred. Absent = hard (or no due date). Soft and inferred dates decay at once when passed. */
+  dueKind: z.enum(['hard', 'soft', 'inferred']).optional(),
   signals: RankSignals.default({ customerFacing: false, fromManager: false, boost: 0 }),
   stale: StaleMark.nullable().default(null),
   userLockedFields: z.array(WorkItemLockableField).default([]),

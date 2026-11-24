@@ -23,7 +23,7 @@ import { contractWeightsFromRow, DEFAULT_OBLIGATION_WEIGHT, weightColumnsFromCon
 import { uuidFor } from '../ids';
 import { ext, isoReq, writeExt, writeKv, type ReadCtx, type WriteCtx } from './common';
 
-export const SECTIONS = ['profile', 'agentBehavior', 'sending', 'budgets', 'display', 'chat', 'time', 'scanning', 'closing', 'persona', 'feedback', 'guide'] as const;
+export const SECTIONS = ['profile', 'agentBehavior', 'sending', 'budgets', 'display', 'chat', 'time', 'scanning', 'closing', 'persona', 'feedback', 'guide', 'priority'] as const;
 export type Section = (typeof SECTIONS)[number];
 export const settingsKey = (s: Section) => `settings.${s}`;
 

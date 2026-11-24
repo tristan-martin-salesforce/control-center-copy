@@ -45,7 +45,6 @@ export function daySentence(d: HistoryDay): string {
   const s = d.summary;
   const parts: string[] = [d.isToday ? `Today so far, ${d.label}` : d.label];
   if (s.finished) parts.push(`${s.finished} finished`);
-  if (d.time.yourH) parts.push(`${fmtH(d.time.yourH)} yours (CF ${fmtH(d.time.cfH)} · CR ${fmtH(d.time.crH)}${d.time.unmarkedH ? ` · ${fmtH(d.time.unmarkedH)} not marked` : ''})`);
   if (s.meetings) parts.push(plural(s.meetings, 'meeting'));
   if (s.sent || s.dryRuns) parts.push([s.sent ? `${s.sent} sent` : '', s.dryRuns ? plural(s.dryRuns, 'dry run') : ''].filter(Boolean).join(', '));
   if (s.agentRuns) parts.push(`${plural(s.agentRuns, 'agent run')} in the background`);

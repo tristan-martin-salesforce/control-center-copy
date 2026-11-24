@@ -25,6 +25,7 @@ import { toast } from '@/client/toast';
 import { Facts, PanelSection, PanelShell } from '@/components/deals/panel-shell';
 import { useDetails } from '@/components/deals/context-frame';
 import { StatusBadge } from '@/components/domain';
+import { ActionRow } from '@/components/kit';
 import { clock, dayLabel } from '@/components/domain/lib/time';
 import { useRightPanel } from '@/components/shell/panel';
 import { Button, cn, Dialog, EmptyState, Icon, PanelError, Skeleton, useNow, useTimeZone } from '@/ui';
@@ -192,38 +193,37 @@ export function VdpPanel({ id, label }: { id: string; label?: string }) {
     >
       {focus ? (
         <PanelSection title="This change">
-          <div className="min-w-0 rounded-md border border-line-strong px-4 py-3" data-testid="vdp-focus">
-            <VdpItemRow step={focus} onDraft={openDraft} onPush={pushWith} tz={tz} />
-            {focus.gaps.some((g) => g.why) ? <p className="mt-2 text-caption text-muted">{[...new Set(focus.gaps.map((g) => g.why).filter(Boolean))].join(' · ')}</p> : null}
-            <p className="mt-2 text-caption text-muted">{focus.policy === 'auto' ? (d.autopilot.on ? 'VDP autopilot applies it by itself: every value it sends is a known fact.' : 'VDP autopilot could apply it by itself (it is off: Settings ▸ Sending).') : focus.disabled ? focus.disabled : 'A person decides this one: approve the suggestion, or change it first.'}</p>
+          <div className="min-w-0 rounded-md border border-line-strong p-1" data-testid="vdp-focus">
+            <div role="grid" aria-label="This change">
+              <VdpItemRow step={focus} onDraft={openDraft} onPush={pushWith} tz={tz} emphasis />
+            </div>
+            {focus.gaps.some((g) => g.why) ? <p className="mt-2 px-3 text-caption text-muted">{[...new Set(focus.gaps.map((g) => g.why).filter(Boolean))].join(' · ')}</p> : null}
+            <p className="mt-2 mb-2 px-3 text-caption text-muted">{focus.policy === 'auto' ? (d.autopilot.on ? 'VDP autopilot applies it by itself: every value it sends is a known fact.' : 'VDP autopilot could apply it by itself (it is off: Settings ▸ Sending).') : focus.disabled ? focus.disabled : 'A person decides this one: approve the suggestion, or change it first.'}</p>
           </div>
         </PanelSection>
       ) : null}
       <PanelSection title={d.steps.length ? `What's open · ${d.steps.length}` : "What's open"}>
         {d.steps.length ? (
-          <ol className="space-y-3" data-testid="vdp-steps">
-            {d.steps.map((s, i) => {
-              return (
-                <li key={s.id} className={cn('min-w-0 rounded-md border border-line px-4 py-3', s.disabled && s.apply && 'bg-surface-sunken')}>
-                  <VdpItemRow
-                    step={s}
-                    n={i + 1}
-                    onDraft={openDraft}
-                    onPush={pushWith}
-                    extra={
-                      s.kind === 'assets' ? (
-                        <a href="#vdp-assets" className="text-caption font-bold text-link hover:underline">
-                          {running ? 'See them below (still looking)' : 'See them below'}
-                        </a>
-                      ) : s.kind === 'add_assets_manually' && !running && d.backfill.last?.status !== 'done' ? (
-                        findButton('quiet')
-                      ) : null
-                    }
-                  />
-                </li>
-              );
-            })}
-          </ol>
+          <div role="grid" aria-label="What's open" className="-mx-3 min-w-0" data-testid="vdp-steps">
+            {d.steps.map((s, i) => (
+              <VdpItemRow
+                key={s.id}
+                step={s}
+                n={i + 1}
+                onDraft={openDraft}
+                onPush={pushWith}
+                extra={
+                  s.kind === 'assets' ? (
+                    <a href="#vdp-assets" className="text-caption font-bold text-link hover:underline">
+                      {running ? 'See them below (still looking)' : 'See them below'}
+                    </a>
+                  ) : s.kind === 'add_assets_manually' && !running && d.backfill.last?.status !== 'done' ? (
+                    findButton('quiet')
+                  ) : null
+                }
+              />
+            ))}
+          </div>
         ) : d.vdp && d.status.state === 'past' ? (
           <p className="text-body text-muted">An old fiscal period on closed opportunities: the app doesn&apos;t check it.</p>
         ) : (
@@ -240,11 +240,11 @@ export function VdpPanel({ id, label }: { id: string; label?: string }) {
           {groups.open.length ? <span className="ml-auto">{findButton('quiet')}</span> : null}
         </div>
         {groups.open.length ? (
-          <ul className="divide-y divide-line rounded-md border border-line">
+          <div role="grid" aria-label="Assets to add" className="rounded-md border border-line px-1">
             {groups.open.map((c) => (
               <CandidateRow key={c.id} c={c} company={d.companyName} hasVdp={!!d.vdp} onDraft={openDraft} />
             ))}
-          </ul>
+          </div>
         ) : (
           <EmptyState
             size="inline"
@@ -291,6 +291,7 @@ function useSetCandidate(c: VdpAssetCandidate) {
   });
 }
 
+/** One asset the app found for this VDP, an ActionRow: its title and kind, why, where it was seen; its one next step. */
 function CandidateRow({ c, company, hasVdp, onDraft }: { c: VdpAssetCandidate; company: string; hasVdp: boolean; onDraft: (id: string) => void }) {
   const set = useSetCandidate(c);
   // Edit: the Apply's inputs first (Title, the Type and Deliverable as VDP's own choices, Description)
@@ -300,14 +301,61 @@ function CandidateRow({ c, company, hasVdp, onDraft }: { c: VdpAssetCandidate; c
     onDraft(d.id);
   });
   const src = c.sources[0];
+  const seen = src ? [src.label, src.at ? src.at.slice(0, 10) : null, c.sources.length > 1 ? `+${c.sources.length - 1} more` : null].filter(Boolean).join(' · ') : null;
+  const dismiss = (
+    <Button size="sm" variant="quiet" loading={set.isPending && set.variables === 'dismissed'} onClick={() => set.mutate('dismissed')}>
+      Dismiss
+    </Button>
+  );
+  const trailing =
+    c.status === 'unsure' ? (
+      <>
+        <Button size="sm" variant="secondary" loading={set.isPending && set.variables === 'suggested'} onClick={() => set.mutate('suggested')} data-testid="vdp-candidate-confirm">
+          It&apos;s for {company}
+        </Button>
+        <Button size="sm" variant="quiet" loading={set.isPending && set.variables === 'dismissed'} onClick={() => set.mutate('dismissed')}>
+          Not for this VDP
+        </Button>
+      </>
+    ) : c.status === 'added' ? (
+      <Button size="sm" variant="quiet" loading={set.isPending} onClick={() => set.mutate('suggested')} title="The next VDP read confirms it and closes it">
+        Not added yet
+      </Button>
+    ) : c.draftId ? (
+      <Button size="sm" variant="secondary" onClick={() => onDraft(c.draftId!)} data-testid="vdp-candidate-review">
+        Review & apply
+      </Button>
+    ) : c.apply && editing ? null : c.apply ? (
+      <>
+        <Button size="sm" variant="secondary" loading={stage.isPending} onClick={() => stage.mutate({ key: c.apply!.key, values: {} })} title="The app can do this: it adds it to the VDP's Assets tab" data-testid="vdp-candidate-apply">
+          Apply
+        </Button>
+        {editableFields(c.apply).length ? (
+          <Button size="sm" variant="quiet" onClick={() => setEditing(true)} data-testid="vdp-candidate-edit">
+            Edit
+          </Button>
+        ) : null}
+        {dismiss}
+      </>
+    ) : (
+      dismiss
+    );
   return (
-    <li className="min-w-0 space-y-1.5 px-4 py-3" data-candidate={c.status} data-testid="vdp-candidate">
-      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-        <a href={c.url} target="_blank" rel="noreferrer" className="min-w-0 font-bold text-fg-heading hover:underline">
+    <ActionRow
+      id={c.id}
+      data-candidate={c.status}
+      data-testid="vdp-candidate"
+      title={c.title}
+      titleNode={
+        <a href={c.url} target="_blank" rel="noreferrer" className="hover:underline" onClick={(e) => e.stopPropagation()}>
           {c.title}
         </a>
-        <span className="text-caption text-muted">{KIND_LABEL[c.kind]}</span>
-        {c.status === 'unsure' ? (
+      }
+      meta={<span>{KIND_LABEL[c.kind]}</span>}
+      dashed={c.status === 'unsure' || c.origin === 'backfill'}
+      edge={c.status === 'unsure' ? 'warning' : c.origin === 'backfill' ? 'ai' : 'none'}
+      badge={
+        c.status === 'unsure' ? (
           <StatusBadge tone="warning" icon="question">
             Confirm
           </StatusBadge>
@@ -319,72 +367,20 @@ function CandidateRow({ c, company, hasVdp, onDraft }: { c: VdpAssetCandidate; c
           <StatusBadge tone="ai" icon="sparkle">
             Found by research
           </StatusBadge>
-        ) : null}
-      </div>
-      <p className="max-w-[68ch] text-caption text-muted">
-        {c.why}
-        {src ? (
-          <>
-            {' · '}
-            {src.url ? (
-              <a href={src.url} target="_blank" rel="noreferrer" className="text-link hover:underline">
-                {src.label}
-              </a>
-            ) : (
-              src.label
-            )}
-            {src.at ? ` · ${src.at.slice(0, 10)}` : ''}
-            {c.sources.length > 1 ? ` · +${c.sources.length - 1} more` : ''}
-          </>
-        ) : null}
-      </p>
-      <div className="flex flex-wrap items-center gap-2 pt-0.5">
-        {c.status === 'unsure' ? (
-          <>
-            <Button size="sm" variant="secondary" loading={set.isPending && set.variables === 'suggested'} onClick={() => set.mutate('suggested')} data-testid="vdp-candidate-confirm">
-              It&apos;s for {company}
-            </Button>
-            <Button size="sm" variant="quiet" loading={set.isPending && set.variables === 'dismissed'} onClick={() => set.mutate('dismissed')}>
-              Not for this VDP
-            </Button>
-          </>
-        ) : c.status === 'added' ? (
-          <>
-            <span className="text-caption text-muted">The next VDP read confirms it and closes it.</span>
-            <Button size="sm" variant="quiet" loading={set.isPending} onClick={() => set.mutate('suggested')}>
-              Not added yet
-            </Button>
-          </>
-        ) : c.draftId ? (
-          <Button size="sm" variant="secondary" onClick={() => onDraft(c.draftId!)} data-testid="vdp-candidate-review">
-            Review & apply
-          </Button>
-        ) : c.apply && editing ? null : c.apply ? (
-          <>
-            <Button size="sm" variant="secondary" loading={stage.isPending} onClick={() => stage.mutate({ key: c.apply!.key, values: {} })} data-testid="vdp-candidate-apply">
-              Apply
-            </Button>
-            {editableFields(c.apply).length ? (
-              <Button size="sm" variant="quiet" onClick={() => setEditing(true)} data-testid="vdp-candidate-edit">
-                Edit
-              </Button>
-            ) : null}
-            <span className="text-caption text-muted">the app can fix: adds it to the VDP&apos;s Assets tab</span>
-            <Button size="sm" variant="quiet" loading={set.isPending && set.variables === 'dismissed'} onClick={() => set.mutate('dismissed')}>
-              Dismiss
-            </Button>
-          </>
-        ) : (
-          <>
-            <DisabledReason text={hasVdp ? 'Not an http(s) link: VDP takes http(s) links only' : 'It goes on the VDP once that is created (Activity ▸ VDP)'} />
-            <Button size="sm" variant="quiet" loading={set.isPending && set.variables === 'dismissed'} onClick={() => set.mutate('dismissed')}>
-              Dismiss
-            </Button>
-          </>
-        )}
-      </div>
-      {c.apply && editing && !c.draftId && c.status === 'suggested' ? <ApplyForm apply={c.apply} pending={stage.isPending} onStage={(values) => stage.mutate({ key: c.apply!.key, values })} onCancel={() => setEditing(false)} /> : null}
-    </li>
+        ) : null
+      }
+      source={src?.url ? { label: src.label, url: src.url } : null}
+      why={[c.why, src?.url ? null : seen, c.status === 'added' ? 'The next VDP read confirms it and closes it' : null].filter(Boolean).join(' · ')}
+      whyTitle={[c.why, seen].filter(Boolean).join(' · ')}
+      trailing={<span className="flex flex-wrap items-center justify-end gap-2">{trailing}</span>}
+      extra={
+        !c.draftId && c.status !== 'unsure' && c.status !== 'added' && !c.apply ? (
+          <DisabledReason text={hasVdp ? 'Not an http(s) link: VDP takes http(s) links only' : 'It goes on the VDP once that is created (Activity ▸ VDP)'} />
+        ) : c.apply && editing && !c.draftId && c.status === 'suggested' ? (
+          <ApplyForm apply={c.apply} pending={stage.isPending} onStage={(values) => stage.mutate({ key: c.apply!.key, values })} onCancel={() => setEditing(false)} />
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -398,30 +394,28 @@ function ClosedCandidates({ list }: { list: VdpAssetCandidate[] }) {
         {[inVdp ? `${inVdp} now in VDP` : null, dismissed ? `${dismissed} dismissed` : null].filter(Boolean).join(' · ')}
       </button>
       {open ? (
-        <ul className="mt-2 space-y-1.5">
+        <div role="grid" aria-label="Closed assets" className="mt-2">
           {list.map((c) => (
             <ClosedRow key={c.id} c={c} />
           ))}
-        </ul>
+        </div>
       ) : null}
     </div>
   );
 }
 
+/** An asset that is done: in VDP, or dismissed (Put back). */
 function ClosedRow({ c }: { c: VdpAssetCandidate }) {
   const set = useSetCandidate(c);
   return (
-    <li className="flex min-w-0 items-center gap-2 text-caption">
-      <a href={c.url} target="_blank" rel="noreferrer" className="min-w-0 truncate text-fg hover:underline">
-        {c.title}
-      </a>
-      <span className="shrink-0 text-muted">{c.status === 'in_vdp' ? 'in VDP' : 'dismissed'}</span>
-      {c.status === 'dismissed' ? (
-        <button type="button" className="ml-auto shrink-0 font-bold text-link hover:underline" onClick={() => set.mutate('suggested')}>
-          Put back
-        </button>
-      ) : null}
-    </li>
+    <ActionRow
+      id={c.id}
+      title={c.title}
+      done={c.status === 'dismissed'}
+      source={{ label: 'Open', url: c.url }}
+      why={c.status === 'in_vdp' ? 'In VDP' : 'Dismissed'}
+      verb={c.status === 'dismissed' ? { label: 'Put back', onClick: () => set.mutate('suggested'), loading: set.isPending } : null}
+    />
   );
 }
 

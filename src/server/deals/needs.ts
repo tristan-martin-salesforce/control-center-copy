@@ -25,6 +25,8 @@ export interface DealsNeedsSource {
    */
   requests: ReadonlyArray<Pick<DcRequest, 'oppId' | 'status'> & Partial<Pick<DcRequest, 'stage' | 'oppName' | 'updatedAt'>>>;
   decisions: readonly NeedDecision[];
+  /** D-103 (d): the last call on each account (`lastCallsByAccount`). */
+  calls?: ReadonlyMap<string, string>;
   /** DC-32: open opps a live VDP I'm on links (the VDP mirror; `vdpOppIdsOf`). */
   vdpOppIds?: ReadonlySet<string>;
 }
@@ -41,6 +43,8 @@ export function dealsNeedsFor(s: DealsNeedsSource): DealsNeed[] {
     vdpOppIds: s.vdpOppIds,
     chase: s.requests.filter((r) => r.stage === 'handed_off' && liveDcRequest({ status: r.status as DcRequest['status'] })).map((r) => ({ oppId: r.oppId, oppName: r.oppName ?? r.oppId, since: r.updatedAt ?? s.now.toISOString() })),
     decisions: s.decisions,
+    calls: s.calls,
+    timezone: s.timezone || undefined,
     today: dayOf(s.now, s.timezone || undefined),
     now: s.now.toISOString(),
     features: dealsFeaturesOf(s.persona),
@@ -48,10 +52,10 @@ export function dealsNeedsFor(s: DealsNeedsSource): DealsNeed[] {
 }
 
 /** The decisions a decideNeed stores, one per subject. A DC gap's subjects must be opps the app has. */
-export function planNeedDecisions(b: DecideNeedRequest, now: Date, opps: readonly GapOpp[], timezone?: string): NeedDecision[] {
+export function planNeedDecisions(b: DecideNeedRequest, now: Date, opps: readonly GapOpp[], timezone?: string, calls?: ReadonlyMap<string, string>): NeedDecision[] {
   if (b.kind === 'snooze' && b.until && Date.parse(b.until) <= now.getTime()) throw new AppError('validation', 'A snooze ends in the future');
   // DC-30: the baseline names the fiscal quarter its hours are of
-  const baselines = b.rule === 'dc_gap' ? dcGapBaselines(opps, b.subjectIds, dayOf(now, timezone || undefined)) : null;
+  const baselines = b.rule === 'dc_gap' ? dcGapBaselines(opps, b.subjectIds, dayOf(now, timezone || undefined), calls, calls ? now.toISOString() : undefined) : null;
   if (baselines) for (const id of b.subjectIds) if (!opps.some((o) => o.id === id)) throw new AppError('not_found', `No opportunity "${id}" in the app: a DC gap is set aside per opp (getDeals needs[].opps[].oppId)`);
   const at = now.toISOString();
   return [...new Set(b.subjectIds)].map((subjectId) => ({

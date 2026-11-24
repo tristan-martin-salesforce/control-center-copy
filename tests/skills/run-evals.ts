@@ -6,17 +6,18 @@
  *   npx vite-node tests/skills/run-evals.ts [--only id1,id2] [--budget 2.75]
  *
  * Output: a summary on stdout and a JSON report in $CC_STATE_DIR/evals/ (default
- * ~/Library/Application Support/control-center/evals/). Placeholder data only.
+ * ~/Library/Application Support/command-center/evals/). Placeholder data only.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildBriefPrompt, parseBriefReply, type BriefValidation } from '../../src/engines/briefs/prompt/build';
-import { agentSdkComplete, type Complete } from '../../src/engines/nba/prompt/complete';
+import type { Complete } from '../../src/engines/nba/prompt/complete';
 import { buildIntentsPrompt, buildRankPrompt, parseIntentsReply, parseRankReply, type ParseResult } from '../../src/engines/nba/prompt/enrich';
 import type { Issue } from '../../src/engines/nba/prompt/json';
 import { generateNba, repairUserMessage } from '../../src/engines/nba/prompt/run';
 import { docToPlainText } from '../../src/engines/nba/prompt/tiptap';
 import { stateDir } from '../../src/engines/voice/store';
+import { agentSdkComplete } from '../../src/llm/complete-sdk';
 import { exampleVoice, nbaCtx, type Check, type CheckResult } from './eval-kit';
 import { SCENARIOS } from './scenarios';
 

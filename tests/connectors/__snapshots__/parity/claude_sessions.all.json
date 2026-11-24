@@ -1,0 +1,863 @@
+{
+  "items": [
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-busy",
+      "dedupeKey": "claude:s-busy",
+      "contentHash": "159c49a905d3b781",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Demo org build",
+      "excerpt": "Starting",
+      "redacted": false,
+      "threadRef": "claude-session:s-busy",
+      "payload": {
+        "sessionId": "s-busy",
+        "hostSessionId": "local_busy",
+        "status": "busy",
+        "statusReason": "registry busy",
+        "statusConfidence": "certain",
+        "statusSoft": false,
+        "resumable": false,
+        "hasLiveProcess": true,
+        "entrypoint": "claude-desktop",
+        "statusAgeSeconds": 3600,
+        "title": "Demo org build",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Build the demo org",
+        "summary": "Starting",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-apierr",
+      "dedupeKey": "claude:s-apierr",
+      "contentHash": "899ad04f5cbd61a1",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Go",
+      "excerpt": "",
+      "redacted": false,
+      "threadRef": "claude-session:s-apierr",
+      "payload": {
+        "sessionId": "s-apierr",
+        "status": "errored",
+        "statusReason": "trailing api_error",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "errorKind": "api_error",
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Go",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Go",
+        "summary": "",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-ask",
+      "dedupeKey": "claude:s-ask",
+      "contentHash": "4fa21ad3dc200b38",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Plan the migration",
+      "excerpt": "I have a question.",
+      "redacted": false,
+      "threadRef": "claude-session:s-ask",
+      "payload": {
+        "sessionId": "s-ask",
+        "status": "waiting",
+        "waitingFor": "input needed",
+        "statusReason": "pending AskUserQuestion",
+        "statusConfidence": "certain",
+        "statusSoft": false,
+        "resumable": false,
+        "hasLiveProcess": true,
+        "entrypoint": "claude-desktop",
+        "statusAgeSeconds": 3600,
+        "title": "Plan the migration",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Plan the migration",
+        "summary": "I have a question.",
+        "backgroundAgents": 1,
+        "backgroundAgentLabels": [
+          "Researching ACME_CORP API limits"
+        ],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-cctag",
+      "dedupeKey": "claude:s-cctag",
+      "contentHash": "c691de72b6f65845",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "[cc:run_123] Build a demo org for ACME_CORP",
+      "excerpt": "Demo org built: https://demo.example.com",
+      "redacted": false,
+      "threadRef": "claude-session:s-cctag",
+      "payload": {
+        "sessionId": "s-cctag",
+        "hostSessionId": "local_cctag123",
+        "ccTag": {
+          "id": "run_123",
+          "source": "first_prompt",
+          "matchesSessionId": false,
+          "matchesHostSessionId": false
+        },
+        "status": "idle",
+        "statusReason": "live process idle after assistant turn",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": false,
+        "hasLiveProcess": true,
+        "entrypoint": "claude-desktop",
+        "statusAgeSeconds": 3600,
+        "title": "[cc:run_123] Build a demo org for ACME_CORP",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "[cc:run_123] Build a demo org for ACME_CORP",
+        "summary": "Demo org built: https://demo.example.com",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-compact",
+      "dedupeKey": "claude:s-compact",
+      "contentHash": "bd72605eabe2449c",
+      "occurredAt": "2026-03-10T17:06:00.000Z",
+      "title": "Original task prompt",
+      "excerpt": "Continuing: all finished.",
+      "redacted": false,
+      "threadRef": "claude-session:s-compact",
+      "payload": {
+        "sessionId": "s-compact",
+        "status": "done",
+        "statusReason": "assistant turn ended",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Original task prompt",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:06:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:06:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Original task prompt",
+        "summary": "Continuing: all finished.",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 1
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-courtesy",
+      "dedupeKey": "claude:s-courtesy",
+      "contentHash": "c0d7f53f72162e2e",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Fix it",
+      "excerpt": "All done. Let me know if you need anything else.",
+      "redacted": false,
+      "threadRef": "claude-session:s-courtesy",
+      "payload": {
+        "sessionId": "s-courtesy",
+        "status": "done",
+        "statusReason": "assistant turn ended",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Fix it",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Fix it",
+        "summary": "All done. Let me know if you need anything else.",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-custom-title",
+      "dedupeKey": "claude:s-custom-title",
+      "contentHash": "c42af57ea75a1947",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "My Named Session",
+      "excerpt": "ok",
+      "redacted": false,
+      "threadRef": "claude-session:s-custom-title",
+      "payload": {
+        "sessionId": "s-custom-title",
+        "status": "done",
+        "statusReason": "assistant turn ended",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "My Named Session",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "x",
+        "summary": "ok",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-done",
+      "dedupeKey": "claude:s-done",
+      "contentHash": "640ad457c9e458b7",
+      "occurredAt": "2026-03-10T17:03:00.000Z",
+      "title": "Fix the typo",
+      "excerpt": "Fixed the typo in README.md and committed.",
+      "redacted": false,
+      "threadRef": "claude-session:s-done",
+      "payload": {
+        "sessionId": "s-done",
+        "status": "done",
+        "statusReason": "assistant turn ended",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Fix the typo",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:03:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:03:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Fix the typo",
+        "summary": "Fixed the typo in README.md and committed.",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 1,
+        "filesTouched": [
+          "README.md"
+        ],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-idle-live",
+      "dedupeKey": "claude:s-idle-live",
+      "contentHash": "c859aaba975ecb37",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Summarize",
+      "excerpt": "Here is the summary.",
+      "redacted": false,
+      "threadRef": "claude-session:s-idle-live",
+      "payload": {
+        "sessionId": "s-idle-live",
+        "status": "idle",
+        "statusReason": "live process idle after assistant turn",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": false,
+        "hasLiveProcess": true,
+        "entrypoint": "claude-desktop",
+        "statusAgeSeconds": 3600,
+        "title": "Summarize",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Summarize",
+        "summary": "Here is the summary.",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-interrupted",
+      "dedupeKey": "claude:s-interrupted",
+      "contentHash": "468366b404949770",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Run the long job",
+      "excerpt": "",
+      "redacted": false,
+      "threadRef": "claude-session:s-interrupted",
+      "payload": {
+        "sessionId": "s-interrupted",
+        "status": "errored",
+        "statusReason": "pending tool call, process gone",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "errorKind": "interrupted",
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Run the long job",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Run the long job",
+        "summary": "",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-plan",
+      "dedupeKey": "claude:s-plan",
+      "contentHash": "830d7dddebf5a781",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Plan it",
+      "excerpt": "",
+      "redacted": false,
+      "threadRef": "claude-session:s-plan",
+      "payload": {
+        "sessionId": "s-plan",
+        "status": "waiting",
+        "waitingFor": "plan approval",
+        "statusReason": "pending ExitPlanMode",
+        "statusConfidence": "certain",
+        "statusSoft": false,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Plan it",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Plan it",
+        "summary": "",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-question",
+      "dedupeKey": "claude:s-question",
+      "contentHash": "ddb2456357272d5d",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Refactor it",
+      "excerpt": "I can refactor the module now. Want me to proceed with the larger rewrite?",
+      "redacted": false,
+      "threadRef": "claude-session:s-question",
+      "payload": {
+        "sessionId": "s-question",
+        "status": "waiting",
+        "waitingFor": "question",
+        "statusReason": "final message asks the user",
+        "statusConfidence": "medium",
+        "statusSoft": true,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Refactor it",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Refactor it",
+        "summary": "I can refactor the module now. Want me to proceed with the larger rewrite?",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-scheduled",
+      "dedupeKey": "claude:s-scheduled",
+      "contentHash": "47c592ba98b6b8d1",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "(untitled session)",
+      "excerpt": "Nightly task finished.",
+      "redacted": false,
+      "threadRef": "claude-session:s-scheduled",
+      "payload": {
+        "sessionId": "s-scheduled",
+        "status": "done",
+        "statusReason": "assistant turn ended",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "(untitled session)",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "humanPromptCount": 0,
+        "humanTurns": [],
+        "summary": "Nightly task finished.",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": true,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-sidechain",
+      "dedupeKey": "claude:s-sidechain",
+      "contentHash": "1a472c23f35bbca0",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Delegate",
+      "excerpt": "Delegated. Done.",
+      "redacted": false,
+      "threadRef": "claude-session:s-sidechain",
+      "payload": {
+        "sessionId": "s-sidechain",
+        "status": "done",
+        "statusReason": "assistant turn ended",
+        "statusConfidence": "high",
+        "statusSoft": false,
+        "resumable": true,
+        "hasLiveProcess": false,
+        "entrypoint": "claude-desktop",
+        "title": "Delegate",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Delegate",
+        "summary": "Delegated. Done.",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    },
+    {
+      "connector": "claude_sessions",
+      "kind": "claude_session",
+      "externalId": "s-waiting-dialog",
+      "dedupeKey": "claude:s-waiting-dialog",
+      "contentHash": "61a4bb94aebf8386",
+      "occurredAt": "2026-03-10T17:01:00.000Z",
+      "title": "Deploy it",
+      "excerpt": "",
+      "redacted": false,
+      "threadRef": "claude-session:s-waiting-dialog",
+      "payload": {
+        "sessionId": "s-waiting-dialog",
+        "status": "waiting",
+        "waitingFor": "dialog open",
+        "statusReason": "registry waiting",
+        "statusConfidence": "certain",
+        "statusSoft": false,
+        "resumable": false,
+        "hasLiveProcess": true,
+        "entrypoint": "claude-desktop",
+        "statusAgeSeconds": 3600,
+        "title": "Deploy it",
+        "cwd": "/work/acme",
+        "repo": "acme",
+        "startedAt": "2026-03-10T17:00:00.000Z",
+        "lastActivityAt": "2026-03-10T17:01:00.000Z",
+        "lastHumanPromptAt": "2026-03-10T17:00:00.000Z",
+        "humanPromptCount": 1,
+        "humanTurns": [
+          [
+            "2026-03-10T17:00:00.000Z",
+            "2026-03-10T17:01:00.000Z"
+          ]
+        ],
+        "firstPrompt": "Deploy it",
+        "summary": "",
+        "backgroundAgents": 0,
+        "backgroundAgentLabels": [],
+        "filesTouchedCount": 0,
+        "filesTouched": [],
+        "archived": false,
+        "scheduled": false,
+        "compactions": 0
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "kind": "session",
+      "ref": "claude:registry",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T18:00:00.000Z",
+      "meta": {
+        "live": 5,
+        "stale": 1,
+        "transcripts": 16
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-busy",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 689,
+        "size": 689,
+        "status": "busy"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-apierr",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 532,
+        "size": 532,
+        "status": "errored"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-ask",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 697,
+        "size": 697,
+        "status": "waiting"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-cctag",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 659,
+        "size": 659,
+        "status": "idle"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-compact",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:06:00.000Z",
+      "meta": {
+        "offset": 1557,
+        "size": 1557,
+        "status": "done"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-courtesy",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 636,
+        "size": 636,
+        "status": "done"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-custom-title",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 1071,
+        "size": 1071,
+        "status": "done"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-done",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:03:00.000Z",
+      "meta": {
+        "offset": 1302,
+        "size": 1302,
+        "status": "done"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-idle-live",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 613,
+        "size": 613,
+        "status": "idle"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-interrupted",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 659,
+        "size": 659,
+        "status": "errored"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-plan",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 633,
+        "size": 633,
+        "status": "waiting"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-question",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 667,
+        "size": 667,
+        "status": "waiting"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-scheduled",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 670,
+        "size": 670,
+        "status": "done"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-sidechain",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 933,
+        "size": 933,
+        "status": "done"
+      }
+    },
+    {
+      "kind": "session",
+      "ref": "s-waiting-dialog",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T17:01:00.000Z",
+      "meta": {
+        "offset": 658,
+        "size": 658,
+        "status": "waiting"
+      }
+    }
+  ],
+  "nextCursor": {
+    "value": "{\"files\":{\"<dir>/projects/-work-acme/s-busy.jsonl\":{\"o\":689,\"i\":0,\"eh\":\"159c49a905d3b781\",\"mh\":\"7e56bd061c45a004\",\"ms\":\"busy\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-apierr.jsonl\":{\"o\":532,\"i\":0,\"eh\":\"899ad04f5cbd61a1\",\"mh\":\"9659197825ca416c\",\"ms\":\"errored\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-ask.jsonl\":{\"o\":697,\"i\":0,\"eh\":\"4fa21ad3dc200b38\",\"mh\":\"21090e1886fd91ff\",\"ms\":\"waiting\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-cctag.jsonl\":{\"o\":659,\"i\":0,\"eh\":\"c691de72b6f65845\",\"mh\":\"8ee18f0483c999c8\",\"ms\":\"idle\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-compact.jsonl\":{\"o\":1557,\"i\":0,\"eh\":\"bd72605eabe2449c\",\"mh\":\"95a44149f8a6451f\",\"ms\":\"done\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-courtesy.jsonl\":{\"o\":636,\"i\":0,\"eh\":\"c0d7f53f72162e2e\",\"mh\":\"940b5be7bcfbc492\",\"ms\":\"done\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-custom-title.jsonl\":{\"o\":1071,\"i\":0,\"eh\":\"c42af57ea75a1947\",\"mh\":\"66357a6a4b22d6dd\",\"ms\":\"done\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-done.jsonl\":{\"o\":1302,\"i\":0,\"eh\":\"640ad457c9e458b7\",\"mh\":\"9df8256c08e2c472\",\"ms\":\"done\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-idle-live.jsonl\":{\"o\":613,\"i\":0,\"eh\":\"c859aaba975ecb37\",\"mh\":\"fbccbec89597cdb8\",\"ms\":\"idle\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-interrupted.jsonl\":{\"o\":659,\"i\":0,\"eh\":\"468366b404949770\",\"mh\":\"50658ee14682c555\",\"ms\":\"errored\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-plan.jsonl\":{\"o\":633,\"i\":0,\"eh\":\"830d7dddebf5a781\",\"mh\":\"44d5f58356c50771\",\"ms\":\"waiting\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-question.jsonl\":{\"o\":667,\"i\":0,\"eh\":\"ddb2456357272d5d\",\"mh\":\"f9d5cc7890c034c5\",\"ms\":\"waiting\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-scheduled.jsonl\":{\"o\":670,\"i\":0,\"eh\":\"47c592ba98b6b8d1\",\"mh\":\"ac29b7a644fdf37e\",\"ms\":\"done\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-sdk.jsonl\":{\"o\":569,\"i\":0,\"tv\":1},\"<dir>/projects/-work-acme/s-sidechain.jsonl\":{\"o\":933,\"i\":0,\"eh\":\"1a472c23f35bbca0\",\"mh\":\"464de623f6d72709\",\"ms\":\"done\",\"m\":1773165600000,\"tv\":1},\"<dir>/projects/-work-acme/s-waiting-dialog.jsonl\":{\"o\":658,\"i\":0,\"eh\":\"61a4bb94aebf8386\",\"mh\":\"29fae18801efe9f3\",\"ms\":\"waiting\",\"m\":1773165600000,\"tv\":1}}}",
+    "at": "2026-03-10T18:00:00.000Z"
+  },
+  "complete": true
+}

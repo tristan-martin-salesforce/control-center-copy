@@ -35,13 +35,30 @@ export async function openInTerminal(command: string): Promise<{ ok: boolean }> 
   return { ok: r.code === 0 };
 }
 
-export function spawnDetached(cmd: string, args: string[]): { ok: boolean } {
-  try {
-    const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
-    child.on('error', () => undefined);
-    child.unref();
-    return { ok: true };
-  } catch {
-    return { ok: false };
-  }
+/**
+ * Start `cmd` detached and resolve once it has started ('spawn') or failed to ('error', e.g. ENOENT for a program
+ * that is not installed). Before, it answered ok before the async ENOENT, so "Restart devbar: started" showed for a
+ * devbar that does not exist (CONN-5). The error is its code only ("ENOENT").
+ */
+export function spawnDetached(cmd: string, args: string[], spawnFn: typeof spawn = spawn): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawnFn(cmd, args, { detached: true, stdio: 'ignore' });
+    } catch (e) {
+      resolve({ ok: false, error: String((e as { code?: unknown })?.code ?? 'spawn_failed') });
+      return;
+    }
+    let done = false;
+    const finish = (r: { ok: boolean; error?: string }) => {
+      if (done) return;
+      done = true;
+      resolve(r);
+    };
+    child.once('error', (e) => finish({ ok: false, error: String((e as { code?: unknown }).code ?? 'spawn_failed') }));
+    child.once('spawn', () => {
+      child.unref();
+      finish({ ok: true });
+    });
+  });
 }

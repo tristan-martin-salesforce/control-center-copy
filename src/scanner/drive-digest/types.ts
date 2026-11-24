@@ -44,6 +44,8 @@ export interface DriveDigest {
   slides?: SlideDigest[];
   sections?: SectionDigest[];
   sheets?: SheetDigest[];
+  /** Tabs of the sheet not read this sample (past maxSheetTabs); the change list says so instead of hiding them. */
+  sheetsNotRead?: number;
   /** Files whose content we cannot read as text (pdf, pptx upload…): digest is size + modifiedTime only. */
   opaque?: { size?: number; mimeType?: string };
   /** Hash of the structural content only (never modifiedTime or user). Equal hash means "no change we can see". */
@@ -61,9 +63,12 @@ export interface DriveSample {
 export interface TextDelta {
   before: string;
   after: string;
-  /** Lines present only in the new text / only in the old text (each capped). */
+  /** Lines present only in the new text / only in the old text (each capped, the first MAX_LINES). */
   linesAdded: string[];
   linesRemoved: string[];
+  /** How many lines were added / removed in all, when more than the lists show (caps audit 2026-11-21). */
+  linesAddedTotal?: number;
+  linesRemovedTotal?: number;
 }
 
 export interface SlideChange extends TextDelta {

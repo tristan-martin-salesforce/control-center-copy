@@ -3,14 +3,17 @@
  * Scan ledger: every scan run with its connector, real status, window and counts; trigger, model, scope and
  * cost join as the pane gets wider (`pane` container queries). A row expands in place (click or Space) to show
  * what was scanned and any coverage gap; Enter opens that connector in the docked panel. No side sheet.
+ * The ledger is paged (GET /scans `cursor` → `nextCursor`, caps audit F-2): the newest 100 stay live, and "Show 100
+ * more" appends older runs by the cursor, so every run back to the first is reachable.
  */
-import { useMemo, useState, type KeyboardEvent } from 'react';
-import type { Connector, ScanRun } from '@/contract';
+import { useCallback, useMemo, useState, type KeyboardEvent } from 'react';
+import type { Connector, ScanRun, ScansPayload } from '@/contract';
+import { api } from '@/client/api';
 import { clock, dayLabel, dur, minutesBetween, sameDay } from '@/components/domain/lib/time';
 import { Facts } from '@/components/panels/bits';
 import { SCAN_STATUS } from '@/components/panels/derive';
 import { useApi } from '@/client/hooks';
-import { cn, EmptyState, Icon, PanelError, Skeleton, usePanelState, useTimeZone } from '@/ui';
+import { Button, cn, EmptyState, Icon, PanelError, Skeleton, usePanelState, useTimeZone } from '@/ui';
 import { filterScans, usd } from './derive';
 
 const TRIGGER: Record<ScanRun['kind'], string> = { poll: 'Scheduled poll', head: 'Head check', backfill: 'Backfill', reconcile: 'Reconcile', manual: 'Manual rescan' };
@@ -27,13 +30,60 @@ function windowLabel(r: Pick<ScanRun, 'windowStart' | 'windowEnd'>, tz?: string)
   return `${short(r.windowStart)} ${clock(r.windowStart, tz)} → ${short(r.windowEnd)} ${clock(r.windowEnd, tz)}`;
 }
 
+/** Runs per page (the route's default `limit`). */
+export const LEDGER_PAGE = 100;
+
+/**
+ * The live first page plus the older pages loaded by Show more. A loaded window keeps every row it showed (a new scan
+ * pushing a row off the live page does not drop it); a row on the live page is its fresh copy.
+ */
+export function useScanPages(first: ScansPayload | undefined) {
+  const [older, setOlder] = useState<{ rows: ScanRun[]; cursor: string | null } | null>(null);
+  const [state, setState] = useState({ busy: false, failed: false });
+  const runs = useMemo(() => {
+    const live = first?.runs ?? [];
+    if (!older) return live;
+    const ids = new Set(live.map((r) => r.id));
+    return [...live, ...older.rows.filter((r) => !ids.has(r.id))];
+  }, [first, older]);
+  const cursor = older ? older.cursor : (first?.nextCursor ?? null);
+  const showMore = useCallback(async () => {
+    if (!cursor || state.busy) return;
+    setState({ busy: true, failed: false });
+    try {
+      const page = await api('getScans', { query: { cursor, limit: LEDGER_PAGE } });
+      setOlder((o) => ({ rows: [...(o?.rows ?? first?.runs ?? []), ...page.runs], cursor: page.nextCursor ?? null }));
+      setState({ busy: false, failed: false });
+    } catch {
+      setState({ busy: false, failed: true });
+    }
+  }, [cursor, state.busy, first]);
+  return { runs, more: !!cursor, total: first?.total ?? runs.length, showMore, ...state };
+}
+
 export function LedgerTab({ connectors, filterId, onFilter, onOpenConnector }: { connectors: Connector[]; filterId: string; onFilter: (id: string) => void; onOpenConnector: (id: string) => void }) {
   const tz = useTimeZone();
   const q = useApi('getScans', { query: {} });
+  const pages = useScanPages(q.data);
   const [open, setOpen] = useState<string | null>(null);
-  const runs = useMemo(() => filterScans(q.data?.runs ?? [], filterId), [q.data, filterId]);
+  const runs = useMemo(() => filterScans(pages.runs, filterId), [pages.runs, filterId]);
   const label = (id: string) => connectors.find((c) => c.id === id)?.label ?? id;
   const state = usePanelState('health.ledger', { loading: q.isLoading, error: q.data ? null : q.error, empty: !runs.length });
+
+  // older runs are one click away, also when the connector filter has none among the loaded ones
+  const moreRow = pages.more ? (
+    <div className="flex flex-wrap items-center gap-3 px-2 pt-3 pb-2" data-testid="ledger-more">
+      <Button variant="secondary" size="sm" onClick={() => void pages.showMore()} aria-disabled={pages.busy || undefined} aria-busy={pages.busy || undefined} data-testid="ledger-more-button">
+        {pages.busy ? 'Loading…' : `Show ${Math.min(LEDGER_PAGE, Math.max(1, pages.total - pages.runs.length))} more`}
+      </Button>
+      <span className="text-caption text-muted tabular-nums">{`${pages.runs.length} of ${pages.total} runs loaded`}</span>
+      {pages.failed ? (
+        <span className="text-caption text-danger-700" role="alert">
+          Couldn’t load more. Try again.
+        </span>
+      ) : null}
+    </div>
+  ) : null;
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>, r: ScanRun) => {
     if (e.target !== e.currentTarget) return;
@@ -67,10 +117,14 @@ export function LedgerTab({ connectors, filterId, onFilter, onOpenConnector }: {
       ) : state === 'loading' ? (
         <Skeleton variant="row" count={6} />
       ) : state === 'empty' ? (
-        <EmptyState title="No scans yet" body={filterId === 'all' ? 'Runs appear here as connectors scan, with their window, cost and counts.' : 'Nothing scanned for this connector yet. Rescan it, or show all connectors.'} />
+        <>
+          <EmptyState title="No scans yet" body={filterId === 'all' ? 'Runs appear here as connectors scan, with their window, cost and counts.' : pages.more ? 'None for this connector among the runs loaded. Show more reads older runs.' : 'Nothing scanned for this connector yet. Rescan it, or show all connectors.'} />
+          {moreRow}
+        </>
       ) : (
         <div className="cc-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2 [scrollbar-gutter:stable]">
-          <div role="table" aria-label="Scan ledger">
+          {/* a treegrid: a run's row opens its detail (aria-expanded is valid on a treegrid's row, not a table's) */}
+          <div role="treegrid" aria-label="Scan ledger">
             <div role="row" className={cn(COLS, 'sticky top-0 z-[1] h-9 border-b border-line bg-surface px-2 text-caption font-bold text-muted')}>
               <span role="columnheader">Connector</span>
               <span role="columnheader">Status</span>
@@ -140,6 +194,7 @@ export function LedgerTab({ connectors, filterId, onFilter, onOpenConnector }: {
               );
             })}
           </div>
+          {moreRow}
         </div>
       )}
     </div>
@@ -155,7 +210,7 @@ function Coverage({ run: r, label, tz, onOpen }: { run: ScanRun; label: string; 
           ['Window', `${dayLabel(r.windowStart, tz)} ${clock(r.windowStart, tz)} to ${dayLabel(r.windowEnd, tz)} ${clock(r.windowEnd, tz)} (${dur(minutesBetween(r.windowStart, r.windowEnd))})`],
           ['Trigger', TRIGGER[r.kind]],
           ['Started', `${dayLabel(r.startedAt, tz)} ${clock(r.startedAt, tz)}${r.endedAt ? ` · took ${dur(minutesBetween(r.startedAt, r.endedAt))}` : ' · still running'}`],
-          ['Model', r.model ?? 'None (deterministic fetch)'],
+          ['Model', r.model ?? 'None (a plain read, no AI)'],
           ['Items', `${r.itemsSeen} seen · ${r.itemsNew} new · ${r.itemsChanged} changed`],
           ['Cost', usd(r.costUsd)],
         ]}

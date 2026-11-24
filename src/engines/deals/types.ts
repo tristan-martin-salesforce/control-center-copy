@@ -1,5 +1,5 @@
 /**
- * Missed-opportunity engine types (R-UI-14). Names mirror docs/ui/DATA-MODEL.md:
+ * Missed-opportunity engine types (R-UI-14). Names mirror docs/reference/DATA-MODEL.md:
  * missed_opp_findings (tier, verdict, evidence_strength, has_d360_line, d360_line_amount,
  * flex_line_amount, my_org62_hours, my_dc_exists, other_architect_dc_count, stranded_dc_id).
  */

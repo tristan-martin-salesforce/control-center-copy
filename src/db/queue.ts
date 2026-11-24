@@ -87,6 +87,11 @@ export async function enqueueJob(db: DbOrTx, job: EnqueueJobInput): Promise<Enqu
 export interface ClaimOptions {
   /** Recorded in jobs.locked_by, e.g. `${hostname}:${pid}:${bootId}`. */
   workerId: string;
+  /**
+   * Claim only this user's jobs (the worker runs each job as its own userId, so it must never take another
+   * user's). Required: no caller can claim another user's jobs by leaving it out.
+   */
+  ownerUserId: string;
   queues?: string[];
   limit?: number;
   db?: Db;
@@ -107,7 +112,8 @@ export interface ClaimedJob {
 }
 
 /**
- * queued -> running (§4.5). Candidates: visible (run_at <= now), ordered by priority DESC, run_at, id,
+ * queued -> running (§4.5). Candidates: visible (run_at <= now), on the given queues, owned by `ownerUserId`
+ * (required, so no caller claims another user's jobs by omission; the worker's user: jobs_dequeue_idx still drives the scan, the owner is a filter on it), ordered by priority DESC, run_at, id,
  * locked FOR UPDATE SKIP LOCKED, so concurrent claimers never take the same job.
  *
  * "A dedupe key never runs twice at once": candidates whose key already has a running job are
@@ -133,7 +139,7 @@ export async function claimJobs(opts: ClaimOptions): Promise<ClaimedJob[]> {
         with candidates as materialized (
           select j.id, j.dedupe_key
             from jobs j
-           where j.status = 'queued' and j.run_at <= now() and j.queue in (${queueList})
+           where j.status = 'queued' and j.run_at <= now() and j.queue in (${queueList}) and j.owner_user_id = ${opts.ownerUserId}
              and (j.dedupe_key is null or not exists (
                    select 1 from jobs r where r.dedupe_key = j.dedupe_key and r.status = 'running'
                     and not (j.supersedes_running and r.cancel_requested_at is not null)))

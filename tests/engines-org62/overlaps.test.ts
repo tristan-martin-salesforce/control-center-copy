@@ -7,7 +7,9 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { OVERLAP_INFO_RE, proposeActivity, type ActivityConfig, type EvidenceBundle } from '@/engines/activity';
+import { OVERLAP_INFO_RE } from '@/engines/activity/overlap-flags';
+import { proposeActivity } from '@/engines/activity/propose';
+import type { ActivityConfig, EvidenceBundle } from '@/engines/activity/types';
 import { CFG, MAPPINGS, OPP_ACME, OPP_GLOBEX, cal } from '../fixtures/org62/activity';
 
 const EMPTY: EvidenceBundle = { calendar: [], claude: [], drive: [], slack: [], git: [] };
@@ -101,6 +103,13 @@ describe('(c) an onsite day and a meeting during it', () => {
     expect(frames[0]!.reason).toMatch(/whole day/);
     expect(byId(p).exec).toMatchObject({ status: 'proposed', durationHours: 0.5, accountKey: 'acme', whatOrg62Id: OPP_ACME, remote: false, tripKey: expect.any(String) });
     expect(live(p).reduce((s, e) => s + e.durationHours, 0)).toBe(9.5);
+  });
+
+  it('caps audit: the frame carries every signal\'s evidence, not the first 12', () => {
+    const mtgs = Array.from({ length: 14 }, (_, i) => cal({ id: `m${i}`, summary: `ACME session ${i}`, startsAt: mt(`${String(8 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`), endsAt: mt(`${String(8 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '45' : '15'}`), attendeeDomains: ['acme.example'], location: '1600 Main St, Denver, CO 80202' }));
+    const p = plan(mtgs, { onsiteDays: [DAY], onsiteOverrides: trip });
+    const frame = live(p).find((e) => e.dedupeKey.startsWith('onsite|'))!;
+    expect(frame.evidenceIds.length).toBeGreaterThan(12);
   });
 
   it('estimates inside the onsite day still yield to it', () => {

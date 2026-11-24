@@ -38,12 +38,12 @@ export interface ConfirmSendDialogProps {
 
 export function confirmTitle(mode: DispatchMode, d: Destination): string {
   if (d.kind === 'action') return `Apply ${d.changes.length > 1 ? 'these changes' : 'this change'} to ${actionApp(d.action)}?`;
-  if (d.kind === 'slack') return mode === 'send' ? `Send to ${d.channelName}?` : `Push a Slack draft for ${d.channelName}?`;
+  if (d.kind === 'slack') return mode === 'send' ? `Send to ${d.channelName}?` : `Save a Slack draft for ${d.channelName}?`;
   return mode === 'send' ? 'Send this email?' : 'Save as a Gmail draft?';
 }
 
 export function confirmLabel(mode: DispatchMode, dryRun: boolean, d?: Destination): string {
-  const base = d?.kind === 'action' ? 'Apply' : mode === 'send' ? 'Send' : 'Push draft';
+  const base = d?.kind === 'action' ? 'Apply' : mode === 'send' ? 'Send' : 'Save draft';
   return dryRun ? `${base} (dry run)` : base;
 }
 

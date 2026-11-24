@@ -6,7 +6,7 @@
  * reads on any fill (accent buttons, tooltips) in both themes.
  */
 import type { ReactNode } from 'react';
-import { sequenceKeys, formatShortcut } from '@/client/keyboard/keymap';
+import { parseSequence, sequenceKeys } from '@/client/keyboard/keymap';
 import { useIsMac } from '@/client/keyboard/KeyboardProvider';
 import { cn } from './cn';
 
@@ -32,21 +32,51 @@ export function Kbd({ children, tone = 'default', className }: { children: React
   );
 }
 
+const ARIA_KEY: Record<string, string> = { enter: 'Enter', escape: 'Escape', space: 'Space', up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', delete: 'Delete', backspace: 'Backspace', tab: 'Tab' };
+
+/**
+ * A key spec as an `aria-keyshortcuts` value ("mod+k" → "Meta+K" on a Mac, "Control+K" elsewhere; "j|k" → "J K").
+ * A chord ("g h") has no ARIA form, so it is left out; undefined when nothing is left.
+ */
+export function ariaKeyShortcuts(combo: string, isMac: boolean): string | undefined {
+  const out: string[] = [];
+  for (const alt of combo.split('|')) {
+    let seq;
+    try {
+      seq = parseSequence(alt);
+    } catch {
+      continue;
+    }
+    if (seq.length !== 1) continue;
+    const c = seq[0]!;
+    const mods = [c.meta || (c.mod && isMac) ? 'Meta' : null, c.ctrl || (c.mod && !isMac) ? 'Control' : null, c.alt ? 'Alt' : null, c.shift ? 'Shift' : null].filter(Boolean);
+    const key = ARIA_KEY[c.key] ?? (c.key.length === 1 ? c.key.toUpperCase() : c.key[0]!.toUpperCase() + c.key.slice(1));
+    out.push([...mods, key].join('+'));
+  }
+  return out.length ? out.join(' ') : undefined;
+}
+
 export interface KbdHintProps {
   /** Key spec: "mod+k", "g h", "shift+enter", "j|k" ("|" = alternatives). */
   combo: string;
   tone?: KbdTone;
   className?: string;
+  /**
+   * The hint sits on a control that names its shortcut itself (`aria-keyshortcuts`): the caps are only seen, never
+   * read, so the control's name is its visible label (WCAG 2.5.3). Otherwise the caps are read as they show (no
+   * aria-label on a plain span: that is prohibited ARIA and screen readers drop it).
+   */
+  decorative?: boolean;
 }
 
 /** A small key hint used in buttons, menus, the palette and the cheat sheet. */
-export function KbdHint({ combo, tone = 'default', className }: KbdHintProps) {
+export function KbdHint({ combo, tone = 'default', className, decorative = false }: KbdHintProps) {
   const isMac = useIsMac();
   const alternatives = combo.split('|');
   return (
-    <span className={cn('inline-flex items-center gap-1 whitespace-nowrap', className)} aria-label={alternatives.map((a) => formatShortcut(a, isMac)).join(' or ')}>
+    <span className={cn('inline-flex items-center gap-1 whitespace-nowrap', className)} aria-hidden={decorative || undefined}>
       {alternatives.map((alt, ai) => (
-        <span key={ai} className="inline-flex items-center gap-1" aria-hidden>
+        <span key={ai} className="inline-flex items-center gap-1">
           {ai > 0 ? <span className="text-micro text-muted">/</span> : null}
           {sequenceKeys(alt, isMac).map((group, gi) => (
             <span key={gi} className="inline-flex items-center gap-0.5">

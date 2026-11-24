@@ -1,14 +1,18 @@
 /**
  * Settle policy (pure): a verdict, its confidence and the user's Closing settings → close for you, ask (Looks done /
- * Still needed?), reopen (a suggestion that is still yours), or leave it. Corrections win: an item the user reopened,
- * kept or edited is never closed again by the check (*tenet: Suggest, then learn*).
+ * Still needed?), reopen (a suggestion that is still yours, or R2: an item closed for you that a follow-up shows is
+ * still yours), or leave it. Corrections win (R1, the rule the closure machine shares, src/engines/closure/correction.ts):
+ * an item the user reopened, kept or marked Not done is never closed again by the check (*tenet: Suggest, then learn*);
+ * one on an ask-first list is only asked about. Accepting it from Triage, snoozing it or editing its fields does not
+ * block a close (SCN-3).
  */
 import type { ClosingAction, ClosingReason, ClosingSettings, ClosingStrictness, Resolution } from '@/contract';
+import { autoCloseBlock, blockText } from '@/engines/closure/correction';
 
 import type { SettleResult, SettleVerdict } from './types';
 
 /**
- * Minimum confidence to close, per strictness, calibrated on the answer key (docs/ui/FIRST-SCAN-RAMP.md §7): on one
+ * Minimum confidence to close, per strictness, calibrated on the answer key (docs/archive/2026-build/FIRST-SCAN-RAMP.md §7): on one
  * honest pass over 445 items, 0.5 closed 248 with none still owed; 0.7 closed 202. Haiku bunches its confidence near
  * 0.55–0.6, so a high bar mostly throws away right answers.
  */
@@ -47,10 +51,17 @@ export interface PolicyItem {
   id: string;
   kind: string;
   status: string;
-  /** The user changed its state or fields since it was created (Keep, Not done, Reopen, an edit, a snooze). */
+  /**
+   * The user reframed it: edited its title or kind. The check asks instead of closing (the evidence may be about what it
+   * was). Accepting, snoozing or setting an account or due date is not a reframe.
+   */
   userTouched: boolean;
-  /** The user reopened it after a close (or marked it Not done after Looks done). */
+  /** The user reopened it after a close (an Undo of a close, Reopen, or Not done after Looks done). */
   userReopened: boolean;
+  /** The user kept it when asked "Still needed?". */
+  userKept?: boolean;
+  /** Closed for you by the engine (R2: a follow-up in its conversation can bring it back). */
+  doneByEngine?: boolean;
   /** A commitment to someone outside the company. */
   externalCommitment: boolean;
   /** People and channels it involves (names, `#channel`), for the ask-first lists. */
@@ -76,8 +87,13 @@ const LIVE = new Set(['open', 'in_progress', 'waiting_on_me', 'waiting_on_others
 export function decideSettle(r: SettleResult, item: PolicyItem, s: ClosingSettings): SettleDecision {
   const leave = (why: string): SettleDecision => ({ action: 'leave', reason: REASON_OF[r.verdict] ?? null, why });
   if (r.error || !r.valid) return leave(r.error ? `check failed: ${r.error}` : `invalid verdict: ${r.invalidWhy ?? 'citation rules'}`);
-  if (item.status === 'done' || item.status === 'dismissed' || item.status === 'merged' || item.status === 'snoozed') return leave(`item is ${item.status}`);
   const threshold = SETTLE_THRESHOLDS[s.strictness];
+  // R2: an item closed for you, judged again because someone wrote in its conversation: still yours → reopen it (Undo
+  // on the change set). Only while Reopen on follow-up is on, and never one the user closed themselves.
+  if (item.status === 'done' && item.doneByEngine && r.verdict === 'still_yours' && s.reopenOnFollowUp && r.confidence >= threshold) {
+    return { action: 'reopen', reason: null, why: 'a follow-up after the close: still yours' };
+  }
+  if (item.status === 'done' || item.status === 'dismissed' || item.status === 'merged' || item.status === 'snoozed') return leave(`item is ${item.status}`);
 
   if (r.verdict === 'still_yours') {
     if (item.status === 'suggested' && r.confidence >= threshold && !item.userTouched) return { action: 'reopen', reason: null, why: 'still yours: back to open work' };
@@ -91,7 +107,9 @@ export function decideSettle(r: SettleResult, item: PolicyItem, s: ClosingSettin
   }
   const reason = REASON_OF[r.verdict]!;
   if (r.confidence < SETTLE_ASK_MIN) return leave(`confidence ${r.confidence} below ${SETTLE_ASK_MIN}`);
-  if (item.userReopened) return leave('you reopened it: the check never closes it again');
+  const block = autoCloseBlock({ userReopened: item.userReopened, userKept: !!item.userKept, externalCommitment: item.externalCommitment, people: item.people, channels: item.channels }, s);
+  if (block === 'user_reopened') return leave('you reopened it: the check never closes it again');
+  if (block === 'user_kept') return leave('you kept it: the check never closes it again');
 
   let action: ClosingAction = s.enabled ? s.reasons[reason] : 'ask';
   if (action === 'leave') return leave(`${reason} is set to leave open`);
@@ -120,20 +138,11 @@ export function decideSettle(r: SettleResult, item: PolicyItem, s: ClosingSettin
   }
   if (action === 'close' && item.userTouched) {
     action = 'ask';
-    notes.push('you changed it before');
+    notes.push('you edited its title');
   }
-  if (action === 'close' && s.askFirstExternalCommitments && item.externalCommitment) {
+  if (action === 'close' && block) {
     action = 'ask';
-    notes.push('commitment to someone outside the company');
-  }
-  const lc = (x: string) => x.trim().toLowerCase().replace(/^#/, '');
-  if (action === 'close' && s.askFirstPeople.some((p) => item.people.some((q) => lc(q) === lc(p)))) {
-    action = 'ask';
-    notes.push('a person on your ask-first list');
-  }
-  if (action === 'close' && s.askFirstChannels.some((c) => item.channels.some((q) => lc(q) === lc(c)))) {
-    action = 'ask';
-    notes.push('a channel on your ask-first list');
+    notes.push(blockText(block));
   }
 
   if (action === 'close') {

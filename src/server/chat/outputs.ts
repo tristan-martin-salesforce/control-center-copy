@@ -203,13 +203,14 @@ export function findConnector<T extends { id: string; label: string; source: str
 }
 
 /** Chat limits: Settings ▸ Budgets ▸ Assistant (settings.chat), each overridable by env for tests and ops. */
-export function chatLimitsFromEnv(env: NodeJS.ProcessEnv = process.env, model: 'sonnet' | 'opus' = 'sonnet', chat?: Partial<Pick<ChatSettings, 'dailyUsd' | 'messageUsd' | 'maxSteps' | 'researchUsd'>>) {
+export function chatLimitsFromEnv(env: NodeJS.ProcessEnv = process.env, model: 'sonnet' | 'opus' | 'haiku' = 'sonnet', chat?: Partial<Pick<ChatSettings, 'dailyUsd' | 'maxSteps' | 'researchUsd'>> & { messageUsd?: Partial<ChatSettings['messageUsd']> }) {
   const num = (v: string | undefined, d: number) => (v !== undefined && Number.isFinite(Number(v)) ? Number(v) : d);
   return {
     chatDailyUsd: num(env.CC_CHAT_DAILY_USD, chat?.dailyUsd ?? 3),
-    perMessageUsd: num(env.CC_CHAT_MESSAGE_USD, chat?.messageUsd?.[model] ?? (model === 'opus' ? 0.6 : 0.25)),
-    // D-58 list mode: reads are bounded by cost, not count (A6, 2026-11-13: the clamp 40 → 80; the $ caps bound a turn)
-    maxTurns: Math.max(1, Math.min(80, Math.trunc(num(env.CC_CHAT_MAX_TURNS, chat?.maxSteps ?? 30)))),
+    perMessageUsd: num(env.CC_CHAT_MESSAGE_USD, chat?.messageUsd?.[model] ?? (model === 'opus' ? 0.6 : model === 'haiku' ? 0.05 : 0.25)),
+    // Assistant v2 (lane 05 §3a): steps are a runaway guard only (200); cost bounds a turn through the governor's
+    // estimate → raise a hand → continue. A setting above it still wins.
+    maxTurns: Math.max(1, Math.trunc(num(env.CC_CHAT_MAX_TURNS, chat?.maxSteps ?? 200))),
     researchUsd: num(env.CC_CHAT_RESEARCH_USD, chat?.researchUsd ?? 0.5),
   };
 }

@@ -58,7 +58,7 @@ export type LookbackDays = z.infer<typeof LookbackDays>;
 export const DEFAULT_LOOKBACK_DAYS: LookbackDays = 30;
 
 /**
- * How long a first scan takes, wall time, every source (docs/ui/FIRST-SCAN-RAMP.md, one SE's real data on a fresh
+ * How long a first scan takes, wall time, every source (docs/archive/2026-build/FIRST-SCAN-RAMP.md, one SE's real data on a fresh
  * database): 7 days ≈ 54 min, 14 days ≈ 114 min, 30 days ≈ 4 h. Other lookbacks: about 8 minutes per day of history.
  */
 export const FIRST_SCAN_MEASURED_MINUTES: Readonly<Partial<Record<number, number>>> = { 7: 54, 14: 114, 30: 240 };

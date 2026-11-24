@@ -55,6 +55,7 @@ import { JobError, type JobContext, type JobHandlerDef } from '../types';
 import { relayGuard, type RelayGuard } from './relay-guard';
 import { insertLlmCall, ledgerHash } from '@/db/ledger';
 import { syncLandingsForUser } from '@/server/landings/db-sync';
+import { projectionStore } from '@/server/datasource/db/store/projections.run';
 
 export const ORG62_READBACK_JOB = 'org62.readback';
 export const ORG62_READBACK_QUEUE = 'maintenance';
@@ -214,6 +215,12 @@ export interface ReadbackResult {
   costUsd: number;
   /** TL-42: every batch failed (nothing read, nothing inferred): the scan run failed with this class. */
   failed?: 'auth' | 'transient';
+  /** Batches this leg did not read (an earlier leg read them, or the job paused at its spend estimate): nothing inferred. */
+  skippedBatches?: number;
+  /** The job passed its hold and asked (relay-guard.ts): its continuation reads from where this leg stopped. */
+  paused?: 'spend';
+  holdId?: string;
+  queued?: boolean;
 }
 
 export async function runOrg62Readback(ctx: JobContext, d: ReadbackDeps = deps): Promise<ReadbackResult> {
@@ -235,11 +242,39 @@ export async function runOrg62Readback(ctx: JobContext, d: ReadbackDeps = deps):
   const res: ReadbackResult = { ...zero, events: events.length, dcs: dcs.length, useCaseOpps: ucOpps.length, opps: opps.length, oppsDeleted: 0 };
   if (!events.length && !dcs.length && !ucOpps.length && !opps.length) return res;
 
+  // one hold per job (the start gate's): every lookup books into it; past it the job asks once, keeps what it read, and
+  // its continuation reads on from the batch this leg stopped at (`vars.relayDone`), on the same hold
+  const guard = d.guard?.(ctx) ?? relayGuard(ctx, 'org62-readback');
+  const early = await guard.start?.();
+  if (early) return { ...res, ...early } as ReadbackResult;
+  try {
+    return await readBack(ctx, d, { res, guard, now, tz, events, dcs, opps, ucOpps });
+  } finally {
+    await guard.finish?.().catch(() => undefined);
+  }
+}
+
+async function readBack(
+  ctx: JobContext,
+  d: ReadbackDeps,
+  { res, guard, now, tz, events, dcs, opps, ucOpps }: { res: ReadbackResult; guard: RelayGuard; now: Date; tz: string; events: string[]; dcs: string[]; opps: string[]; ucOpps: string[] },
+): Promise<ReadbackResult> {
   const store = d.store?.(ctx) ?? new DbScannerStore({ db: ctx.db, userId: ctx.userId, clock: ctx.clock });
   const at = now.toISOString();
   const { runId } = await store.startRun({ scope: { connector: 'org62', scope: ORG62_READBACK_SCOPE }, trigger: 'reconcile', window: { from: at, to: at }, model: 'haiku', jobId: ctx.job.id });
   const lookup = d.lookup ?? runOneReadLookup;
-  const guard = d.guard?.(ctx) ?? relayGuard(ctx, 'org62-readback');
+  // the batches in order; a continuation skips the ones its earlier legs read
+  const plan = [['Event', events], ['Deal_Contribution__c', dcs], ['Opportunity', opps]] as const;
+  const total = plan.reduce((n, [object, ids]) => n + Math.ceil(ids.length / batchOf(object)), 0) + Math.ceil(ucOpps.length / USE_CASE_BATCH);
+  const skipTo = guard.resumeAt ?? 0;
+  let pos = 0;
+  let paused = false;
+  const skip = (): boolean => {
+    const at = pos++;
+    if (!paused && at >= skipTo) return false;
+    res.skippedBatches = (res.skippedBatches ?? 0) + 1;
+    return true;
+  };
   const day = localDay(now.getTime(), tz);
   const gone = { events: [] as string[], dcs: [] as string[], opps: [] as string[] };
   const failCodes: string[] = [];
@@ -247,9 +282,10 @@ export async function runOrg62Readback(ctx: JobContext, d: ReadbackDeps = deps):
   const ucComplete: string[] = [];
   let ucAllComplete = true;
   try {
-    for (const [object, ids] of [['Event', events], ['Deal_Contribution__c', dcs], ['Opportunity', opps]] as const) {
+    for (const [object, ids] of plan) {
       for (const batch of chunks(ids, batchOf(object))) {
         if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error('aborted');
+        if (skip()) continue;
         const t0 = Date.now();
         const q = object === 'Opportunity' ? oppReadbackSoql(batch, READBACK_BATCH + 10) : readbackSoql(object, batch);
         // D6: the lookup holds its cost cap against the daily hard cap; a refused batch infers nothing (like a failed one).
@@ -257,7 +293,12 @@ export async function runOrg62Readback(ctx: JobContext, d: ReadbackDeps = deps):
           const r = await lookup({ connector: 'org62', tool: 'soqlQuery', args: { q } }, { skillPath: ORG62_READBACK_SKILL, timeoutMs: 90_000 });
           await recordSpend(ctx, day, r, object, Date.now() - t0, q).catch(() => undefined);
           return r;
-        });
+        }, { pctDone: (100 * (pos - 1)) / total });
+        if (!r && guard.stop === 'spend') {
+          paused = true;
+          res.skippedBatches = (res.skippedBatches ?? 0) + 1;
+          continue;
+        }
         if (!r) {
           res.failedBatches += 1;
           failCodes.push('hard_cap');
@@ -304,13 +345,23 @@ export async function runOrg62Readback(ctx: JobContext, d: ReadbackDeps = deps):
     // D-67: the use cases on my opps (by opp, not by Id: a new record has no Id the app knows yet)
     for (const batch of chunks(ucOpps, USE_CASE_BATCH)) {
       if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error('aborted');
+      if (skip()) {
+        ucAllComplete = false;
+        continue;
+      }
       const t0 = Date.now();
       const q = ucReadbackSoql(batch);
       const r = await guard.run(async () => {
         const r = await lookup({ connector: 'org62', tool: 'soqlQuery', args: { q } }, { skillPath: ORG62_READBACK_SKILL, timeoutMs: 90_000 });
         await recordSpend(ctx, day, r, 'Use_Case__c', Date.now() - t0, q).catch(() => undefined);
         return r;
-      });
+      }, { pctDone: (100 * (pos - 1)) / total });
+      if (!r && guard.stop === 'spend') {
+        paused = true;
+        res.skippedBatches = (res.skippedBatches ?? 0) + 1;
+        ucAllComplete = false;
+        continue;
+      }
       if (!r) {
         res.failedBatches += 1;
         failCodes.push('hard_cap');
@@ -346,7 +397,7 @@ export async function runOrg62Readback(ctx: JobContext, d: ReadbackDeps = deps):
     const auth = failCodes.some((c) => /auth|401|403|expired|session|login|unauthor/i.test(c));
     const cls = auth ? 'auth' : 'transient';
     await store.failRun(runId, { error: `every Org62 read-back batch failed (${res.failedBatches}: ${[...new Set(failCodes)].join(', ').slice(0, 80)}): nothing read, nothing inferred`, errorClass: cls, stats: { fetched: 0, new: 0, costUsd: res.costUsd } });
-    return { ...res, failed: cls, costUsd: Math.round(res.costUsd * 10_000) / 10_000 };
+    return { ...res, failed: cls, costUsd: Math.round(res.costUsd * 10_000) / 10_000, ...((await guard.finish?.()) ?? {}) };
   }
   await store.finishRun(runId, { cursor: { value: ORG62_READBACK_SCOPE, at }, stats: { fetched: res.recorded + ucRows.length, new: res.new, changed: res.changed, linked: 0, proposed: 0, unlinked: 0, costUsd: res.costUsd, inputTokens: 0, outputTokens: 0, turns: res.lookups } });
   if (ucOpps.length && (ucRows.length || ucComplete.length)) {
@@ -360,11 +411,11 @@ export async function runOrg62Readback(ctx: JobContext, d: ReadbackDeps = deps):
   res.dcsDeleted = gone.dcs.length;
   if (gone.opps.length) res.oppsDeleted = await tombstoneOpps(ctx, gone.opps, now);
   if (marked.eventDays.length) {
-    const w = await recomputeWeeks({ db: ctx.db, userId: ctx.userId, days: marked.eventDays, now });
+    const w = await recomputeWeeks({ store: projectionStore(ctx.db), userId: ctx.userId, days: marked.eventDays, now });
     res.weeks = w.weeks.length;
   }
   res.costUsd = Math.round(res.costUsd * 10_000) / 10_000;
-  return res;
+  return { ...res, ...((await guard.finish?.()) ?? {}) };
 }
 
 /** DC-22: the opps Org62 no longer has, tombstoned in one system change set (dc-roundtrip's `markOppsDeleted`). */
@@ -384,6 +435,7 @@ export function org62ReadbackJobDef(d?: ReadbackDeps): JobHandlerDef {
     kind: ORG62_READBACK_JOB,
     queue: ORG62_READBACK_QUEUE,
     wired: true,
+    spends: true,
     description: 'Org62 read-back: re-read my logged Events and my DCs by Id (edits, deletions), and the use cases on my opps (D-67), daily and from Health',
     handler: async (ctx) => {
       const r = await runOrg62Readback(ctx, d ?? deps);

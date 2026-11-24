@@ -6,7 +6,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CalendarEvent, Draft, HomePayload, WorkItem } from '@/contract';
-import { buildHome, nextWorkingDay, type HomeInput } from '@/engines/home';
+import { buildHome } from '@/engines/home/build';
+import { nextWorkingDay } from '@/engines/home/time';
+import type { HomeInput } from '@/engines/home/types';
 import { createMockDataSource } from '@/server/datasource/mock';
 
 const TZ = 'America/Denver';

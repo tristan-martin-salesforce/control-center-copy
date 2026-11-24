@@ -1,7 +1,7 @@
 /**
  * Scenario databases. One migrated template (`control_center_stress_tpl`), cloned per scenario
  * (`control_center_stress_<name>`). Refuses any database whose name does not start with
- * `control_center_stress` (never `control_center` or the `*_main` test DBs). Every clone gets the
+ * `control_center_stress` (never `command_center`, the 1.x `control_center` or the `*_main` test DBs). Every clone gets the
  * simulated-clock schema and `search_path = stress, pg_catalog, public` so `now()` is simulated.
  */
 import { execFileSync } from 'node:child_process';

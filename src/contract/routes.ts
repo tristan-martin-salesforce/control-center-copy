@@ -12,18 +12,19 @@ import { AgentRun, AgentsPayload, LaunchResult, ToolRun, ToolsPayload } from './
 import { BriefHighlight, BriefsPayload, Brief, WatchSubscription, WatchesPayload } from './briefs';
 import { CalendarEventDetail, CalendarPayload } from './calendar';
 import { CanvasReview, EditCanvasRowRequest, RemoveCanvasRowsRequest } from './canvas-review';
-import { ChatSseEvent, ChatThread, ChatThreadDetail, ChatThreadsPayload } from './chat';
+import { ChatMemoryPayload, ChatMemoryQuery, ChatPlanAnswerRequest, ChatPlanAnswerResult, ChatSseEvent, ChatThread, ChatThreadDetail, ChatThreadsPayload, DeleteChatMemoryResult } from './chat';
 import { IsoDateTime } from './common';
-import { AddOrg62OppsRequest, AddOrg62OppsResult, ClaimMissedRequest, CreateDcRequestRequest, DcRequest, DcRequestsPayload, DealsPayload, MissedOpp, MissedPayload, PatchDcRequestRequest, UseCaseSyncPayload, WithdrawDcRequestsRequest, WithdrawDcRequestsResult } from './deals';
+import { AddOrg62OppsRequest, AddOrg62OppsResult, ClaimMissedRequest, CreateDcRequestRequest, DcRequest, DcRequestsPayload, DealsPayload, DealsQuery, MissedOpp, MissedPayload, PatchDcRequestRequest, UseCaseSyncPayload, WithdrawDcRequestsRequest, WithdrawDcRequestsResult } from './deals';
 import { CheckMissingForecastResult, DraftForecastNotesRequest, DraftForecastNotesResult, ForecastPayload, ForecastRecordDetail, ForecastRecordParams, ForecastRow, PatchForecastRequest, StageForecastRequest, StageForecastResult, SyncForecastResult } from './forecast'; // lane A
 import { DevEngineChangeRequest, DevEngineChangeResult, DevFailRequest, DevFailStatus, DevScenarioRequest, ScenarioStatus } from './dev';
 import { AuditEntry, LiveEvent, LiveTopic, MutationResultOf } from './envelope';
 import { HistoryDay, HistoryDayParams, HistoryMonth, HistoryMonthQuery } from './history';
 import { HomePayload, HomeQuery } from './home';
-import { ClearNeedRequest, DecideNeedRequest, NeedDecisionsPayload } from './needs';
+import { DecidePriorityRuleRequest, PriorityPreview, PriorityRule, PriorityRuleParams, RerankAllResult } from './priority';
+import { ClearNeedRequest, DecideNeedRequest, DecideNeedRowRequest, DecideNeedRowResult, NeedDecisionsPayload, NeedRowParams, NeedsPayload } from './needs';
 import { CanvasWrites, EventUpdateRow, EventUpdatesPayload, FixUseCaseRequest, PatchEventUpdateRequest, PickUseCaseValueRequest, ProposeEventUpdatesRequest, ProposeEventUpdatesResult, RecordLandings, RecordLandingsQuery, UseCaseKeyParams, UseCaseLanding, UseCaseLandingsPayload } from './landings';
-import { EventLogEntry, EventLogPayload, HealthPayload, Job, JobsPayload, ReauthResult, ScanRun, ScansPayload } from './health';
-import { DispatchResult, Draft, DraftPreview, DraftSource, OutboxPayload } from './nba';
+import { ClaudeSmokeResult, DoctorPayload, DoctorQuery, EventLogEntry, EventLogPayload, HealthPayload, Job, JobsPayload, ReauthResult, ResolutionCheckPayload, ScanRun, ScansPayload } from './health';
+import { DispatchResult, Draft, DraftPreview, DraftSource, OutboxPayload, StageReleaseRequest, StageReleaseResult } from './nba';
 import { ClearVdpIdentityRequest, DraftVdpUpdateRequest, DraftVdpUpdateResult, FindVdpAssetsRequest, FindVdpAssetsResult, PushVdpChangesRequest, PushVdpChangesResult, SearchVdpCompaniesQuery, SearchVdpCompaniesResult, SetVdpCandidateRequest, SetVdpIdentityRequest, VdpAssetCandidate, VdpCoveragePayload, VdpDetailPayload, VdpDetailQuery, VdpIdentityResult } from './vdp';
 import {
   AccountParams,
@@ -68,10 +69,12 @@ import {
   TriageAcceptRequest,
   TriageMergeRequest,
 } from './requests';
-import { BudgetSettings, PolicyPreview, PolicyVersionsPayload, PriorityPolicy, RaiseBudgetTodayRequest, RankRow, Settings } from './settings';
+import { BudgetSettings, PolicyPreview, PolicyVersionsPayload, PriorityPolicy, RaiseBudgetTodayRequest, RankRow, RetentionRunPayload, RetentionSettings, RunRetentionRequest, Settings } from './settings';
 import { ReadIn, ReadInParams, ReadInPayload, RequestReadInRequest } from './readin';
 import { CompleteOnboardingRequest, OnboardingCompleteResult, OnboardingSourcesPayload, OnboardingSourcesQuery, OnboardingState, SaveOnboardingStepRequest } from './onboarding';
 import { DiagnoseFeedbackRequest, DiagnoseFeedbackResult, FeedbackState, StageFeedbackRequest, StageFeedbackResult } from './feedback'; // lane D
+import { CoveredAeLookupRequest, CoveredAeLookupResult, DcSuggestionsPayload, DecideDcSuggestionRequest, DecideDcSuggestionResult, MappingRulesPayload, MappingRuleView, OppRundown, OppRundownQuery, PatchMappingRuleRequest, RefreshDcSuggestionsResult } from './attribution';
+import { AddUseCaseCandidateRequest, AddUseCaseCandidateResult, DecideUseCaseCandidateRequest, DecideUseCaseCandidateResult, RefreshUseCaseCandidatesResult, UseCaseCandidatesPayload } from './use-cases';
 import { ActivityEntry, ActivityLog, CanvasSyncResult, CheckCanvasOrg62Request, CheckCanvasOrg62Result, DismissSourceRequest, ResolveActivityRequest, DismissSourceResult, MarkTripRequest, OnsiteCorrection, OnsiteDay, OnsiteDayParams, OppOptions, OppOptionsQuery, Org62OppSearch, Org62OppSearchRequest, PickOrg62OppRequest, RemoveDismissRuleRequest, StageLogBatchRequest, StageLogBatchResult, TimeDismissRules, TimeLedger, TimeWeek } from './time';
 import {
   AccountDetail,
@@ -89,9 +92,10 @@ import {
   WorkItemDetail,
 } from './views';
 import { PeoplePayload, Proposal, WorkItem } from './work';
-import { VersionPayload } from './version';
+import { CheckForUpdatesResult, VersionPayload } from './version';
 import { GuidePayload, ReadmePayload } from './guide';
 import { SpendAuditDetail, SpendAuditDetailQuery, SpendAuditPayload, SpendAuditQuery } from './spend-audit';
+import { AnswerSpendHoldRequest, AnswerSpendHoldResult, ChatSpendAnswerRequest, ListSpendHoldsQuery, SpendHoldsPayload } from './spend';
 
 export type HttpMethod = 'GET' | 'POST' | 'PATCH';
 
@@ -110,9 +114,9 @@ export interface RouteDef {
   dev?: boolean;
   /**
    * What the in-app Assistant may do with the route (D-58), required on every route (tests/bechat/app-routes.test.ts):
-   *   read   a read it may call any time (`chat_app_read`): a GET, or a POST that only computes or reads (a policy
+   *   read   a read it may call any time (`read`): a GET, or a POST that only computes or reads (a policy
    *          preview, the Org62 opp search on the assistant's day line)
-   *   stage  a change it may stage for the user's Apply (`chat_app_change` → one proposal card, op `route_call`)
+   *   stage  a change it may stage for the user's Apply (`propose kind calls` → one proposal card, op `route_call`)
    *   deny   never: sends, dispatches, applies the user's proposals, re-auths, launches, scans, raises its own budget,
    *          dry run and credentials, dev routes (D-58, loosened 2026-11-13: a route is denied only when a safety
    *          invariant forces it)
@@ -142,6 +146,7 @@ export const routes = {
   patchItem: def({ method: 'PATCH', path: '/items/:id', params: IdParams, body: PatchItemRequest, response: MutationResultOf(WorkItem), topic: 'item', summary: 'Autosave fields; edited fields become user-locked', assistant: 'stage', undoable: true }),
   itemAction: def({ method: 'POST', path: '/items/:id/actions/:verb', params: ItemActionParams, body: ItemActionRequest, response: MutationResultOf(WorkItem), topic: 'item', summary: 'done · snooze · accept · dismiss · confirm-done · reopen · not-now', assistant: 'stage', undoable: true }),
   getItemEvidence: def({ method: 'GET', path: '/items/:id/evidence', params: IdParams, response: EvidencePayload, topic: 'item', summary: 'Evidence timeline with new markers', assistant: 'read' }),
+  getResolutionCheck: def({ method: 'GET', path: '/items/:id/resolution-check', params: IdParams, response: ResolutionCheckPayload, topic: 'item', summary: 'Why is this still open: the last resolution check (verdict, rule, gate) and what triggers the next', assistant: 'read' }),
   getItemTrace: def({ method: 'GET', path: '/items/:id/trace', params: IdParams, response: ItemTracePayload, topic: 'item', summary: 'Why is this here: evidence → source → scan run → triage verdict → model cost', assistant: 'read' }),
   getItemHistory: def({ method: 'GET', path: '/items/:id/history', params: IdParams, response: HistoryPayload, topic: 'item', summary: 'Audit log for the item (per-change Undo) + NBA versions', assistant: 'read' }),
   markItemSeen: def({ method: 'POST', path: '/items/:id/seen', params: IdParams, body: EmptyBody, response: MutationResultOf(WorkItem), topic: 'item', summary: 'Clear new-evidence markers', assistant: 'stage' }),
@@ -166,6 +171,7 @@ export const routes = {
   previewDraft: def({ method: 'POST', path: '/drafts/:id/preview', params: IdParams, body: PreviewDraftRequest, response: DraftPreview, topic: 'draft', summary: 'Preview as recipient from the serialized payload; returns confirmToken', assistant: 'deny' }),
   dispatchDraft: def({ method: 'POST', path: '/drafts/:id/dispatch', params: IdParams, body: DispatchDraftRequest, response: DispatchResult, topic: 'draft', summary: 'Draft ↔ Send. Honors dry-run. Mock never calls out', assistant: 'deny' }),
   getOutbox: def({ method: 'GET', path: '/outbox', response: OutboxPayload, topic: 'outbox', summary: 'Pending approval · Scheduled · Sent · Failed', assistant: 'read' }),
+  stageRelease: def({ method: 'POST', path: '/outbox/releases', body: StageReleaseRequest, response: MutationResultOf(StageReleaseResult), topic: 'outbox', summary: 'D-90: one built release → its two Outbox items (release.drive_upload hand-off, release.announce Slack draft), pending approval; idempotent per version (a pending item is updated, an applied one kept); nothing is sent', assistant: 'deny' }),
 
   // ---- Calendar ------------------------------------------------------------
   getCalendar: def({ method: 'GET', path: '/calendar', query: CalendarQuery, response: CalendarPayload, topic: 'calendar', summary: 'Events + spine slots for a window (default today)', assistant: 'read' }),
@@ -210,6 +216,21 @@ export const routes = {
   dismissFromSource: def({ method: 'POST', path: '/time/dismiss-rules', body: DismissSourceRequest, response: MutationResultOf(DismissSourceResult), topic: 'time', summary: "Dismiss all from this row's source: a remembered rule (every live row of it, now and on re-projection, is Dismissed by your rule), one undoable change", assistant: 'stage', undoable: true }),
   removeTimeDismissRule: def({ method: 'POST', path: '/time/dismiss-rules/remove', body: RemoveDismissRuleRequest, response: MutationResultOf(TimeDismissRules), topic: 'time', summary: 'Remove a "Dismiss all from …" rule: its rows come back as proposals (one undoable change)', assistant: 'stage', undoable: true }),
 
+  // ---- Attribution engine (src/engines/attribution; holistic review 2026-11-20 lane 06) ----------------------
+  getAttributionRules: def({ method: 'GET', path: '/attribution/rules', response: MappingRulesPayload, topic: 'settings', summary: 'Settings ▸ Time ▸ Learned rules: every rule the attribution engine learned from your corrections (series, channel, domain, contact, word, repo → opp, account or internal), with its hits, misses and last use', assistant: 'read' }),
+  patchAttributionRule: def({ method: 'PATCH', path: '/attribution/rules/:id', params: IdParams, body: PatchMappingRuleRequest, response: MutationResultOf(MappingRuleView), topic: 'settings', summary: 'Turn one learned rule off (the engine stops reading it) or back on; one undoable change', assistant: 'stage', undoable: true }),
+  deleteAttributionRule: def({ method: 'POST', path: '/attribution/rules/:id/delete', params: IdParams, body: EmptyBody, response: MutationResultOf(MappingRulesPayload), topic: 'settings', summary: 'Remove one learned rule (Undo puts it back); the next correction may learn it again', assistant: 'stage', undoable: true }),
+  getDcSuggestions: def({ method: 'GET', path: '/attribution/dc-suggestions', response: DcSuggestionsPayload, topic: 'time', summary: 'The DCs the app suggests claiming this quarter, from what you did (engagement), your teams and the AEs you cover: each with why, its evidence, its share of one engagement (several opps), the default split; nothing is claimed until you Accept', assistant: 'read' }),
+  decideDcSuggestion: def({ method: 'POST', path: '/attribution/dc-suggestions/:id', params: IdParams, body: DecideDcSuggestionRequest, response: MutationResultOf(DecideDcSuggestionResult), topic: 'time', summary: 'Accept (a DC request that rides the next logging canvas, sent only on its Apply), Edit (the same with your split, role or comment) or Reject a suggested DC; the decision teaches the engine; one undoable change', assistant: 'stage', undoable: true }),
+  refreshDcSuggestions: def({ method: 'POST', path: '/attribution/dc-suggestions/refresh', body: EmptyBody, response: RefreshDcSuggestionsResult, topic: 'time', summary: 'Re-run the DC suggestion batch now (local data only: engagement, teams, covered AEs); the db queues it for the worker', assistant: 'deny' }),
+  getOppRundown: def({ method: 'GET', path: '/attribution/rundown', query: OppRundownQuery, response: OppRundown, topic: 'time', summary: "The rundown of opps when unsure: a row's (or an account's) likely opps, ranked, each with what you did on it in the last 4 weeks", assistant: 'read' }),
+  lookupCoveredAe: def({ method: 'POST', path: '/attribution/covered-aes/lookup', body: CoveredAeLookupRequest, response: CoveredAeLookupResult, topic: 'settings', summary: 'Settings ▸ Time ▸ AEs I cover: find an AE by name among the app’s people and opp teams, then with one read-only Org62 User read the worker runs where Org62 is live (queued; its hits list on the next ask)', assistant: 'stage' }),
+  // ---- Use cases to add (src/engines/use-cases; holistic review 2026-11-20 lane 06 R6) -------------------------
+  getUseCaseCandidates: def({ method: 'GET', path: '/use-cases/candidates', response: UseCaseCandidatesPayload, topic: 'time', summary: 'Use cases the app noticed in Gemini notes, meetings, Slack and mail with a customer, waiting for you: each with the problem, products, outcome, its evidence, the opp the attribution engine chose and why (or the top 3 to pick from when unsure), and what Accept would stage; plus the last 30 days of decided ones', assistant: 'read' }),
+  decideUseCaseCandidate: def({ method: 'POST', path: '/use-cases/candidates/:id', params: IdParams, body: DecideUseCaseCandidateRequest, response: MutationResultOf(DecideUseCaseCandidateResult), topic: 'time', summary: 'Accept (drafts the VDP create_use_case Outbox item and an Org62 Use_Case__c row for the next logging canvas, both applied by you; nothing is sent), Edit (title, problem, products, outcome, the opp) or Reject with why (not a use case, wrong opp, duplicate, already in Org62); a pick of the opp teaches the attribution engine; one undoable change', assistant: 'stage', undoable: true }),
+  addUseCaseCandidate: def({ method: 'POST', path: '/use-cases/candidates', body: AddUseCaseCandidateRequest, response: MutationResultOf(AddUseCaseCandidateResult), topic: 'time', summary: 'Add a use case by hand to the list (deduped against VDP, Org62 and the other candidates: a match adds to that one instead); Accept it to stage it; one undoable change', assistant: 'stage', undoable: true }),
+  refreshUseCaseCandidates: def({ method: 'POST', path: '/use-cases/candidates/refresh', body: EmptyBody, response: RefreshUseCaseCandidatesResult, topic: 'time', summary: 'Read the notes, meetings, Slack and mail of the last weeks for use cases now (local data; the db queues use_cases.extract for the worker)', assistant: 'deny' }),
+
   // lane A: Specialist Forecast (Time ▸ Forecast; persona feature specialistForecast). Never writes to Org62.
   getForecast: def({ method: 'GET', path: '/time/forecast', response: ForecastPayload, topic: 'time', summary: 'Time ▸ Forecast: my Specialist Forecasts (read-only mirror), the weekly notes queue, Deal Role fixes, opps with no record, and the canvases waiting for Apply', assistant: 'read' }),
   getForecastRecord: def({ method: 'GET', path: '/time/forecast/records/:id', params: ForecastRecordParams, response: ForecastRecordDetail, topic: 'time', summary: 'One Specialist Forecast for the details panel: the mirror, its update and what a draft reads', assistant: 'read' }),
@@ -225,7 +246,7 @@ export const routes = {
   getHistoryDay: def({ method: 'GET', path: '/history/:day', params: HistoryDayParams, response: HistoryDay, topic: 'time', summary: 'What was done on one local day, from stored history (transitions, activity, calendar, outbox, runs)', assistant: 'read' }),
 
   // ---- Deals ---------------------------------------------------------------
-  getDeals: def({ method: 'GET', path: '/deals', response: DealsPayload, topic: 'deals', summary: 'Accounts list', assistant: 'read' }),
+  getDeals: def({ method: 'GET', path: '/deals', query: DealsQuery, response: DealsPayload, topic: 'deals', summary: 'Accounts list', assistant: 'read' }),
   getMissed: def({ method: 'GET', path: '/deals/missed', response: MissedPayload, topic: 'deals', summary: 'Missed-opp findings (R-UI-14)', assistant: 'read' }),
   getVdpCoverage: def({ method: 'GET', path: '/deals/vdp', response: VdpCoveragePayload, topic: 'deals', summary: 'VDP coverage: my VDPs from the read-only mirror, with gaps (app fix or handoff)', assistant: 'read' }),
   getVdpDetail: def({ method: 'GET', path: '/deals/vdp/detail', query: VdpDetailQuery, response: VdpDetailPayload, topic: 'deals', summary: 'One VDP (slug) or one engaged account with no VDP (account:<id>): the ordered steps, the assets to add, and everything the mirror read', assistant: 'read' }),
@@ -242,6 +263,11 @@ export const routes = {
   listNeedDecisions: def({ method: 'GET', path: '/needs/decisions', response: NeedDecisionsPayload, topic: 'deals', summary: 'Needs rows set aside: Snooze (until) or Not needed (reason, and the facts it comes back on) per {rule, subjectId}: dc_gap per opp, deals_ahead / deals_chase per account, home:<rule> per Home row', assistant: 'read' }),
   decideNeed: def({ method: 'POST', path: '/needs/decisions', body: DecideNeedRequest, response: MutationResultOf(NeedDecisionsPayload), topic: 'deals', summary: 'Set needs rows aside: {rule, subjectIds, kind: snooze (until?, default a week) | not_needed (reason)} from a row\'s `resolve`. A Not needed DC gap comes back when I join the opp team or log 2 h more on it', assistant: 'stage', undoable: true }),
   clearNeedDecision: def({ method: 'POST', path: '/needs/decisions/clear', body: ClearNeedRequest, response: MutationResultOf(NeedDecisionsPayload), topic: 'deals', summary: 'Bring set-aside needs rows back: {rule, subjectIds}', assistant: 'stage', undoable: true }),
+  // 01 R1 / D-86: the one Needs-you queue (src/engines/needs). `decideNeedRow` runs a row's verb through the route the
+  // page already calls (accept, dismiss, confirm, reject a draft, claim a DC, answer a spend ask, Later): no new
+  // mutation, the same audit and Undo. It is deny for the Assistant: a row can answer a spend ask, which is the user's.
+  listNeeds: def({ method: 'GET', path: '/needs', response: NeedsPayload, topic: 'home', summary: 'The Needs-you queue: one row per fact (kind, title, why, who/account/opp, verbs with the route each runs, group key, urgency, since, source, estimate), ordered by urgency then age, never capped; `total` is the one count (sidebar, Home, Activity)', assistant: 'read' }),
+  decideNeedRow: def({ method: 'POST', path: '/needs/:id/decide', params: NeedRowParams, body: DecideNeedRowRequest, response: MutationResultOf(DecideNeedRowResult), topic: 'home', summary: 'Apply one verb of a Needs-you row through the existing route it names (acceptTriage, dismissTriage, itemAction, rejectDraft, decideDcSuggestion, answerSpendHold, markItemSeen, decideNeed, decideUseCaseCandidate); the envelope carries that route\'s auditId for Undo. Never sends', assistant: 'deny' }),
   listDcRequests: def({ method: 'GET', path: '/deals/dc-requests', response: DcRequestsPayload, topic: 'deals', summary: 'My DCs (split, role, from the Org62 scans) and my DC requests: add or change, requested → on a canvas → confirmed in Org62, with why one cannot be edited', assistant: 'read' }),
   // D-67: VDP use cases → Org62 Use_Case__c, read-only (they ride the next logging canvas; nothing is sent here)
   getUseCaseSync: def({ method: 'GET', path: '/deals/use-cases', response: UseCaseSyncPayload, topic: 'deals', summary: 'My VDP use cases and their Org62 Use_Case__c: what the next logging canvas creates (opp, fields) or updates (Stage / Go-Live), what is on a canvas, what is in Org62 (linked), and why any is skipped', assistant: 'read' }),
@@ -271,14 +297,23 @@ export const routes = {
 
   // ---- Health --------------------------------------------------------------
   getHealth: def({ method: 'GET', path: '/health', response: HealthPayload, topic: 'health', summary: 'Connectors, summary, spend, worker', assistant: 'read' }),
+  // priority@2 (lane 07 R8): the shadow preview, the learning rule, and the ops re-rank
+  getPriorityPreview: def({ method: 'GET', path: '/priority/preview', response: PriorityPreview, topic: 'today', summary: "Today's \"Preview new ranking\": priority@2's Top 3 and first ten over today's inputs, with the shown ranking's rank per row, agreement@3, capacity, the admin block and Make room. Nothing is written", assistant: 'read' }),
+  decidePriorityRule: def({ method: 'POST', path: '/priority/rules/:id/decide', params: PriorityRuleParams, body: DecidePriorityRuleRequest, response: MutationResultOf(PriorityRule), topic: 'health', summary: 'Health ▸ the suggested priority rule: apply (a bounded persona weight nudge; a re-rank follows) or dismiss. Local; undoable', assistant: 'stage', undoable: true }),
+  rerankAllUsers: def({ method: 'POST', path: '/admin/priority/rerank-all', body: EmptyBody, response: RerankAllResult, topic: 'health', summary: 'Ops: queue the deterministic re-rank for every user (no model call)', assistant: 'deny' }),
   getSpendAudit: def({ method: 'GET', path: '/spend/audit', query: SpendAuditQuery, response: SpendAuditPayload, topic: 'health', summary: 'Spend & decisions (D0): every model call by day, skill, model and trigger with tokens and cache, and every decision not to call (or to escalate) with its reason', assistant: 'read' }),
   getSpendAuditDetail: def({ method: 'GET', path: '/spend/audit/detail', query: SpendAuditDetailQuery, response: SpendAuditDetail, topic: 'health', summary: "One day (and skill) of Spend & decisions: its calls, paged, and its decisions with their reasons", assistant: 'read' }),
+  listSpendHolds: def({ method: 'GET', path: '/spend/holds', query: ListSpendHoldsQuery, response: SpendHoldsPayload, topic: 'health', summary: 'Spend governor receipts: every hold (estimate p50/p90, held, spent, state) since a time, the open asks and the asked / approved / denied counts with the median overrun', assistant: 'read' }),
+  answerSpendHold: def({ method: 'POST', path: '/spend/holds/:id/answer', params: IdParams, body: AnswerSpendHoldRequest, response: AnswerSpendHoldResult, topic: 'health', summary: 'Answer a spend ask: Allow $Z more (the run continues or is re-queued with it), Allow for today, or Stop (settled as denied; partial results stay)', assistant: 'deny' }),
   reauthConnector: def({ method: 'POST', path: '/connectors/:id/reauth', params: IdParams, body: EmptyBody, response: ReauthResult, topic: 'health', summary: 'Re-auth affordance (mock: simulated)', assistant: 'deny' }),
   scanConnector: def({ method: 'POST', path: '/connectors/:id/scan', params: IdParams, body: ScanRequest, response: MutationResultOf(ScanRun), topic: 'health', summary: 'Run a scan now (mock: simulated)', assistant: 'deny' }),
-  getScans: def({ method: 'GET', path: '/scans', query: ListQuery, response: ScansPayload, topic: 'scans', summary: 'Scan ledger', assistant: 'read' }),
+  getScans: def({ method: 'GET', path: '/scans', query: ListQuery, response: ScansPayload, topic: 'scans', summary: "Scan ledger, newest first: `limit` runs from `cursor` (the previous page's `nextCursor`; null on the last page) and `total` (every run)", assistant: 'read' }),
   getJobs: def({ method: 'GET', path: '/jobs', response: JobsPayload, topic: 'jobs', summary: 'Jobs incl. dead-letter', assistant: 'read' }),
   retryJob: def({ method: 'POST', path: '/jobs/:id/retry', params: IdParams, body: EmptyBody, response: MutationResultOf(Job), topic: 'jobs', summary: 'Requeue a dead/failed job', assistant: 'stage' }),
   getVersion: def({ method: 'GET', path: '/version', response: VersionPayload, topic: 'health', summary: 'App version (D-57): version, short sha, build time, latest applied migration, persona, the worker\'s version and whether they differ', assistant: 'read' }),
+  checkForUpdates: def({ method: 'POST', path: '/version/check-updates', body: EmptyBody, response: CheckForUpdatesResult, topic: 'health', summary: 'Check for updates now (D-90): queue the update check (one read of the release feed in the shared Drive folder through the devbar Drive read path; nothing is downloaded or installed); the mock answers from its last result', assistant: 'deny' }),
+  getDoctor: def({ method: 'GET', path: '/doctor', query: DoctorQuery, response: DoctorPayload, topic: 'health', summary: "This Mac's setup checks (11 R6): the worker's last doctor run, or a fresh one; each failing check with its error-catalog code and next step. Answers without the database (DEP.DB.DOWN)", assistant: 'read' }),
+  smokeClaude: def({ method: 'POST', path: '/doctor/claude-smoke', body: EmptyBody, response: ClaudeSmokeResult, topic: 'health', summary: 'Check again for Claude: one `claude -p "reply OK"` (about $0.001, shown first); refused without a configured AI gateway; never automatic', assistant: 'deny' }),
   getEventLog: def({ method: 'GET', path: '/events/log', response: EventLogPayload, topic: 'event_log', summary: 'Error/event log', assistant: 'read' }),
   ackEvent: def({ method: 'POST', path: '/events/log/:id/ack', params: IdParams, body: EmptyBody, response: MutationResultOf(EventLogEntry), topic: 'event_log', summary: 'Acknowledge', assistant: 'stage', undoable: true }),
 
@@ -286,6 +321,10 @@ export const routes = {
   getSettings: def({ method: 'GET', path: '/settings', response: Settings, topic: 'settings', summary: 'All settings sections', assistant: 'read' }),
   patchSettings: def({ method: 'PATCH', path: '/settings/:section', params: SectionParams, body: PatchSettingsRequest, response: MutationResultOf(Settings), topic: 'settings', summary: 'Save one section (dry-run off needs confirm)', assistant: 'stage', undoable: true }),
   raiseBudgetToday: def({ method: 'POST', path: '/budgets/raise-today', body: RaiseBudgetTodayRequest, response: MutationResultOf(BudgetSettings), topic: 'settings', summary: "Raise today's cap (hard, optionally soft) with a reason; every raise is kept in budgets.raises. Raise only", assistant: 'deny' }),
+  // Settings ▸ Data (p4-retention's policy; the horizons live in user_settings key `retention`). Local app data only.
+  getRetention: def({ method: 'GET', path: '/retention', response: RetentionSettings, topic: 'settings', summary: 'Data retention horizons (Settings ▸ Data): on/off and the days each kind of local record is kept', assistant: 'read' }),
+  patchRetention: def({ method: 'PATCH', path: '/retention', body: RetentionSettings.partial(), response: RetentionSettings, topic: 'settings', summary: 'Change the retention horizons (local app data only)', assistant: 'deny' }),
+  runRetention: def({ method: 'POST', path: '/retention/run', body: RunRetentionRequest, response: RetentionRunPayload, topic: 'settings', summary: '"Run retention now": the plan with counts (dry) or the run itself, even when the nightly job is off; waits while a scan runs. Deletes only local app data', assistant: 'deny' }),
   previewPolicy: def({ method: 'POST', path: '/policy/preview', body: PolicyPreviewRequest, response: PolicyPreview, topic: 'policy', summary: 'Before/after Top 10 for proposed weights/rules', assistant: 'read' }),
   applyPolicy: def({ method: 'POST', path: '/policy/apply', body: PolicyApplyRequest, response: MutationResultOf(PriorityPolicy), topic: 'policy', summary: 'Explicit Apply: new policy version + visible re-rank', assistant: 'deny' }),
   revertPolicy: def({ method: 'POST', path: '/policy/revert', body: PolicyRevertRequest, response: MutationResultOf(PriorityPolicy), topic: 'policy', summary: 'Revert to a previous version (as a new version)', assistant: 'stage', undoable: true }),
@@ -301,6 +340,10 @@ export const routes = {
   listChatThreads: def({ method: 'GET', path: '/chat/threads', response: ChatThreadsPayload, topic: 'chat', summary: 'Chat threads', assistant: 'read' }),
   createChatThread: def({ method: 'POST', path: '/chat/threads', body: CreateChatThreadRequest, response: ChatThread, topic: 'chat', summary: 'New thread (optional title + context); not undoable, like chat messages', assistant: 'deny' }),
   getChatThread: def({ method: 'GET', path: '/chat/threads/:id', params: IdParams, response: ChatThreadDetail, topic: 'chat', summary: 'One thread with messages', assistant: 'read' }),
+  chatSpendAnswer: def({ method: 'POST', path: '/chat/spend-answer', body: ChatSpendAnswerRequest, response: AnswerSpendHoldResult, topic: 'chat', summary: "The Assistant card's answer to its turn's spend-ask: approve(usd) lets the waiting turn continue, deny wraps it up from what it has", assistant: 'deny' }),
+  chatPlanAnswer: def({ method: 'POST', path: '/chat/plan-answer', body: ChatPlanAnswerRequest, response: ChatPlanAnswerResult, topic: 'chat', summary: "The plan card's answer (Run / Edit / Skip) to the turn waiting on it before a research-class run", assistant: 'deny' }),
+  listChatMemory: def({ method: 'GET', path: '/chat/memory', query: ChatMemoryQuery, response: ChatMemoryPayload, topic: 'chat', summary: "The Assistant's memory: a thread's notes and summaries, and the user's preferences (threadId omitted: preferences only; scope=pinned: every pinned entry and preference with its source message)", assistant: 'read' }),
+  deleteChatMemory: def({ method: 'POST', path: '/chat/memory/:id/delete', params: IdParams, body: EmptyBody, response: DeleteChatMemoryResult, topic: 'chat', summary: 'Forget one memory entry (a note, a preference or a summary)', assistant: 'deny' }),
   chat: def({ method: 'POST', path: '/chat', body: ChatRequest, response: ChatSseEvent, stream: true, topic: 'chat', summary: 'Send a message; SSE stream of ChatSseEvent', assistant: 'deny' }),
 
   // ---- Read-ins (BE-READIN) ---------------------------------------------------

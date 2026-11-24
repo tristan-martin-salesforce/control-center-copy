@@ -1,4 +1,4 @@
-/** Job handler contract for the worker (docs/ui/WORKER.md). Handlers register by `jobs.kind`. */
+/** Job handler contract for the worker (docs/reference/WORKER.md). Handlers register by `jobs.kind`. */
 import type { Db } from '@/db/client';
 import type { EnqueueJobInput, EnqueueResult } from '@/db/queue';
 
@@ -55,6 +55,12 @@ export interface JobHandlerDef<S = unknown> {
   queue: string;
   /** False for stubs that only log "not yet wired"; their schedules stay disabled. */
   wired: boolean;
+  /**
+   * The handler can call a model (directly, through a research agent, a relay lookup or a completion model). Such a
+   * kind must be in `LLM_JOB_KINDS` (src/llm/spend/day-gate.ts), which prices it for the worker's start gate, and
+   * every kind there must be one of these (tests/jobs/job-kinds.test.ts).
+   */
+  spends?: true;
   description: string;
   handler: JobHandler<S>;
 }

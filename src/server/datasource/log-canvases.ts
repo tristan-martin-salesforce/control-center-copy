@@ -131,10 +131,21 @@ export function logCanvasesOf(drafts: readonly Draft[], activity: readonly Canva
   return out.sort((a, b) => (b.appliedAt ?? b.createdAt).localeCompare(a.appliedAt ?? a.createdAt) || a.draftId.localeCompare(b.draftId));
 }
 
-/** The applied canvases as the Assistant reads them (chat_log_batch `applied`): what was created, its link and its rows. */
-export function appliedLogCanvases(drafts: readonly Draft[], activity: readonly CanvasRow[], now: Date) {
-  return logCanvasesOf(drafts, activity, now)
-    .filter(isAppliedCanvas)
-    .slice(0, 10)
-    .map((c) => ({ draftId: c.draftId, title: c.title, state: c.state, created: c.state !== 'applying', url: c.url, appliedAt: c.appliedAt, rows: c.rows, hours: c.hours, dcs: c.dcs, useCases: c.useCases, org62: c.org62 }));
+/** One page of the applied canvases (chat_log_batch `applied`), newest first, with the total and where the next page starts. */
+export const APPLIED_PAGE = 10;
+export function pageAppliedCanvases(canvases: readonly LogCanvas[], page: { offset?: number; limit?: number } = {}) {
+  const all = canvases.filter(isAppliedCanvas);
+  const offset = Math.max(0, Math.trunc(page.offset ?? 0));
+  const limit = Math.max(1, Math.trunc(page.limit ?? APPLIED_PAGE));
+  const next = offset + limit;
+  return {
+    applied: all.slice(offset, next).map((c) => ({ draftId: c.draftId, title: c.title, state: c.state, created: c.state !== 'applying', url: c.url, appliedAt: c.appliedAt, rows: c.rows, hours: c.hours, dcs: c.dcs, useCases: c.useCases, org62: c.org62 })),
+    appliedTotal: all.length,
+    appliedNextOffset: next < all.length ? next : null,
+  };
+}
+
+/** The applied canvases as the Assistant reads them (chat_log_batch `applied`): what was created, its link and its rows; paged to the end by `appliedOffset`. */
+export function appliedLogCanvases(drafts: readonly Draft[], activity: readonly CanvasRow[], now: Date, page: { offset?: number; limit?: number } = {}) {
+  return pageAppliedCanvases(logCanvasesOf(drafts, activity, now), page);
 }

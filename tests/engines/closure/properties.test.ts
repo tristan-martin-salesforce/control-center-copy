@@ -1,6 +1,7 @@
 /** Closure invariants over random items × random signals (hand-rolled generators). */
 import { describe, expect, it } from 'vitest';
-import { applyDecision, applySignal, isLocked, isNotMine, undoDecision } from '@/engines/closure';
+import { applyDecision, undoDecision } from '@/engines/closure/apply';
+import { applySignal, isLocked, isNotMine } from '@/engines/closure/machine';
 import {
   DEFAULT_CLOSURE_SETTINGS,
   LIVE_STATUSES,

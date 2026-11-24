@@ -104,6 +104,9 @@ export const sourceItems = pgTable(
       .on(t.ownerUserId, t.occurredAt.desc())
       .where(sql`${t.addressedToMe} AND NOT ${t.fromMe}`),
     index('source_items_owner_kind_occurred_idx').on(t.ownerUserId, t.kind, t.occurredAt.desc()),
+    // 0039 (post-2.0 read profile): every page with connectors counts today's items per connector by first_seen_at;
+    // without it that count read every source item of the user (a year of them) on each page load
+    index('source_items_owner_first_seen_idx').on(t.ownerUserId, t.firstSeenAt),
     index('source_items_body_expiry_idx').on(t.bodyExpiresAt).where(sql`${t.body} IS NOT NULL`),
     index('source_items_search_tsv_idx').using('gin', t.searchTsv),
     index('source_items_actor_idx').on(t.actorPersonId),

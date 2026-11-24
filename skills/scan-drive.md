@@ -9,7 +9,7 @@ effort: low
 mcp_servers: []
 allowed_tools: [cc_get_context, cc_record_source_items, cc_find_candidates, cc_link_evidence, cc_propose_item, cc_propose_initiative, cc_flag_unlinked, cc_report_coverage, cc_finish]
 fetcher: src/scanner/drive-digest/fetcher.ts
-spec: docs/ui/SCANNER.md
+spec: docs/reference/SCANNER.md
 requirements: [R-UI-1, R-UI-15, R-UI-20, R-UI-22]
 ---
 

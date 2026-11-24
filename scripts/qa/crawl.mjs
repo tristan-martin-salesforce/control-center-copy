@@ -2,8 +2,10 @@
 /**
  * The app crawl (release check): visits every page, records what a user would hit, and writes a report.
  *
- *   npm run crawl -- --base http://localhost:4352 --persona ae --mock     # mock: switches the persona, follows links
+ *   npm run crawl -- --base http://localhost:4345 --persona ae --mock     # mock: switches the persona, follows links
  *   npm run crawl -- --base http://localhost:4327 --live                  # live: top-level pages only, no clicks
+ *
+ * Without --base: http://localhost:$PORT, or :4327 (the app's port). A worktree lane serves on 4345-4399 (AGENTS.md).
  *
  * Per page: console errors, uncaught page errors, failed same-origin requests (status ≥ 400 or network failure,
  * the live event stream excepted), the "This page doesn't exist" screen, panels that failed to load, and buttons
@@ -23,7 +25,7 @@ const arg = (k, d) => {
 };
 const has = (k) => argv.includes(`--${k}`);
 
-const base = arg('base', 'http://localhost:4352').replace(/\/$/, '');
+const base = arg('base', `http://localhost:${process.env.PORT || 4327}`).replace(/\/$/, '');
 const live = has('live');
 const mock = has('mock');
 const persona = arg('persona', null);

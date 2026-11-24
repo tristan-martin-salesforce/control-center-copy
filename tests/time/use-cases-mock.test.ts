@@ -1,7 +1,7 @@
 /**
  * D-67 on the mock DataSource: VDP use cases ride the logging batch as Use_Case__c rows, are held by the canvas item
  * until Apply (never on two canvases), come back when it is rejected, and getUseCaseSync shows where each one stands.
- * The Postgres side of the same cases is tests/vdp/use-cases-db.test.ts. Placeholders only.
+ * The Postgres side of the same cases is tests/db/vdp/use-cases-db.test.ts. Placeholders only.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -84,7 +84,7 @@ describe('VDP use cases on the logging canvas (mock)', () => {
     expect(s.counts.create).toBe(2);
   });
 
-  it('a batch carries them (one USE CASES table, OwnerId me), a second batch never repeats them, a reject frees them', async () => {
+  it('a batch carries them (one USE CASES TO CREATE table, OwnerId me), a second batch never repeats them, a reject frees them', async () => {
     linkFirstVdpOpp();
     const first = await call('stageLogBatch', { body: {} });
     expect(first.entity.useCases).toEqual({ rows: 2, later: 0 });
@@ -92,8 +92,8 @@ describe('VDP use cases on the logging canvas (mock)', () => {
     const mds = await Promise.all(ids.map(markdownOf));
     const rows = mds.flatMap((m) => ucRowsIn(m).creates);
     expect(rows.map((r) => r.name)).toEqual(['Unified customer profile', 'Service agent deflection']);
-    const md = mds.find((m) => m.includes('# USE CASES ('))!;
-    expect(md).toMatch(/\*\*USE CASES table:\*\* create one Use_Case__c per row with OwnerId `005XX0000000MOCKAA`/);
+    const md = mds.find((m) => m.includes('## USE CASES TO CREATE ('))!;
+    expect(md).toMatch(/\*\*USE CASES TO CREATE:\*\* create one Use_Case__c per row with OwnerId `005XX0000000MOCKAA`/);
     expect(md).toContain('|Data Cloud|D360 Custom|Flex|');
     expect(md).toContain('|Agentforce|Agentforce Custom|Flex|');
 
@@ -105,7 +105,7 @@ describe('VDP use cases on the logging canvas (mock)', () => {
     expect(canvas?.useCases).toBe(2);
 
     // reject the canvas that carries them: they wait again
-    const holder = ids[mds.findIndex((m) => m.includes('# USE CASES ('))]!;
+    const holder = ids[mds.findIndex((m) => m.includes('## USE CASES TO CREATE ('))]!;
     await call('rejectDraft', { params: { id: holder }, body: {} });
     expect((await call('getUseCaseSync', {})).counts.create).toBe(2);
   });

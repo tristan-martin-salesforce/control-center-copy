@@ -1,0 +1,54 @@
+{
+  "id": "wi-004-answer-closes",
+  "title": "A question answered in the thread, the asker agrees: the item closes",
+  "storyline": "sample-data/CAST-work.md wi-004 (Answer Soo-jin: how do member identities enter the POC org?), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-10-27T23:40:00.000Z",
+      "seen_at": "2026-10-27T23:50:00.000Z",
+      "from_me": false,
+      "body": "<@U0ME00001> question for you: for the POC org, will member identities come in through our IdP, or do we create test members manually? Security will ask me this week.",
+      "meta": { "channelId": "C0SALT001", "channelType": "channel", "channelName": "saltmere-security", "author": { "name": "PERSON_S", "email": "person_s@example.com", "externalId": "U0PERSONS" } },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-10-28T00:15:00.000Z",
+      "seen_at": "2026-10-28T00:40:00.000Z",
+      "from_me": true,
+      "thread_of": "s1",
+      "body": "Good question. Proposal: test members are loaded as synthetic records in Data 360 for the POC, and your IdP is only used for staff users (service reps) via SAML. No real member data in the POC org. I will put it in section 4 of the blueprint.",
+      "meta": { "channelId": "C0SALT001", "channelType": "channel", "channelName": "saltmere-security" }
+    },
+    {
+      "id": "s3",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-10-28T00:31:00.000Z",
+      "seen_at": "2026-10-28T00:40:00.000Z",
+      "from_me": false,
+      "thread_of": "s1",
+      "body": "<@U0ME00001> that works for us. Please also state the data residency assumption in the blueprint.",
+      "meta": { "channelId": "C0SALT001", "channelType": "channel", "channelName": "saltmere-security", "author": { "name": "PERSON_S", "email": "person_s@example.com", "externalId": "U0PERSONS" } }
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Answer PERSON_S: how do member identities enter the POC org?",
+      "keywords": ["identities", "POC"],
+      "origin": "s1",
+      "ask_quote": "will member identities come in through our IdP"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "closed", "class": "settled", "cite": "s2", "rule": "D2", "why": "my substantive answer in the thread; the asker's reply agrees (and asks something new, which is not a chase of this question)" }
+  ]
+}

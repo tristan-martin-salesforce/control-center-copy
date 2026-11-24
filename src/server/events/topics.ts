@@ -47,6 +47,7 @@ export const TABLE_TOPICS: Record<string, TableTopics> = {
   activity_entries: t(['time'], 'activity', 'activity_entry'),
   activity_entry_time_blocks: t(['time'], 'time_block', 'activity_entry'),
   canvases: t(['time', 'draft'], 'canvas'),
+  canvas_row_overrides: t(['time', 'draft'], 'canvas'), // D-98: your canvas row edits before Apply (was kv canvas.row_overrides)
   // DC requests: Deals ▸ DCs, Time ▸ Log it (Ready), the sidebar Time badge (today) and Home ▸ Log & fix
   deal_contribution_requests: t(['deals', 'time', 'today', 'home'], 'dc_request'),
   specialist_forecasts: t(['time', 'home'], 'forecast'), // lane A: Time ▸ Forecast, Home ▸ Log & fix
@@ -64,7 +65,7 @@ export const TABLE_TOPICS: Record<string, TableTopics> = {
   // Time ▸ VDP: asset candidates and the VDP mirror (D-59: the Time badge counts VDPs that need you)
   vdp_asset_candidates: t(['deals', 'today'], 'vdp_asset'),
   vdp_records: t(['deals', 'today', 'time'], 'vdp'),
-  // needs-you decisions (user_settings cc.need/…): Deals needs, the account page, Home ▸ Log & fix
+  // needs-you decisions (D-98: the need_decisions table, was user_settings cc.need/…): Deals needs, the account page, Home ▸ Log & fix
   need_decisions: t(['deals', 'home', 'today'], 'need'),
   // ── people, channels, calendar ────────────────────────────────────────────────────────────
   people: t(['search'], 'person', 'person'),
@@ -85,7 +86,12 @@ export const TABLE_TOPICS: Record<string, TableTopics> = {
   task_capture_rules: t(['settings', 'triage'], 'capture_rule', 'settings'),
   llm_budgets: t(['settings', 'health', 'today'], 'budget', 'settings'),
   user_interests: t(['settings'], 'interest', 'settings'),
-  mapping_rules: t(['settings', 'triage', 'today'], 'mapping_rule'),
+  mapping_rules: t(['settings', 'triage', 'today', 'time'], 'mapping_rule'),
+  // the attribution engine (0032): DC suggestions (audited) and the engagement rollup (statement-level notices)
+  dc_suggestions: t(['time', 'deals', 'home'], 'dc_suggestion'),
+  opp_engagement: t(['time', 'deals'], 'opp_engagement'),
+  // use-case candidates (0034, src/engines/use-cases): Activity ▸ Needs you ▸ Use cases to add (audited)
+  use_case_candidates: t(['time', 'deals'], 'use_case_candidate'),
   priority_policies: t(['policy', 'settings', 'today'], 'policy', 'policy'),
   priority_policy_rules: t(['policy'], 'policy_rule', 'policy'),
   voice_profiles: t(['settings'], 'voice'),

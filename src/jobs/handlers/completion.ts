@@ -1,11 +1,15 @@
 /**
- * `completion.check` (queue `completion`, concurrency 1): the completion pass (CMP-1, docs/ui/SCANNER.md §4.9).
+ * `completion.check` (queue `completion`, concurrency 1): the completion pass (CMP-1, docs/reference/SCANNER.md §4.9).
  *
  * Enqueued after a scan run that stored new source items (src/worker/scanning.ts afterRun), at worker start and
  * on wake (catch-up after downtime), and as its own follow-up when a pass hit its per-pass caps. One queued job
  * per user (`completion.check:<user>`): a scan finishing while one is queued adds nothing, because the job reads
  * its window at run time, from the last pass's watermark to now. The watermark lives in the latest succeeded
  * job's `result.watermark` (like reevaluate's `result.reeval`), so a restart resumes exactly where it stopped.
+ *
+ * Spend (caps audit 26 F-4): the pass runs under the job's governor hold (the worker's start gate took it). Past the
+ * hold with items still to judge it raises a hand (Health ▸ Spend) and the rest waits as one queued check carrying the
+ * hold: Allow runs it at once, Stop cancels it. One call's SDK budget is then the runaway guard, not $0.05.
  *
  * The pass emits `completion` / `progress` evidence only; `reevaluate` and the closure machine decide. jobs.result
  * holds counts, ids and codes, never message text or model reasons.
@@ -15,9 +19,13 @@ import { sql } from 'drizzle-orm';
 import type { Db, DbOrTx } from '@/db/client';
 import { enqueueJob } from '@/db/queue';
 import { pgReevaluateEnqueuer } from '@/jobs/scan';
+import { spendPauseResult, spendStartResult } from '@/jobs/spend-pause';
 import type { JobHandler, JobHandlerDef } from '@/jobs/types';
+import { finishJobSpend, gateOf, startJobSpend, type SpendGovernor } from '@/llm/spend';
+import { dbSpendGovernor } from '@/server/datasource/db/spend';
 import { agentSdkCompletionModel, runCompletionPass, type CompletionLimits, type CompletionModel, type CompletionStore, type CompletionWatermark } from '@/scanner/completion';
 import { DbScannerStore } from '@/scanner/store-db';
+import { enqueueResolutionCheck, resolutionEngineMode } from '@/scanner/resolution/triggers-db';
 
 export const COMPLETION_JOB_KIND = 'completion.check';
 export const COMPLETION_QUEUE = 'completion';
@@ -68,6 +76,8 @@ export interface CompletionHandlerDeps {
   store?: (ctx: Parameters<JobHandler>[0]) => CompletionStore;
   limits?: Partial<CompletionLimits>;
   repoRoot?: string;
+  /** The spend governor (default: the database one; null: no hold, the pass's own per-call line applies). */
+  spend?: SpendGovernor | null;
 }
 
 export function completionHandler(deps: CompletionHandlerDeps = {}): JobHandler {
@@ -76,7 +86,13 @@ export function completionHandler(deps: CompletionHandlerDeps = {}): JobHandler 
     model ??= agentSdkCompletionModel();
     const store = deps.store?.(ctx) ?? new DbScannerStore({ db: ctx.db, userId: ctx.userId, clock: ctx.clock });
     const watermark = await lastCompletionWatermark(ctx.db, ctx.userId);
+    // H-7: with the resolution check live, this pass hands its items to it (src/scanner/resolution/triggers-db.ts)
+    const resolutionEngine = await resolutionEngineMode(ctx.db, ctx.userId);
     const me = await ctx.db.execute<{ name: string | null }>(sql`select display_name as name from users where id = ${ctx.userId}`);
+    const gov = deps.spend === undefined ? dbSpendGovernor({ db: ctx.db, userId: ctx.userId, clock: ctx.clock }) : deps.spend;
+    const envelope = await startJobSpend(gov, ctx.job, { scope: 'job', skill: 'completion-check' });
+    const early = await spendStartResult(ctx, envelope, { dedupeKey: completionDedupeKey(ctx.userId) });
+    if (early) return early;
     const out = await runCompletionPass({
       store,
       model,
@@ -89,9 +105,16 @@ export function completionHandler(deps: CompletionHandlerDeps = {}): JobHandler 
       reevaluate: pgReevaluateEnqueuer(ctx.db, ctx.userId),
       log: (m, d) => ctx.log(m, d),
       trigger: typeof ctx.job.payload?.trigger === 'string' ? (ctx.job.payload.trigger as string) : 'reconcile',
-    });
+      resolutionEngine,
+      delegate: async (ids) => {
+        for (const id of ids) await enqueueResolutionCheck(ctx.db, ctx.userId, id, 'evidence', ctx.clock());
+      },
+      spend: gateOf(envelope),
+    }).finally(() => finishJobSpend(gov, envelope));
+    // asked: the rest waits as the one queued check, carrying the hold; otherwise the usual follow-up page
+    const paused = await spendPauseResult(ctx, envelope, { dedupeKey: completionDedupeKey(ctx.userId), payload: { trigger: 'follow_up' } });
     let followUp = false;
-    if (out.more && !ctx.signal.aborted) followUp = await enqueueCompletionCheck(ctx.db, ctx.userId, { trigger: 'follow_up', delaySeconds: 5 });
+    if (!paused.paused && out.more && !ctx.signal.aborted) followUp = await enqueueCompletionCheck(ctx.db, ctx.userId, { trigger: 'follow_up', delaySeconds: 5 });
     return {
       status: out.status,
       watermark: out.watermark,
@@ -109,6 +132,7 @@ export function completionHandler(deps: CompletionHandlerDeps = {}): JobHandler 
       runIds: out.runIds,
       errors: out.errors,
       followUp,
+      ...paused,
     };
   };
 }
@@ -118,6 +142,7 @@ export function completionJobDef(deps: CompletionHandlerDeps = {}): JobHandlerDe
     kind: COMPLETION_JOB_KIND,
     queue: COMPLETION_QUEUE,
     wired: true,
+    spends: true,
     description: 'completion pass: a cheap model checks new messages against open items and emits completion signals (CMP-1)',
     handler: completionHandler(deps),
   };

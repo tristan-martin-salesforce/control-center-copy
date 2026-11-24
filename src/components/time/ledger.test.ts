@@ -70,6 +70,13 @@ describe('tracking', () => {
     const none = tracking(ledger({ totals: totals({ approvedH: 0, proposedH: 0, needsInputH: 0, missingH: 0 }) }), Q4);
     expect(none.segments.map((s) => s.id)).toEqual(['org62']);
   });
+
+  it('a persona that logs no task type (the AE, D-55) is never asked for "a type"', () => {
+    expect(tracking(ledger(), Q4).segments.at(-1)!.hint).toContain('Missing an opp, a type or hours');
+    const ae = tracking(ledger(), Q4, { taskType: false }).segments.at(-1)!.hint;
+    expect(ae).toContain('Missing an opp or hours');
+    expect(ae).not.toContain('type');
+  });
 });
 
 describe('lines and the drill-down', () => {

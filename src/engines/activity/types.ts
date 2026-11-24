@@ -1,5 +1,5 @@
 /**
- * Activity engine types. Names mirror docs/ui/DATA-MODEL.md (activity_entries, time_blocks,
+ * Activity engine types. Names mirror docs/reference/DATA-MODEL.md (activity_entries, time_blocks,
  * org62_events, canvas_lines). Differences are listed in the lane report ("type names to reconcile"):
  * task type and meeting type are carried by NAME (not FK id), `ref` is the short line key.
  */
@@ -97,6 +97,8 @@ export interface CalendarEvidence {
   accountKey?: string | null;
   /** The opp (Org62 id) the resolver picked for this event. */
   oppWhatId?: string | null;
+  /** The recurring series (calendar recurring event id): a learned series rule maps every instance (src/engines/attribution). */
+  seriesId?: string | null;
 }
 
 export interface ClaudeEvidence {
@@ -172,6 +174,8 @@ export interface EvidenceBundle {
   emails?: EmailSentEvidence[];
 }
 
+import type { LearnedMappings } from '@/engines/attribution/activity';
+
 // ---------------------------------------------------------------- mappings and config
 
 export interface AccountMapping {
@@ -186,6 +190,11 @@ export interface AccountMapping {
   candidates?: string;
   /** On the opp team? false adds a "confirm" flag. */
   team?: boolean;
+  /**
+   * D-103 (c): open opportunities on the account. 0 with an Account WhatId is a settled target (no "pick the
+   * opportunity" flag); absent: not known (the flag stays, as before).
+   */
+  openOpps?: number;
 }
 
 export interface MappingOverride {
@@ -215,6 +224,11 @@ export interface ActivityMappings {
   partnerDomains: string[];
   ignoreDomains: string[];
   overrides: MappingOverride[];
+  /**
+   * Learned rules (mapping_rules) and the opps they name, read first by the attribution engine (src/engines/attribution,
+   * tenet: Suggest, then learn). Absent: none (the account patterns, the channel map and the domains decide, as before).
+   */
+  learned?: LearnedMappings;
 }
 
 export interface ActivityConfig {

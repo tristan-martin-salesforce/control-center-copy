@@ -3,9 +3,10 @@
  * This lane only RENDERS markdown. It never writes the canvas (the Outbox owns that, per-target L4).
  */
 import { CANVAS_MAX_BYTES } from '@/lib/canvas/payload';
+import { upsertTable } from '@/lib/canvas/tables';
 
 import { toOrg62Event } from './entry';
-import { splitWorkOrder } from './slackbot';
+import { splitWorkOrder, updateRule, workOrderCallout } from './slackbot';
 import { roundQuarter } from './taxonomy';
 import { toMs } from './time';
 import type { ActivityConfig, ActivityEntry, Org62EventRow } from './types';
@@ -76,7 +77,7 @@ export function legacyDeleteUpdates(entries: readonly ActivityEntry[], org62: re
       actionOrField: 'Delete',
       newValue: 'n/a',
       currentValue: 'Sales Engineer Events record type, no SE Task Type',
-      why: `Replaced by the ADD row whose Description starts with REPLACES ${e.targetOrg62EventId}`,
+      why: `Replaced by the EVENTS TO CREATE row whose Description starts with REPLACES ${e.targetOrg62EventId}`,
     }));
 }
 
@@ -104,47 +105,27 @@ export function renderWorkOrder(input: WorkOrderInput): { markdown: string; stat
   const rows = adds.map((e) => ({ e, r: toOrg62Event(e, cfg) }));
   const addH = rows.reduce((s, x) => s + x.r.Duration__c, 0);
   const owner = cfg.ownerId;
-  const out: string[] = [];
-  out.push('::: {.callout}');
-  out.push(`**Slackbot: this canvas is a complete work order. Execute it in Org62 for ${input.identity.ownerName} (User Id ${owner}) without asking for more context.** Rules:`);
-  out.push(':::');
-  out.push('');
-  out.push(
-    `1. **ADD table, rows with Object = Event:** create an Event with RecordTypeId \`${cfg.recordTypeId}\` (Solutions Event), OwnerId \`${owner}\`, and Subject, StartDateTime, EndDateTime (UTC, exactly as given), SE_Task_Type__c, Duration__c, WhatId, Meeting_Type__c (only when given) and Description. Do not set DurationInMinutes or Remote__c.`,
-  );
-  out.push(
-    `2. **Duplicates:** skip an Event row ONLY if the owner already has an Event with RecordTypeId \`${cfg.recordTypeId}\` (Solutions Event) and the same Subject and StartDateTime. "Sales Events" records (Type = AE meeting, IsChild = true) are copies of AE calendar invites, not SE time, so they are NOT duplicates. Create the row anyway. **Exception:** rows whose Description starts with \`REPLACES\` must be created even though an old Event with the same Subject/Start exists (it has the wrong, locked record type).`,
-  );
-  out.push(
-    `3. **ADD table, rows with Object = Deal_Contribution__c:** create a Deal Contribution on Opportunity__c = the given Id, SE_Name__c \`${owner}\`, Opportunity_Role__c \`AI + Data Architect\`, Split_Percentage__c as given, record type Unlocked, Comments__c exactly as given, with every ⏎ replaced by a line break. If the owner already has a DC on that opportunity, update its Comments__c and Split_Percentage__c instead of creating a second one.`,
-  );
-  out.push('4. **UPDATE table:** set Field = New value on the given Record Id. For Action = Delete, delete that Event **only after** the replacement row named in the Why column exists in Org62.');
-  out.push("5. Work through everything in batches of 25. Don't stop on an individual failure. At the end, reply with counts: created / updated / deleted / skipped as duplicate / failed (with the error for each failure).");
+  // WO-1: one table per object and verb (src/lib/canvas/tables.ts), each with its own paragraph under its heading
+  const out: string[] = [...workOrderCallout(input.identity.ownerName, owner, 'created / updated / deleted / skipped as duplicate / failed (with the error for each failure)')];
   out.push('');
   out.push(`_Generated ${nowIso.slice(0, 16).replace('T', ' ')} UTC by ${input.identity.ownerName}'s activity autopilot from calendar, Org62, Claude Code, git, Drive and Slack. Rows disappear from this canvas once the read-back finds them in Org62._`);
-  out.push('');
-  out.push(`# ADD (${rows.length + dcAdds.length} rows · ${addH.toFixed(2)} h of activities)`);
-  out.push('');
-  out.push('|#|Object|Subject / Opportunity|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c / Role|Duration__c / Split %|WhatId / Opportunity__c|Meeting_Type__c|Description / Comments__c|');
-  out.push('|---|---|---|---|---|---|---|---|---|---|');
-  let n = 0;
-  for (const { e, r } of rows) {
-    n++;
+  const eventRule = `**EVENTS TO CREATE:** create one Event per row with RecordTypeId \`${cfg.recordTypeId}\` (Solutions Event) and OwnerId \`${owner}\`. Each column is the Event field of the same name: Subject, StartDateTime and EndDateTime (UTC, exactly as given), SE_Task_Type__c, Duration__c, WhatId, Meeting_Type__c (only when given) and Description. Do not set DurationInMinutes or Remote__c. Skip a row ONLY if the owner already has an Event with RecordTypeId \`${cfg.recordTypeId}\` (Solutions Event) and the same Subject and StartDateTime. "Sales Events" records (Type = AE meeting, IsChild = true) are copies of AE calendar invites, not SE time, so they are NOT duplicates: create the row anyway. **Exception:** rows whose Description starts with \`REPLACES\` must be created even though an old Event with the same Subject/Start exists (it has the wrong, locked record type).`;
+  const dcRule = `**DEAL CONTRIBUTIONS TO CREATE:** create one Deal Contribution (record type Unlocked) per row with SE_Name__c \`${owner}\`. Opportunity is the opportunity's name, for you to read; Opportunity__c is its Id; set Opportunity_Role__c and Split_Percentage__c as given, and Comments__c exactly as given, with every ⏎ replaced by a line break. If the owner already has a DC on that opportunity, update its Comments__c and Split_Percentage__c instead of creating a second one.`;
+  const evUpdRule = updateRule('EVENTS TO UPDATE', 'Event', ' When Field is Delete, delete that Event **only after** the replacement row named in the Why column exists in Org62.');
+  const dcUpdRule = updateRule('DEAL CONTRIBUTIONS TO UPDATE', 'Deal Contribution');
+  const evRows = rows.map(({ e, r }, k) => {
     let desc = r.Description;
     if (e.origin === 'legacy_recreate' && e.targetOrg62EventId) desc = `REPLACES ${e.targetOrg62EventId} (legacy record type) | ${desc}`;
-    out.push(`|${n}|Event|${cell(r.Subject)}|${r.StartDateTime}|${r.EndDateTime}|${r.SE_Task_Type__c}|${fmtNum(r.Duration__c)}|${r.WhatId}|${r.Meeting_Type__c}|${cell(desc)}|`);
-  }
-  for (const d of dcAdds) {
-    n++;
-    out.push(`|${n}|Deal_Contribution__c|${cell(d.oppName)}|||${d.role ?? 'AI + Data Architect'}|${d.split}|${d.oppId}||${cell(d.comment)}|`);
-  }
-  out.push('');
-  out.push(`# UPDATE (${updates.length} rows)`);
-  out.push('');
-  out.push('|#|Object|Record Id|Action / Field|New value|Current value|Why|');
-  out.push('|---|---|---|---|---|---|---|');
-  updates.forEach((u, i) => out.push(`|${i + 1}|${u.object}|${u.recordId}|${cell(u.actionOrField)}|${cell(u.newValue)}|${cell(u.currentValue)}|${cell(u.why)}|`));
-  return { markdown: out.join('\n'), stats: { adds: rows.length, dcAdds: dcAdds.length, addHours: Math.round(addH * 100) / 100, updates: updates.length } };
+    return [String(k + 1), 'Event', cell(r.Subject), r.StartDateTime, r.EndDateTime, r.SE_Task_Type__c, fmtNum(r.Duration__c), r.WhatId, r.Meeting_Type__c, cell(desc)];
+  });
+  const dcRows = dcAdds.map((d, k) => [String(k + 1), 'Deal_Contribution__c', cell(d.oppName), '', '', d.role ?? 'AI + Data Architect', String(d.split), d.oppId, '', cell(d.comment)]);
+  const upd = (o: UpdateRow['object']) => updates.filter((u) => u.object === o).map((u, k) => [String(k + 1), u.object, u.recordId, cell(u.actionOrField), cell(u.newValue), cell(u.currentValue), cell(u.why)]);
+  let md = out.join('\n');
+  md = upsertTable(md, 'events_create', eventRule, evRows);
+  md = upsertTable(md, 'dcs_create', dcRule, dcRows);
+  md = upsertTable(md, 'events_update', evUpdRule, upd('Event'));
+  md = upsertTable(md, 'dcs_update', dcUpdRule, upd('Deal_Contribution__c'));
+  return { markdown: md, stats: { adds: rows.length, dcAdds: dcAdds.length, addHours: Math.round(addH * 100) / 100, updates: updates.length } };
 }
 
 /** Split into canvas-sized parts (UTF-8 bytes) at row boundaries; each table part repeats its header (port of split_parts). */

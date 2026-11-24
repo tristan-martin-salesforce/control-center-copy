@@ -124,6 +124,14 @@ export function priorityFor(rank: number | null): 'high' | 'medium' | 'low' {
   return 'low';
 }
 
+/**
+ * The contract's `priority` (lane 07 R2): a derived view field, from the rank alone, medium while unranked. Both
+ * DataSources derive it the same way and never store it; `importance` is the extractor's judgment.
+ */
+export function derivedPriority(rank: number | null): 'high' | 'medium' | 'low' {
+  return rank === null ? 'medium' : priorityFor(rank);
+}
+
 export function toRankRows(store: Store, scored: Scored[], baseline: string[], limit = 10): RankRow[] {
   return scored.slice(0, limit).map((s, i) => {
     const before = baseline.indexOf(s.id);

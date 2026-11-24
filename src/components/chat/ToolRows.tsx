@@ -8,19 +8,39 @@
 import { useId, useState } from 'react';
 import { redactCredentials, type ChatToolView } from '@/client/chat';
 import { ChatIcon } from './icons';
-import { isScanTool, toolPhrase, toolSummaryLine } from './thread-model';
+import { isHeldForYou, isScanTool, toolPhrase, toolSummaryLine } from './thread-model';
 import { useChatUi } from './ui-context';
 import s from './assistant.module.css';
+
+/**
+ * A read of other people's text: the server marks every `search` / `fetch` result untrusted for the model
+ * (src/llm/chat/tools.ts `UNTRUSTED_TOOLS`, rows `<source>.search` / `<source>.read`); the row says so in words.
+ */
+const OTHERS_TEXT = /^(ledger|slack|gmail|drive|calendar|org62|vdp)\.(search|read)$/;
+export const readsOthersText = (name: string) => OTHERS_TEXT.test(name);
+export const OTHERS_TEXT_LABEL = 'others’ words';
+export const OTHERS_TEXT_TITLE = 'Other people’s text: the Assistant reads it as information and never takes instructions from it. It acts only on what you write.';
 
 /** One expanded row: `name args → result`. */
 export function ToolRow({ tool }: { tool: ChatToolView; defaultOpen?: boolean }) {
   const args = tool.startSummary && tool.startSummary !== tool.summary ? redactCredentials(tool.startSummary) : null;
   const result = tool.ok === null ? 'running…' : redactCredentials(tool.summary);
+  const cost = tool.costUsd ? ` · $${tool.costUsd < 0.01 ? tool.costUsd.toFixed(3) : tool.costUsd.toFixed(2)}` : '';
   return (
-    <li data-tool={tool.name} data-tool-ok={String(tool.ok)} data-ok={String(tool.ok)} title={`${tool.name}${args ? ` ${args}` : ''} → ${result}`}>
+    <li data-tool={tool.name} data-tool-ok={String(tool.ok)} data-ok={isHeldForYou(tool) ? 'held' : String(tool.ok)} title={`${tool.name}${args ? ` ${args}` : ''} → ${result}`}>
       <span>
         <span className={s.tn}>{tool.name}</span>
         {args ? ` ${args}` : ''} <span className={s.res}>→ {result}</span>
+        {tool.ok && readsOthersText(tool.name) ? (
+          <span className={s.others} title={OTHERS_TEXT_TITLE} data-untrusted>
+            {OTHERS_TEXT_LABEL}
+          </span>
+        ) : null}
+        {cost && !result.includes('$') ? (
+          <span className="tabular-nums text-muted" data-tool-cost={tool.costUsd}>
+            {cost}
+          </span>
+        ) : null}
       </span>
     </li>
   );
@@ -38,7 +58,15 @@ export function ToolRows({ tools, live, changed }: { tools: ChatToolView[]; live
       <ul className={s.liveTools} aria-label="Tool calls" aria-live="polite" data-tools-live>
         {listed.map((t) => (
           <li key={t.id} data-tool={t.name} data-tool-ok={String(t.ok)}>
-            {t.ok === null ? <span className={s.dotPulse} aria-hidden /> : <ChatIcon name={t.ok ? 'check' : 'x'} size={14} className={t.ok ? s.ok : s.bad} />}
+            {t.ok === null ? (
+              <span className={s.dotPulse} aria-hidden />
+            ) : isHeldForYou(t) ? (
+              <span aria-hidden className={s.held}>
+                –
+              </span>
+            ) : (
+              <ChatIcon name={t.ok ? 'check' : 'x'} size={14} className={t.ok ? s.ok : s.bad} />
+            )}
             <span>{redactCredentials(toolPhrase(t))}</span>
           </li>
         ))}

@@ -73,7 +73,7 @@ describe('B2: the review before Apply (mock)', () => {
     expect(review.bytes).toBe(new TextEncoder().encode(md).length);
     const e = review.events[0]!;
     expect(e.entry?.id).toBe(e.entryId);
-    expect(md).toContain(`|${e.n}|Event|${e.subject}|${e.startUtc}|${e.endUtc}|`);
+    expect(md).toContain(`|${e.n}|${e.subject}|${e.startUtc}|${e.endUtc}|`);
     expect(e.note).not.toMatch(/CC#/);
     expect(review.dcs[0]).toMatchObject({ kind: 'add', split: 100, comment: 'Built the POC with the customer team', requestId: expect.any(String) });
     expect(review.useCases.map((u) => u.name)).toEqual(['Unified customer profile', 'Service agent deflection']);
@@ -92,7 +92,7 @@ describe('B2: the review before Apply (mock)', () => {
     expect(r.entity.title).toMatch(/ · 1 use case$/);
     const md = await markdownOf(id);
     expect(md).not.toContain(`CC#${ev.entryId}`);
-    expect(md).not.toContain('|Deal_Contribution__c|');
+    expect(md).not.toContain('## DEAL CONTRIBUTIONS TO CREATE');
     // back to waiting: the Event is approved and free for the next batch, the use case and the DC wait again
     const row = (await call('getTime', { query: {} })).entries.find((x) => x.id === ev.entryId);
     if (row) expect(row.canvasDraftId).toBeUndefined();
@@ -148,7 +148,7 @@ describe('B2: the review before Apply (mock)', () => {
     const md = await markdownOf(again.entity.draftIds[0]!);
     expect(md).toContain('|Unified customer profile (pilot)|');
     expect(md).toContain('|U04 - Validation|');
-    expect(md).toMatch(/\|Deal_Contribution__c\|[^|]+\|\|\|AI \+ Data Architect\|50\|/);
+    expect(md).toMatch(/## DEAL CONTRIBUTIONS TO CREATE[^]*\n\|\d+\|[^|]+\|[^|]+\|AI \+ Data Architect\|50\|/);
   });
 });
 

@@ -11,7 +11,9 @@
  *
  * Both waiting: the link goes to the larger count of approvals (a quiet count never pulls it off them), and both tabs
  * show their own count. Needs you (rows that can't log yet)
- * keeps its own count on its sub-tab: it is a different signal, not part of the sidebar's approvals.
+ * keeps its own count on its sub-tab: it is a different signal, not part of the sidebar's approvals. C10: when the
+ * payload carries `toLog` (To log's one count: fix rows + sending failures), the To log part is that count, so the
+ * sidebar never says 1 while the To log tab says 38.
  */
 import type { TodayPayload } from '@/contract';
 
@@ -31,7 +33,7 @@ export interface TimeBadges {
   changes: number;
 }
 
-type NavCounts = Pick<TodayPayload['navCounts'], 'adminWaiting' | 'vdpOpen'> & Partial<Pick<TodayPayload['navCounts'], 'adminBySurface' | 'waitingForCanvas'>>;
+type NavCounts = Pick<TodayPayload['navCounts'], 'adminWaiting' | 'vdpOpen'> & Partial<Pick<TodayPayload['navCounts'], 'adminBySurface' | 'waitingForCanvas' | 'toLog'>>;
 
 export function timeBadges(n: NavCounts | null | undefined): TimeBadges {
   if (!n) return { sidebar: 0, attn: false, href: '/activity', time: 0, vdp: 0, log: 0, forecast: 0, changes: 0 };
@@ -41,7 +43,9 @@ export function timeBadges(n: NavCounts | null | undefined): TimeBadges {
   // DCs and use cases waiting for a canvas live on Log it: a quiet count, like the VDPs that need you, so it shows while
   // no approval waits (a red number is approvals only: "3 waiting for approval" never counts them)
   const queued = waiting ? 0 : (n.waitingForCanvas?.dcs ?? 0) + (n.waitingForCanvas?.useCases ?? 0);
-  const log = by.log + queued;
+  // C10: To log's count is its tab's one count (fix rows + sending failures: src/engines/activity/to-log-count.ts),
+  // so the sidebar and the tab say the same number; an older payload without it keeps the approvals count
+  const log = n.toLog !== undefined ? n.toLog : by.log + queued;
   const time = log + by.forecast;
   const vdp = waiting ? by.vdp : (n.vdpOpen ?? 0);
   // the link lands where the approvals are while any wait (loud first); else on the larger quiet count

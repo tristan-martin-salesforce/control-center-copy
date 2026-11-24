@@ -209,7 +209,7 @@ describe('Org62 search for the picker (read-only SOQL from fixed fields)', () =>
   it('a soqlQuery answer becomes picker hits', () => {
     const rows = parseOrg62Rows(JSON.stringify({ records: [MOCK_ORG62_OPPS[2]] }), 'opportunities');
     expect(rows.map(org62OppHit)).toEqual([
-      { org62Id: '006XX0000MOCK03AAA', name: 'Stark Labs · Data 360 Foundations', accountName: 'Stark Labs', accountOrg62Id: '001XX0000MOCK03AAA', stage: 'Discovery', closeDate: '2027-04-30', amount: 240000, owner: 'Placeholder AE', isOpen: true, oppId: null, accountId: null },
+      { kind: 'opp', org62Id: '006XX0000MOCK03AAA', name: 'Stark Labs · Data 360 Foundations', accountName: 'Stark Labs', accountOrg62Id: '001XX0000MOCK03AAA', stage: 'Discovery', closeDate: '2027-04-30', amount: 240000, owner: 'Placeholder AE', isOpen: true, oppId: null, accountId: null },
     ]);
   });
 });

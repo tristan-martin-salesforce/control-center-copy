@@ -26,6 +26,8 @@ export interface ArrivalAge {
   firstSeenAt: number | string;
   /** Its due date, if any. */
   dueAt?: number | string | null;
+  /** Settings ▸ Closing ▸ Old asks (`oldAskDays`, R15); default STILL_NEEDED_DAYS. */
+  days?: number;
 }
 
 const ms = (v: number | string | null | undefined): number => (typeof v === 'number' ? v : v ? Date.parse(v) : NaN);
@@ -37,7 +39,8 @@ export function staleOnArrival(a: ArrivalAge): boolean {
   if (!Number.isFinite(origin) || !Number.isFinite(seen)) return false;
   const due = ms(a.dueAt);
   if (Number.isFinite(due) && due > seen) return false;
-  return origin < seen - STILL_NEEDED_DAYS * DAY_MS;
+  const days = a.days && a.days > 0 ? a.days : STILL_NEEDED_DAYS;
+  return origin < seen - days * DAY_MS;
 }
 
 /** "Asked 2026-08-11, 87 days before it was first seen: still needed?" (+ " (scanner:slack)" for the scanner). */

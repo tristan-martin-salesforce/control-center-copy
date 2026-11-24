@@ -1,0 +1,66 @@
+{
+  "items": [
+    {
+      "connector": "drive",
+      "kind": "file_revision",
+      "externalId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@2026-03-10T17:20:00.000Z",
+      "dedupeKey": "drive:1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789@2026-03-10T17:20:00.000Z",
+      "contentHash": "6c8c5d199109c650",
+      "occurredAt": "2026-03-10T17:20:00.000Z",
+      "author": {
+        "name": "Pat Example",
+        "email": "me@example.com",
+        "isMe": true
+      },
+      "permalink": "https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit",
+      "title": "ACME_CORP workshop deck",
+      "excerpt": "deck last edited by me (before the first scan; no change digest)",
+      "redacted": false,
+      "fileRefs": [
+        "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+      ],
+      "payload": {
+        "fileId": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        "fileKind": "slides",
+        "modifiedTime": "2026-03-10T17:20:00.000Z",
+        "lastModifyingUser": {
+          "name": "Pat Example",
+          "email": "me@example.com"
+        },
+        "editedByMe": true,
+        "history": true
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "kind": "query_window",
+      "ref": "drive:feed",
+      "from": "2026-02-08T17:30:00.000Z",
+      "to": "2026-03-10T17:30:00.000Z",
+      "meta": {
+        "rows": 2,
+        "truncated": false,
+        "tracked": 1
+      }
+    },
+    {
+      "kind": "file",
+      "ref": "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+      "from": "2026-03-10T17:20:00.000Z",
+      "to": "2026-03-10T17:20:00.000Z",
+      "meta": {
+        "sampled": true,
+        "reason": "baseline",
+        "kind": "slides",
+        "baseline": true
+      }
+    }
+  ],
+  "nextCursor": {
+    "value": "{\"feedAt\":\"2026-03-10T17:30:00.000Z\",\"mine\":{\"1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\":{\"m\":\"2026-03-10T17:20:00.000Z\",\"k\":\"slides\"}},\"files\":{\"1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789\":{\"m\":\"2026-03-10T17:20:00.000Z\",\"h\":\"74546f2bcecca70b0c57e935e3d883407fe780a1\",\"s\":\"2026-03-10T17:30:00.000Z\",\"k\":\"slides\",\"settle\":true}}}",
+    "at": "2026-03-10T17:30:00.000Z"
+  },
+  "complete": true,
+  "recordOnly": true
+}

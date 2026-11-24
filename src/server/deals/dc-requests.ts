@@ -4,7 +4,7 @@
  *
  * - A request is checked against my DC on the opp (`planDcRequest`), never only by the prompt: the same split as my
  *   DC is refused; a different split is an explicit **change** (`kind: 'change'`, `fromSplit`), an UPDATE row on that
- *   Deal_Contribution__c ("Change your DC 50% → 100%"); no DC is an **add**, an ADD row. One live request per opp.
+ *   Deal_Contribution__c ("Change your DC 50% → 100%"); no DC is an **add**, a create row. One live request per opp.
  * - A request is created `approved` (the user's Apply of a chat card, or their own click, is the approval). Nothing is
  *   sent: it waits for the next logging canvas that has rows (Time ▸ Log, or the Assistant's `chat_log_batch` with
  *   stage). It never makes a canvas of its own unless the user asks for one (Log DCs now: `dcOnly`).
@@ -12,8 +12,8 @@
  *   the DC rows it carries, so staging twice never puts the same DC on two canvases; a rejected item lets them go; a
  *   sent one handed them to Slackbot. The DC rows are read back from the canvas markdown itself (an ADD row's
  *   Opportunity__c id and role cells, a change row's Record Id), so no other payload field is needed.
- * - The rows go into the slackbot.ts work order after it is rendered (`withDcAdds`): a rule for Slackbot, adds at the
- *   end of the ADD table (its header already names the Deal_Contribution__c columns), changes at the end of UPDATE.
+ * - The rows go into the slackbot.ts work order after it is rendered (`withDcAdds`): adds in their own
+ *   DEAL CONTRIBUTIONS TO CREATE table, changes in DEAL CONTRIBUTIONS TO UPDATE (WO-1: one table per object and verb).
  * - An Org62 scan that reads my DC on the opp confirms the request (`reconcileDcRequests`, D-68): an add whatever
  *   split Org62 shows (Org62 wins, DC-03), a change once the split is the requested one; status `verified`, linked to
  *   that DC. A change still waiting whose DC someone changed in Org62 (or removed) is withdrawn, never sent (DC-04); a
@@ -24,6 +24,7 @@
 import { DEFAULT_DC_ROLE, type AccountDc, type DcRequest, type DcRequestKind, type DcRequestOutcome, type DcRequestStatus, type Draft, type MyDc, type MyDcRow, type Opportunity } from '@/contract';
 import { CANVAS_HOLDING, canvasInputOf } from '@/lib/canvas/payload';
 import { cell } from '@/engines/activity/slackbot';
+import { legacyShape, lineInTable, tableSpec, upsertTable } from '@/lib/canvas/tables';
 import { AppError } from '@/server/errors';
 
 /** What both DataSources store per request (the mock's collection, the db table's columns). */
@@ -160,7 +161,7 @@ const changeKey = (org62DcId: string) => `dc:${org62DcId.slice(0, 15)}`;
 export function dcRowsIn(markdown: string): string[] {
   const out: string[] = [];
   let section: 'add' | 'update' | null = null;
-  for (const ln of markdown.split('\n')) {
+  for (const ln of legacyShape(markdown).split('\n')) {
     if (ln.startsWith('# ADD')) section = 'add';
     else if (ln.startsWith('# UPDATE')) section = 'update';
     if (!ln.startsWith('|')) continue;
@@ -386,71 +387,49 @@ export function dcAddOf(r: DcRequest): DcAdd {
 // ---------------------------------------------------------------------------
 
 /**
- * The rule Slackbot follows for DC rows (the autopilot's wording, canvas-workorder.ts rule 3). An ADD row never
- * touches a DC that exists: only a change row (UPDATE, by Record Id) changes a split.
+ * The paragraphs Slackbot follows for DC rows (WO-1: one table per verb, under its heading). A create row never
+ * touches a DC that exists: only an update row (DEAL CONTRIBUTIONS TO UPDATE, by Record Id) changes a split.
  */
-export function dcRule(n: number, ownerOrg62Id: string, has: { adds: boolean; changes: boolean } = { adds: true, changes: false }): string {
+export function dcCreateRule(ownerOrg62Id: string): string {
   const who = ownerOrg62Id ? `\`${ownerOrg62Id}\`` : 'the owner';
-  const parts: string[] = [];
-  if (has.adds)
-    parts.push(
-      `**ADD table, rows with Object = Deal_Contribution__c:** create a Deal Contribution on Opportunity__c = the given Id, SE_Name__c ${ownerOrg62Id ? `\`${ownerOrg62Id}\`` : '(the owner)'}, Opportunity_Role__c as given, Split_Percentage__c as given, record type Unlocked, Comments__c exactly as given, with every ⏎ replaced by a line break. If ${who} already has a DC on that opportunity, don't create a second one and don't change it: skip the row and report it as skipped (an existing DC changes only through an UPDATE row).`,
-    );
-  if (has.changes) parts.push(`**UPDATE table, rows with Object = Deal_Contribution__c:** change only that existing Deal Contribution (the Record Id): set Field = New value, nothing else.`);
-  return `${n}. ${parts.join(' ')}`;
+  return `**DEAL CONTRIBUTIONS TO CREATE:** create one Deal Contribution (Deal_Contribution__c, record type Unlocked) per row with SE_Name__c ${ownerOrg62Id ? `\`${ownerOrg62Id}\`` : '(the owner)'}. Opportunity is the opportunity's name, for you to read; Opportunity__c is its Id; set Opportunity_Role__c and Split_Percentage__c as given, and Comments__c exactly as given, with every ⏎ replaced by a line break. If ${who} already has a DC on that opportunity, don't create a second one and don't change it: skip the row and report it as skipped (an existing DC changes only through DEAL CONTRIBUTIONS TO UPDATE).`;
 }
 
-/** One ADD-table row of a DC add (numbered `n`). */
-export const dcAddRow = (n: number, d: DcAdd) => `|${n}|Deal_Contribution__c|${cell(d.oppName)}|||${cell(d.role)}|${d.split}|${cell(d.org62OpportunityId)}||${cell(d.comment)}|`;
+export const DC_UPDATE_RULE =
+  '**DEAL CONTRIBUTIONS TO UPDATE:** each row changes one field on an existing Deal Contribution (Deal_Contribution__c): on the record whose Id is in Record Id, set the field named in Field (Split_Percentage__c or Opportunity_Role__c) to New value, nothing else. Current value (what Org62 held when this was written) and Why are for you to read: never write them anywhere.';
 
-/** A change's UPDATE rows: the split (always), and the role when the request names another one. */
-export function dcChangeRows(d: DcAdd): Array<(n: number) => string> {
+/** A DC add in the legacy cell layout the table helpers take (src/lib/canvas/tables.ts). */
+const dcAddCells = (n: number, d: DcAdd) => [String(n), 'Deal_Contribution__c', cell(d.oppName), '', '', cell(d.role), String(d.split), cell(d.org62OpportunityId), '', cell(d.comment)];
+
+/** One DEAL CONTRIBUTIONS TO CREATE row (numbered `n`). */
+export const dcAddRow = (n: number, d: DcAdd) => lineInTable(tableSpec('dcs_create'), dcAddCells(n, d));
+
+/** A change's rows in the legacy cell layout: the split (always), and the role when the request names another one. */
+function dcChangeCells(d: DcAdd): string[][] {
   const why = cell(`${dcRequestWords({ kind: 'change', fromSplit: d.fromSplit ?? null, split: d.split })} on ${d.oppName}${d.comment ? ` · ${d.comment}` : ''}`);
-  const rows = [(n: number) => `|${n}|Deal_Contribution__c|${cell(d.org62DcId)}|Split_Percentage__c|${d.split}|${d.fromSplit ?? '(not read)'}|${why}|`];
-  if (d.fromRole && d.role && d.fromRole.trim().toLowerCase() !== d.role.trim().toLowerCase()) rows.push((n) => `|${n}|Deal_Contribution__c|${cell(d.org62DcId)}|Opportunity_Role__c|${cell(d.role)}|${cell(d.fromRole)}|${why}|`);
+  const rows = [['', 'Deal_Contribution__c', cell(d.org62DcId), 'Split_Percentage__c', String(d.split), String(d.fromSplit ?? '(not read)'), why]];
+  if (d.fromRole && d.role && d.fromRole.trim().toLowerCase() !== d.role.trim().toLowerCase()) rows.push(['', 'Deal_Contribution__c', cell(d.org62DcId), 'Opportunity_Role__c', cell(d.role), cell(d.fromRole), why]);
   return rows;
 }
 
-/** Append rows to the table under `title` (numbered on), returning the new lines and how many were added. */
-function appendRows(lines: string[], title: string, rows: Array<(n: number) => string>): { lines: string[]; added: number; at: number } {
-  const at = lines.findIndex((l) => l.startsWith(title));
-  if (at < 0) throw new Error(`work order has no ${title.slice(2).trim()} table`);
-  let end = lines.findIndex((l, i) => i > at && l.startsWith('|---')) + 1;
-  let lastN = 0;
-  for (; end > 0 && end < lines.length && lines[end]!.startsWith('|'); end++) lastN = Number(lines[end]!.split('|')[1]) || lastN;
-  const out = [...lines.slice(0, end), ...rows.map((r, i) => r(lastN + i + 1)), ...lines.slice(end)];
-  return { lines: out, added: rows.length, at };
+/** A change's DEAL CONTRIBUTIONS TO UPDATE rows: the split (always), and the role when the request names another one. */
+export function dcChangeRows(d: DcAdd): Array<(n: number) => string> {
+  const spec = tableSpec('dcs_update');
+  return dcChangeCells(d).map((c) => (n: number) => lineInTable(spec, [String(n), ...c.slice(1)]));
 }
 
 /**
- * A rendered work order with DC rows added: the DC rule after the ADD-table rules, adds at the end of the ADD table
- * (numbered on) and changes at the end of the UPDATE table, and the tables' counts. Unchanged when `adds` is empty.
+ * A rendered work order with DC rows added (WO-1): adds in DEAL CONTRIBUTIONS TO CREATE, changes in DEAL CONTRIBUTIONS
+ * TO UPDATE, each table in its place with its paragraph and counts, numbered on when it is there already. Unchanged
+ * when `adds` is empty.
  */
 export function withDcAdds(markdown: string, adds: readonly DcAdd[], ownerOrg62Id: string): string {
   if (!adds.length) return markdown;
   const creates = adds.filter((d) => d.kind !== 'change');
   const changes = adds.filter((d) => d.kind === 'change');
-  let out = markdown.split('\n');
-  if (creates.length) {
-    const r = appendRows(out, '# ADD (', creates.map((d) => (n: number) => dcAddRow(n, d)));
-    out = r.lines;
-    out[r.at] = out[r.at]!.replace(/^# ADD \((\d+) rows?/, (_, n: string) => `# ADD (${Number(n) + creates.length} rows`).replace(/\)$/, ` · ${creates.length} deal contribution${creates.length === 1 ? '' : 's'})`);
-  }
-  if (changes.length) {
-    const r = appendRows(out, '# UPDATE (', changes.flatMap(dcChangeRows));
-    out = r.lines;
-    out[r.at] = out[r.at]!.replace(/^# UPDATE \((\d+) rows?/, (_, n: string) => `# UPDATE (${Number(n) + r.added} rows`).replace(/\)$/, ` · ${changes.length} DC change${changes.length === 1 ? '' : 's'})`);
-  }
-  // The DC rule goes right after the ADD-table rules (before the UPDATE rule); the rules after it number on.
-  const gen = out.findIndex((l) => l.startsWith('_Generated'));
-  const ruleEnd = gen < 0 ? out.length : gen;
-  const numbered = out.slice(0, ruleEnd).flatMap((l, i) => (/^\d+\. /.test(l) ? [i] : []));
-  if (!numbered.length) return out.join('\n');
-  const at = numbered.find((i) => /^\d+\. \*\*UPDATE table/.test(out[i]!)) ?? numbered.at(-1)! + 1;
-  const n = at <= numbered.at(-1)! ? Number(/^(\d+)\./.exec(out[at]!)![1]) : Number(/^(\d+)\./.exec(out[numbered.at(-1)!]!)![1]) + 1;
-  for (const i of numbered) if (i >= at) out[i] = out[i]!.replace(/^(\d+)\./, (_, k: string) => `${Number(k) + 1}.`);
-  out.splice(at, 0, dcRule(n, ownerOrg62Id, { adds: creates.length > 0, changes: changes.length > 0 }));
-  return out.join('\n');
+  let md = upsertTable(markdown, 'dcs_create', dcCreateRule(ownerOrg62Id), creates.map((d, k) => dcAddCells(k + 1, d)));
+  md = upsertTable(md, 'dcs_update', DC_UPDATE_RULE, changes.flatMap(dcChangeCells));
+  return md;
 }
 
 /** The canvases of a logging batch, as both DataSources build them. */
@@ -584,7 +563,7 @@ export function dcCanvasRows(markdown: string): DcCanvasRow[] {
   const out: DcCanvasRow[] = [];
   let section: 'add' | 'update' | null = null;
   const num = (v: string | undefined) => (v !== undefined && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
-  for (const ln of markdown.split('\n')) {
+  for (const ln of legacyShape(markdown).split('\n')) {
     if (ln.startsWith('# ADD')) section = 'add';
     else if (ln.startsWith('# UPDATE')) section = 'update';
     if (!ln.startsWith('|')) continue;

@@ -12,11 +12,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import type { ApiErrorBody } from '@/contract';
 import type { ChatMessageView } from '@/client/chat';
 import { readString, writeString } from '@/client/chat/storage';
+import { isStepLimitError } from '@/client/chat/turn';
 import { Button } from '@/ui';
 import { useAssistantSurface } from './assistant-context';
 import { DraftCard, ScanRow, SessionCard } from './ChatActionCards';
 import { ProposalPart } from './ChatProposalCard';
 import { ReceiptPart } from './ChatReceiptCard';
+import { SpendAskCard } from './SpendAskCard';
+import { PlanCard } from './PlanCard';
 import { EvidenceChips } from './ChatResourceCard';
 import { EMPTY_SUGGESTIONS } from './commands';
 import { fmtDate, fmtDayLong, fmtTime } from './format';
@@ -38,7 +41,7 @@ export function MarkdownBubble({ text, streaming }: { text: string; streaming?: 
   return <div className={s.prose} aria-busy={streaming || undefined} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
-/** A capped message's offer (ChatErrorDetails.allowMore): re-send it once with this much more. */
+/** A capped message's offer (ChatErrorDetails.allowMore): continue it once with this much more (ASSIST-2). */
 export function allowMoreOf(error: ApiErrorBody): { usd: number; scope: 'message' | 'day' } | null {
   const a = (error.details as { allowMore?: { usd?: unknown; scope?: unknown } } | undefined)?.allowMore;
   return a && typeof a.usd === 'number' && a.usd > 0 && (a.scope === 'message' || a.scope === 'day') ? { usd: a.usd, scope: a.scope } : null;
@@ -51,7 +54,7 @@ export function InlineError({ error, onRetry }: { error: ApiErrorBody; onRetry?:
       ? 'A connector or the model is unavailable. Nothing was changed.'
       : error.code === 'budget_exceeded'
         ? more?.scope === 'message'
-          ? 'Allow more to let this message finish; it holds for the rest of this thread, and your limits stay as they are.'
+          ? 'Allow more to let this answer finish: it continues from where it stopped (nothing already done is run again). It holds for the rest of this thread, and your limits stay as they are.'
           : more
             ? "Allow more for this thread, or raise today's limits (they go back to normal at midnight)."
             : 'The daily spend cap is reached.'
@@ -78,7 +81,7 @@ export function InlineError({ error, onRetry }: { error: ApiErrorBody; onRetry?:
         </Button>
       ) : onRetry && error.retryable ? (
         <Button variant="secondary" size="sm" onClick={() => onRetry()} data-retry>
-          Retry
+          {isStepLimitError(error) ? 'Continue' : 'Retry'}
         </Button>
       ) : null}
     </div>
@@ -169,24 +172,81 @@ export function BriefCard({ m }: { m: ChatMessageView }) {
   );
 }
 
+/** "claude-sonnet-5-5" → "Sonnet" (the receipt's model name). */
+export function modelLabel(id: string | undefined): string | null {
+  const k = /(haiku|sonnet|opus)/i.exec(id ?? '')?.[1];
+  return k ? k[0]!.toUpperCase() + k.slice(1).toLowerCase() : id || null;
+}
+
+/** USD for the cost line: tenths of a cent under $0.10, cents above; a fraction of a tenth of a cent reads "<$0.001". */
+export const fmtUsd = (n: number) => (n > 0 && n < 0.0005 ? '<$0.001' : `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`);
+
+/**
+ * ASSIST-9 (2026-11-20): what this answer costs. While it runs: the spend so far (`usage-delta`); once settled: the
+ * receipt, model · $ actual, with what the stopped answer it continued cost beside it (ASSIST-2: paid once, shown both).
+ */
+export function costText(m: Pick<ChatMessageView, 'streaming' | 'spentUsd' | 'spentModel' | 'usage'>): string | null {
+  if (m.usage) {
+    const model = modelLabel(m.usage.model);
+    const prior = m.usage.continuedFromUsd;
+    const total = prior !== undefined ? ` (+ ${fmtUsd(prior)} before Allow more = ${fmtUsd(prior + m.usage.costUsd)})` : '';
+    // Assistant v2 receipt: tier · steps · $
+    const steps = m.usage.steps ? `${m.usage.steps} step${m.usage.steps === 1 ? '' : 's'} · ` : '';
+    // W12-8: compaction is a model call of its own: say so beside the cost it adds (no hidden spend)
+    const compacted = m.usage.summarizedTurns ? ` · summarised ${m.usage.summarizedTurns} turn${m.usage.summarizedTurns === 1 ? '' : 's'}` : '';
+    return `${model ? `${model} · ` : ''}${steps}${fmtUsd(m.usage.costUsd)}${total}${compacted}`;
+  }
+  if (m.spentUsd !== undefined) return `${m.spentModel ? `${modelLabel(m.spentModel)} · ` : ''}${fmtUsd(m.spentUsd)}${m.streaming ? ' so far' : ''}`;
+  return null;
+}
+
+/** Assistant v2: which tier answered and why ("Haiku · a lookup"; "Sonnet · you chose Sonnet"). */
+export function RouteChip({ m }: { m: Pick<ChatMessageView, 'route'> }) {
+  if (!m.route) return null;
+  const label = modelLabel(m.route.model);
+  const why = m.route.why;
+  return (
+    <span className="rounded-full border border-line px-1.5 text-caption text-muted" title={m.route.override ? 'Your choice (the composer menu or Settings ▸ Budgets)' : `Auto routing: ${why}`} data-chat-route={m.route.tier}>
+      {label} · {why}
+    </span>
+  );
+}
+
+export function CostLine({ m }: { m: ChatMessageView }) {
+  // the route chip already names the model: the cost line keeps steps and $
+  const t0 = costText(m);
+  const t = t0 && m.route ? t0.replace(/^(Haiku|Sonnet|Opus) · /, '') : t0;
+  if (!t) return null;
+  return (
+    <span className="tabular-nums" data-chat-cost={m.usage ? 'final' : 'live'} title={m.usage ? 'What this answer cost (the model and any research it ran)' : 'Spent so far on this answer'}>
+      · {t}
+    </span>
+  );
+}
+
 export function AssistantMessage({ m, latest }: { m: ChatMessageView; latest: boolean }) {
   const ui = useChatUi();
   const surface = useAssistantSurface();
   if (m.isMorningBrief) return <BriefCard m={m} />;
-  const waiting = m.streaming && !m.text && !m.tools.length;
+  const waiting = m.streaming && !m.text && !m.tools.length && !(m.plans ?? []).length;
   const { drafts, sessions, evidence } = splitResources(m.resources);
   const scans = scanViews(m.tools);
   const consumed = new Set(scans.flatMap((x) => x.consumed));
   const lineTools = consumed.size ? m.tools.filter((t) => !consumed.has(t.id)) : m.tools;
-  const empty = !m.streaming && !m.text && !scans.length && !m.receipts.length && !m.proposals.length && !m.resources.length && !m.error && !m.stopped;
+  const empty = !m.streaming && !m.text && !scans.length && !m.receipts.length && !m.proposals.length && !m.resources.length && !(m.plans ?? []).length && !m.error && !m.stopped;
   const changed = m.receipts.length > 0 || m.proposals.length > 0;
   return (
     <article className={s.msg} data-role="assistant" data-message-id={m.id} data-streaming={m.streaming || undefined} data-status={m.status}>
       <div className={s.msgMeta}>
         <span className={s.who}>Assistant</span>
         <span>{fmtTime(m.at, ui.timeZone)}</span>
+        <RouteChip m={m} />
+        <CostLine m={m} />
         {m.status === 'reconnecting' ? <span className={s.err}>· Reconnecting…</span> : null}
       </div>
+      {(m.plans ?? []).map((pl) => (
+        <PlanCard key={pl.id} plan={pl} live={m.streaming} />
+      ))}
       <ToolRows tools={lineTools} live={m.streaming} changed={changed} />
       {scans.map((x) => (
         <ScanRow key={x.id} scan={x} />
@@ -211,6 +271,7 @@ export function AssistantMessage({ m, latest }: { m: ChatMessageView; latest: bo
       {sessions.map((r) => (
         <SessionCard key={r.id} resource={r} />
       ))}
+      {m.spendAsk && m.streaming ? <SpendAskCard ask={m.spendAsk} onFallback={latest ? (usd) => ui.retry({ allowExtraUsd: usd }) : undefined} /> : null}
       {m.error ? <InlineError error={m.error} onRetry={latest ? ui.retry : undefined} /> : null}
       {m.stopped && !m.error ? <p className={s.note}>Stopped. Anything already changed is on the card above, with Undo.</p> : null}
       {empty ? (
@@ -279,7 +340,7 @@ export function MessageList({ messages, loading, error, onReload, empty, classNa
   const anchored = useRef(false);
   const [showJump, setShowJump] = useState(false);
   const last = messages.at(-1);
-  const signature = `${messages.length}:${last?.id}:${last?.text.length}:${last?.tools.length}:${last?.receipts.length}:${last?.proposals.length}:${last?.resources.length}:${last?.error ? 1 : 0}`;
+  const signature = `${messages.length}:${last?.id}:${last?.text.length}:${last?.tools.length}:${last?.plans?.length ?? 0}:${last?.receipts.length}:${last?.proposals.length}:${last?.resources.length}:${last?.error ? 1 : 0}`;
 
   const onScroll = () => {
     const el = ref.current;
@@ -347,7 +408,7 @@ export function MessageList({ messages, loading, error, onReload, empty, classNa
   );
   return (
     <div className={`${s.listWrap} ${className}`}>
-      <div ref={ref} onScroll={onScroll} className={variant === 'page' ? s.cvScroll : s.scroll} role="log" aria-live="polite" aria-relevant="additions" data-chat-messages>
+      <div ref={ref} onScroll={onScroll} className={variant === 'page' ? s.cvScroll : s.scroll} role="log" aria-live="polite" aria-relevant="additions text" data-chat-messages>
         {variant === 'page' ? <div className={s.cvCol}>{list}</div> : list}
       </div>
       {showJump ? (

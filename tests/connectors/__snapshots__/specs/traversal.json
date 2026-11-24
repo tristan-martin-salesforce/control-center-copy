@@ -1,0 +1,1543 @@
+{
+  "slack": {
+    "allowedTools": [
+      "mcp__slack__slack_search_public_and_private",
+      "mcp__slack__slack_read_thread",
+      "mcp__slack__slack_read_channel",
+      "mcp__slack__slack_list_unreads"
+    ],
+    "autoRecord": "slack",
+    "chunkMs": 21600000,
+    "chunkMsFor": {
+      "inbox": {
+        "incremental": 7200000,
+        "backfill": 7200000,
+        "head": 7200000,
+        "continuation": 7200000,
+        "relink": 7200000
+      },
+      "channel:C1": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "events": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "opps": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "book": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "missed_opps": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "mine": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "all": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "tracked": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "primary": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "poll": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "gmail": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      }
+    },
+    "connector": "slack",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.08,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.15,
+        "head": 0.15,
+        "continuation": 0.05,
+        "relink": 0.05
+      }
+    },
+    "firstScanChunkMsFor": {
+      "inbox": {
+        "incremental": 7200000,
+        "backfill": 7200000,
+        "head": 7200000,
+        "continuation": 7200000,
+        "relink": 7200000
+      },
+      "channel:C1": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "events": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "opps": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "book": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "missed_opps": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "mine": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "all": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "tracked": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "primary": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "poll": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "gmail": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      }
+    },
+    "firstScanDeepChunkMsFor": {
+      "inbox": {
+        "incremental": 21600000,
+        "backfill": 21600000,
+        "head": 21600000,
+        "continuation": 21600000,
+        "relink": 21600000
+      },
+      "channel:C1": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "events": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "opps": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "book": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "missed_opps": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "mine": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "all": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "tracked": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "primary": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "poll": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "gmail": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 30,
+        "backfill": 40,
+        "head": 40,
+        "continuation": 30,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "mcpServers": "fn",
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-slack.md",
+    "triage": {
+      "inbox": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "channel:C1": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "events": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "opps": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "book": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "missed_opps": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "mine": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "all": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "tracked": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "primary": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "poll": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      },
+      "gmail": {
+        "incremental": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "backfill": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "head": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "continuation": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        },
+        "relink": {
+          "skillPath": "skills/triage-slack.md",
+          "batchSize": 10,
+          "maxTurns": 16,
+          "costCapUsdPerBatch": 0.03,
+          "escalateCostCapUsd": 0.25,
+          "model": "claude-haiku-5-5",
+          "escalateModel": "claude-sonnet-5-5"
+        }
+      }
+    },
+    "type": "traversal"
+  },
+  "org62": {
+    "allowedTools": [
+      "mcp__Org62-Sobject-Read__soqlQuery"
+    ],
+    "autoRecord": "org62",
+    "chunkMs": 604800000,
+    "chunkMsFor": {
+      "inbox": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "channel:C1": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "events": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "opps": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "book": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "missed_opps": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "mine": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "all": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "tracked": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "primary": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "poll": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      },
+      "gmail": {
+        "incremental": 604800000,
+        "backfill": 604800000,
+        "head": 604800000,
+        "continuation": 604800000,
+        "relink": 604800000
+      }
+    },
+    "connector": "org62",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "channel:C1": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "events": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "opps": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "book": {
+        "incremental": 0.15,
+        "backfill": 0.03,
+        "head": 0.15,
+        "continuation": 0.15,
+        "relink": 0.15
+      },
+      "missed_opps": {
+        "incremental": 0.25,
+        "backfill": 0.03,
+        "head": 0.25,
+        "continuation": 0.25,
+        "relink": 0.25
+      },
+      "mine": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "all": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "tracked": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "primary": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "poll": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      },
+      "gmail": {
+        "incremental": 0.08,
+        "backfill": 0.08,
+        "head": 0.08,
+        "continuation": 0.08,
+        "relink": 0.08
+      }
+    },
+    "initialLookbackMs": 2592000000,
+    "maxBackfillMsFor": {
+      "inbox": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "channel:C1": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "events": {
+        "incremental": 10368000000,
+        "backfill": 10368000000,
+        "head": 10368000000,
+        "continuation": 10368000000,
+        "relink": 10368000000
+      },
+      "opps": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "book": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "missed_opps": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "mine": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "all": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "tracked": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "primary": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "poll": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      },
+      "gmail": {
+        "incremental": null,
+        "backfill": null,
+        "head": null,
+        "continuation": null,
+        "relink": null
+      }
+    },
+    "maxTurns": {
+      "inbox": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "channel:C1": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "events": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "opps": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "book": {
+        "incremental": 25,
+        "backfill": 6,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "missed_opps": {
+        "incremental": 40,
+        "backfill": 6,
+        "head": 40,
+        "continuation": 40,
+        "relink": 40
+      },
+      "mine": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "all": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "tracked": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "primary": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "poll": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      },
+      "gmail": {
+        "incremental": 25,
+        "backfill": 25,
+        "head": 25,
+        "continuation": 25,
+        "relink": 25
+      }
+    },
+    "mcpServers": "fn",
+    "model": "claude-haiku-5-5",
+    "readsCurrentState": {
+      "inbox": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "channel:C1": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "events": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "opps": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "book": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "missed_opps": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "mine": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "all": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "tracked": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "primary": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "poll": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      },
+      "gmail": {
+        "incremental": false,
+        "backfill": false,
+        "head": false,
+        "continuation": false,
+        "relink": false
+      }
+    },
+    "skillPath": "skills/scan-org62.md",
+    "timeoutMs": {
+      "inbox": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "channel:C1": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "events": {
+        "incremental": 480000,
+        "backfill": 480000,
+        "head": 480000,
+        "continuation": 480000,
+        "relink": 480000
+      },
+      "opps": {
+        "incremental": 480000,
+        "backfill": 480000,
+        "head": 480000,
+        "continuation": 480000,
+        "relink": 480000
+      },
+      "book": {
+        "incremental": 480000,
+        "backfill": 480000,
+        "head": 480000,
+        "continuation": 480000,
+        "relink": 480000
+      },
+      "missed_opps": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "mine": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "all": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "tracked": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "primary": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "poll": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      },
+      "gmail": {
+        "incremental": 180000,
+        "backfill": 180000,
+        "head": 180000,
+        "continuation": 180000,
+        "relink": 180000
+      }
+    },
+    "type": "traversal"
+  }
+}

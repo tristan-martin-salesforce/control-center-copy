@@ -5,7 +5,7 @@
  * draft. Nothing here calls VDP (*tenet: Draft, don't send*).
  */
 import type { JudgmentRequest } from '@/engines/vdp/identity';
-import { DEFAULT_VDP_AUTOPILOT_STATE, VdpActionInput, vdpKeyOfAccount, type Account, type VdpGap, type ActionDestination, type Draft, type DraftVdpUpdateRequest, type Opportunity, type VdpApply, type VdpAssetItem, type VdpCoveragePayload, type VdpCoverageRow, type VdpFieldChange, type VdpNotInVdpRow, type VdpRowSummary, type VdpStep } from '@/contract';
+import { DEFAULT_AUTOPILOT_ASSET_HOSTS, DEFAULT_VDP_AUTOPILOT_STATE, VdpActionInput, vdpKeyOfAccount, type Account, type VdpGap, type ActionDestination, type Draft, type DraftVdpUpdateRequest, type Opportunity, type VdpApply, type VdpAssetItem, type VdpCoveragePayload, type VdpCoverageRow, type VdpFieldChange, type VdpNotInVdpRow, type VdpRowSummary, type VdpStep } from '@/contract';
 import { actionDoc, actionSummary } from '@/lib/actions';
 import { matchLookup } from '@/engines/vdp/assets';
 import { assetPolicy, decorateCoverage, EMPTY_LEDGER, type AutopilotItem, type AutopilotLedger, type AutopilotSettings } from '@/engines/vdp/autopilot';
@@ -132,14 +132,14 @@ export function vdpCoverageFrom(input: {
 }
 
 /** An asset candidate as its own change: its Apply (disabled until VDP lists add_vdp_asset), who adds it. */
-function assetItemOf(c: CandidateRecord, o: { slug: string; server: VdpServerInfo | null | undefined; caps: VdpCapabilities; drafts: ReadonlyMap<string, DraftRef>; read: string | null; requires: string[] }): VdpAssetItem {
+function assetItemOf(c: CandidateRecord, o: { slug: string; server: VdpServerInfo | null | undefined; caps: VdpCapabilities; drafts: ReadonlyMap<string, DraftRef>; read: string | null; requires: string[]; assetHosts: readonly string[] }): VdpAssetItem {
   // the Apply exists whether or not VDP lists the tool, so the same row turns pushable once it does (D-63)
   const apply = candidateApply(c, { slug: o.slug, server: o.server, addAsset: true });
   const d = o.drafts.get(itemKey.asset(c.id));
   const state: VdpAssetItem['state'] = d?.state === 'staged' ? 'staged' : d?.state === 'applied' && (!o.read || d.at > o.read) ? 'waiting' : 'todo';
   const http = isHttpUrl(c.url);
   // VDP takes http(s) links only: anything else is flagged (candidateApply gives it no Apply)
-  const p = http ? assetPolicy(c, !!apply) : { policy: 'you' as const, reason: 'Not an http(s) link: VDP takes http(s) links only' };
+  const p = http ? assetPolicy(c, !!apply, o.assetHosts) : { policy: 'you' as const, reason: 'Not an http(s) link: VDP takes http(s) links only' };
   const disabled = !http ? 'Not an http(s) link: VDP takes http(s) links only' : !o.caps.addAsset ? unsupportedReason('add_vdp_asset') : null;
   return { candidateId: c.id, title: c.title, url: c.url, why: c.why, confidence: c.confidence, state, apply, draftId: d?.id ?? null, policy: p.policy, policyReason: p.reason, autopilot: null, requires: o.requires, disabled };
 }
@@ -191,6 +191,8 @@ export function vdpCoverageAndQueue(input: Parameters<typeof vdpCoverageFrom>[0]
   const byAccount = slugByAccount(res.vdps);
   const openCands = a.candidates.filter((c) => c.status === 'suggested' || c.status === 'unsure' || c.status === 'added');
   const newVdpUrl = newVdpUrlOf(vdpBaseUrl);
+  // SEC-6: the sites autopilot adds asset links from (autopilot off or absent: the default list, for the label only)
+  const assetHosts = input.autopilot?.settings.assetHosts ?? DEFAULT_AUTOPILOT_ASSET_HOSTS;
 
   const oppsById = new Map(ents.opps.map((o) => [o.id, o]));
   const vdps: VdpCoverageRow[] = res.vdps.map((r) => {
@@ -221,20 +223,20 @@ export function vdpCoverageAndQueue(input: Parameters<typeof vdpCoverageFrom>[0]
     // each asset to add as its own change, with who adds it (autopilot only the strongest http(s) links); VD-31: one the
     // app added that VDP no longer shows was removed there by a person: never added again
     const removed = removedInVdp(snap, mine, drafts, read);
-    const assetItems = mine.filter((c) => c.status === 'suggested' && !removed.has(c.id)).map((c) => assetItemOf(c, { slug: r.vdpSlug, server: input.server, caps, drafts, read, requires: [] }));
+    const assetItems = mine.filter((c) => c.status === 'suggested' && !removed.has(c.id)).map((c) => assetItemOf(c, { slug: r.vdpSlug, server: input.server, caps, drafts, read, requires: [], assetHosts }));
     return { ...r, steps, status: vdpStatusOf(steps, 'current', read), summary, assetItems };
   });
 
   const identities = res.identity.groups.map((g) => g.identity);
   const names = new Map(res.identity.groups.map((g) => [g.primaryAccountId, g.identity.pick.name]));
-  const notInVdp = notInVdpRows(res.unlinked, input.accounts, ents, { drafts, lastReadAt, newVdpUrl, caps, server: server ?? null, candidates: openCands, byAccount, now: input.now, names });
+  const notInVdp = notInVdpRows(res.unlinked, input.accounts, ents, { drafts, lastReadAt, newVdpUrl, caps, server: server ?? null, candidates: openCands, byAccount, now: input.now, names, assetHosts });
   // D-60: who applies each item, what autopilot did or will do, and the queue it works through
   const ap = input.autopilot;
   const useCases = new Map(snaps.flatMap((s) => s.useCases.map((u) => [u.id, u] as const)));
   const dec = decorateCoverage(
     { vdps, notInVdp },
     {
-      settings: ap?.settings ?? { on: false, dryRun: true, cap: DEFAULT_VDP_AUTOPILOT_STATE.cap },
+      settings: ap?.settings ?? { on: false, dryRun: true, cap: DEFAULT_VDP_AUTOPILOT_STATE.cap, assetHosts },
       ledger: ap?.ledger ?? EMPTY_LEDGER,
       auth: ap?.auth ?? null,
       today: ap?.today ?? input.now.slice(0, 10),
@@ -334,7 +336,7 @@ function notInVdpRows(
   unlinked: readonly VdpCoveragePayload['unlinked'][number][],
   accounts: readonly Account[],
   ents: { accounts: readonly GapAccount[]; opps: readonly GapOpp[] },
-  o: { drafts: ReadonlyMap<string, DraftRef>; lastReadAt: string | null; newVdpUrl: string; caps: VdpCapabilities; server: VdpServerInfo | null; candidates: readonly CandidateRecord[]; byAccount: ReadonlyMap<string, string>; now: string; names?: ReadonlyMap<string, string> },
+  o: { drafts: ReadonlyMap<string, DraftRef>; lastReadAt: string | null; newVdpUrl: string; caps: VdpCapabilities; server: VdpServerInfo | null; candidates: readonly CandidateRecord[]; byAccount: ReadonlyMap<string, string>; now: string; names?: ReadonlyMap<string, string>; assetHosts: readonly string[] },
 ): VdpNotInVdpRow[] {
   const rows: VdpNotInVdpRow[] = [];
   const accountIds = [...new Set(unlinked.map((g) => g.accountId).filter((x): x is string => !!x))];
@@ -356,7 +358,7 @@ function notInVdpRows(
         const suggestion = s.kind === 'create_use_case' && s.state === 'todo' ? suggestionFor(s, { useCase: null, stakeholders: [], opps: engaged, companyName: name, now: o.now }) : null;
         return suggestion ? { ...s, suggestion } : s;
       });
-    const assetItems = cands.filter((c) => c.status === 'suggested').map((c) => assetItemOf(c, { slug: newVdpSlug(accountId), server: o.server, caps: o.caps, drafts: o.drafts, read: o.lastReadAt, requires: above }));
+    const assetItems = cands.filter((c) => c.status === 'suggested').map((c) => assetItemOf(c, { slug: newVdpSlug(accountId), server: o.server, caps: o.caps, drafts: o.drafts, read: o.lastReadAt, requires: above, assetHosts: o.assetHosts }));
     const company = gaps.some((g) => g.code === 'company_not_in_vdp');
     const title = root.kind === 'create_company' ? `${name} is not in VDP` : company ? `${name} has no VDP` : `${name} has no current VDP`;
     rows.push({ key, accountId, opportunityId: gaps[0]?.opportunityId ?? null, title, step: root, status: vdpStatusOf([root, ...children], 'current', o.lastReadAt), children, assetItems });

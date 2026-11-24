@@ -14,6 +14,7 @@ import type {
   NbaCard,
   NeedDecision,
   Opportunity,
+  PriorityEngineSetting,
   Proposal,
   SpecialistForecast,
   SpineSlot,
@@ -95,4 +96,10 @@ export interface HomeInput {
    * (rule `home:<gap rule>`, subject = the row id). Absent: none.
    */
   decisions?: NeedDecision[];
+  /**
+   * The shown ranking (`settings.priority.engine`, priority@2's `engineOf`): `v2` draws the Admin row with priority@2's
+   * batch math and keeps admin out of Do now; `v1` / `shadow` (priority@1.1 shown) list admin by the persona's rules.
+   * Absent: shadow (the default).
+   */
+  priorityEngine?: PriorityEngineSetting;
 }

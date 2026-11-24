@@ -7,7 +7,6 @@ import type { UseCaseLanding } from '@/contract';
 import { batchSelectionOf } from '@/server/time/batch-canvases';
 
 import { landingPill, runWritesLine, ucGroups, whereLine, writeState } from './landing-derive';
-import { logButtonLabel } from './ReadyToLog';
 import { pickerRange, previousQuarter, weekGroups } from './weeks-derive';
 
 describe('the week picker', () => {
@@ -59,14 +58,6 @@ describe('landing marks: color is the state', () => {
 });
 
 describe('Log it names everything it takes', () => {
-  const row = (id: string, h: number) => ({ id, durationH: h }) as never;
-  it('rows only, as before; rows, use cases and updates together; the ticked ones', () => {
-    expect(logButtonLabel([row('a', 2), row('b', 1.5)], [])).toBe('Log these 2 rows to Slackbot · 3.5 h');
-    expect(logButtonLabel([row('a', 2), row('b', 1.5)], [], { useCases: 2, updates: 1 })).toBe('Log 2 rows, 2 use cases and 1 update to Slackbot · 3.5 h');
-    expect(logButtonLabel([], [], { useCases: 1 })).toBe('Log 1 use case to Slackbot');
-    expect(logButtonLabel([row('a', 2), row('b', 1.5)], [row('a', 2)], { useCases: 2, tickedUseCases: 1 })).toBe('Log the ticked 1 row and 1 use case to Slackbot · 2 h');
-  });
-
   it('the batch takes exactly what is ticked, or everything when nothing is', () => {
     expect(batchSelectionOf({})).toEqual({ rows: null, useCases: null, updates: null });
     const s = batchSelectionOf({ useCases: ['uc:1'] });

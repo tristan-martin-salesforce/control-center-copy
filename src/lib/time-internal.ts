@@ -19,6 +19,14 @@ export function isInternalEntry(e: Shape): boolean {
   return !e.oppId && !e.accountName && e.meetingType === null && isInternalTaskType(e.taskType);
 }
 
+/**
+ * D-103 (c): the row knows what it logs to: an opportunity, the account itself (an account with no open opportunity,
+ * or one you picked), or internal work. A row without one asks "which opportunity?".
+ */
+export function hasTarget(e: Pick<ActivityEntry, 'oppId' | 'internal'> & { accountId?: string | null }): boolean {
+  return !!e.oppId || !!e.accountId || !!e.internal;
+}
+
 /** Issues that ask for an opportunity (they go once a row is internal). */
 const OPP_ISSUE = /\bopp\b|opportunit|whatid|related to/i;
 
@@ -54,8 +62,8 @@ export function internalPatch(cur: ActivityEntry, patch: Patch): InternalPatchRe
 }
 
 /** The status a row a rule had dismissed goes back to (the projection settles it on its next pass). */
-export function restoredStatus(e: Pick<ActivityEntry, 'end' | 'oppId' | 'taskType' | 'durationH' | 'internal'>, nowIso: string, taskTypeRequired = true): 'upcoming' | 'needs_input' | 'proposed' {
+export function restoredStatus(e: Pick<ActivityEntry, 'end' | 'oppId' | 'taskType' | 'durationH' | 'internal' | 'accountId'>, nowIso: string, taskTypeRequired = true): 'upcoming' | 'needs_input' | 'proposed' {
   if (Date.parse(e.end) > Date.parse(nowIso)) return 'upcoming';
-  if ((!e.oppId && !e.internal) || (taskTypeRequired && !e.taskType) || e.durationH <= 0) return 'needs_input';
+  if (!hasTarget(e) || (taskTypeRequired && !e.taskType) || e.durationH <= 0) return 'needs_input';
   return 'proposed';
 }

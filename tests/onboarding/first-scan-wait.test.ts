@@ -26,8 +26,8 @@ import { ScannerRuntime } from '@/scanner/runtime/scanner-runtime';
 import { InMemoryScannerStore } from '@/scanner/store-memory';
 import { applyCatchUp, CATCH_UP_FRESH_MS, readCatchUpFile, writeCatchUpFile } from '@/server/datasource/db/catch-up';
 import { firstScanConfigFrom, onboardingDraftPending } from '@/worker/first-scan-config';
-import { ScriptedSkillRunner } from '../be2a/helpers/scripted-runner';
-import { PROFILE } from '../be2a/helpers/world';
+import { ScriptedSkillRunner } from '../scanner/runtime/helpers/scripted-runner';
+import { PROFILE } from '../scanner/runtime/helpers/world';
 
 // vitest compiles the components' JSX with the classic runtime (Next uses the automatic one)
 (globalThis as { React?: typeof React }).React = React;

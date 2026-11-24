@@ -1,0 +1,14 @@
+{
+  "messages": [
+    {
+      "channelId": "C0HELP0001",
+      "channelType": "channel",
+      "channelName": "help-channel-x",
+      "ts": "1793894750.781779",
+      "permalink": "https://example.slack.com/archives/C0HELP0001/p1793894750781779?thread_ts=1793894585.289729&cid=C0HELP0001",
+      "threadTs": "1793894585.289729",
+      "text": ""
+    }
+  ],
+  "cursor": "Q1VSUkVOVF9QQUdFOjI="
+}

@@ -39,6 +39,7 @@ import {
   DisplaySettings,
   FeedbackSettings,
   GuideSettings,
+  DEFAULT_PRIORITY_SETTINGS,
   PersonaId,
   PersonaSettings,
   ProfileSettings,
@@ -54,7 +55,7 @@ import type { Db } from '@/db/client';
 import { llmBudgets, org62PicklistValues, people, personIdentities, seTaskTypes, teamPacks, users } from '@/db/schema';
 import { CF_SWAP, INTERNAL_DOWNGRADE, isCF, isCR, isNeither, TAXONOMY } from '@/engines/activity/taxonomy';
 import { addDays, localDay, zonedToMs } from '@/engines/activity/time';
-import { ROLE_POLICIES } from '@/engines/priority';
+import { ROLE_POLICIES } from '@/engines/priority/policy';
 import type { PriorityTemplate } from '@/personas';
 
 import { loadKv } from './ext';
@@ -150,6 +151,7 @@ export function defaultSections(p: BootstrapProfile): Record<Section, unknown> {
     persona: PersonaSettings.parse({ version: 1, id: p.persona, level: p.persona === 'se' && p.role === 'se_manager' ? 'manager' : 'ic' }),
     feedback: FeedbackSettings.parse({ version: 1 }),
     guide: GuideSettings.parse({ version: 1 }),
+    priority: { ...DEFAULT_PRIORITY_SETTINGS },
   };
 }
 

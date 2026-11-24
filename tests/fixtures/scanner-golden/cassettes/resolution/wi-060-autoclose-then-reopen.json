@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\") for the resolution check (skills/resolve-item.md), keyed by ledgerHash(model, skill, system, user). Re-key offline after a prompt or skill change: npx tsx tests/evals/scanner/record-resolution.ts.",
+  "entries": [
+    {
+      "hash": "6dfc8490659e565364ce7a4e38c87305",
+      "label": "claude-haiku-5-5 | 2026-11-17 15:27Z | Technical sign-off on the Oakhallow order form addendum (section 3)",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"basis\": \"delivered\", \"cite\": \"c1\", \"confidence\": 0.9, \"needs\": null}]}"
+    },
+    {
+      "hash": "e5f1131b65de1bbff0564173fb61c612",
+      "label": "claude-haiku-5-5 | 2026-11-18 00:32Z | Technical sign-off on the Oakhallow order form addendum (section 3)",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"cite\": null, \"confidence\": 0.2, \"needs\": \"severity 2 wording for section 3\"}]}"
+    }
+  ]
+}

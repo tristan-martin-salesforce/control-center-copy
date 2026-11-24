@@ -7,8 +7,14 @@
  * state (`CanvasPreflightContext`), and another lane adds a row kind by registering its check (`registerCanvasRowCheck`:
  * Deal Contributions, Use_Case__c).
  *
- *   ADD rows      kind from the Object cell: `Event` → `event`, `Deal_Contribution__c` → `dc`, else the object
- *   UPDATE rows   kind `update:<Object>` (`update:Event` is a Duration__c backfill)
+ *   create rows   kind from the table: EVENTS TO CREATE → `event`, DEAL CONTRIBUTIONS TO CREATE → `dc`, USE CASES TO
+ *                 CREATE → `use_case__c`
+ *   update rows   kind `update:<Object>` from the table (`update:Event` is a Duration__c fix)
+ *
+ * WO-1 (2026-11-23): a work order has one table per object and verb (src/lib/canvas/tables.ts). A canvas staged before
+ * that has the legacy `# ADD` / `# USE CASES` / `# UPDATE` tables, told apart by their headings, with the kind read from
+ * the Object cell. Either way a row's `cells` are in the legacy layout (an Object cell second), so the checks, the
+ * review and the read-back read one shape; `table` says which new table the line is in (undefined: a legacy table).
  *
  * A kind with no check is kept as it is.
  */
@@ -17,6 +23,7 @@ import { DECLINED_MARKER } from '@/engines/activity/internal';
 import { CANCELLED_MARKER, ccKeyOf } from '@/engines/activity/org62-check';
 
 import type { CanvasActionInput } from './payload';
+import { cellsOfLine, isHeading, legacyCellsOf, lineInTable, tableHeading, tableOfHeading, tableOfKind, type TableId, type TableSpec } from './tables';
 
 export interface CanvasRow {
   section: 'add' | 'use_cases' | 'update';
@@ -24,8 +31,10 @@ export interface CanvasRow {
   kind: string;
   /** Its line in the markdown. */
   line: number;
-  /** The table cells, `#` first. */
+  /** The table cells, `#` first, in the legacy layout (an Object cell second) whatever table the line is in. */
   cells: string[];
+  /** The per-object table the line is in; undefined: a legacy table (`# ADD` / `# USE CASES` / `# UPDATE`). */
+  table?: TableId;
   /** The line as it is in the markdown (another lane's own parser reads it). */
   text: string;
   /** ADD Event rows: the CC# key (the app's activity row id). USE CASES rows: the VDP use case id. UPDATE rows: the record id. */
@@ -67,38 +76,63 @@ export function registerCanvasRowCheck(kind: string, check: CanvasRowCheck): voi
 }
 export const canvasRowCheckOf = (kind: string): CanvasRowCheck | undefined => CHECKS.get(kind);
 
-function cellsOf(line: string): string[] | null {
-  const t = line.trim();
-  if (!t.startsWith('|')) return null;
-  return t
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((c) => c.trim());
-}
+const cellsOf = cellsOfLine;
 const isSeparator = (cells: string[]) => cells.every((c) => /^:?-{3,}:?$/.test(c));
 
 /** D-67: a USE CASES row's key (the VDP use case id) in its Notes cell. */
 const UC_KEY_RE = /CC-UC#([A-Za-z0-9-]+)/;
 
-/** Every data row of the work order's ADD, USE CASES and UPDATE tables (headers and separators left out). */
+/** A row from its legacy-layout cells: kind and key from the section and the Object cell. */
+function rowOf(section: CanvasRow['section'], cells: string[], line: number, text: string, table?: TableId): CanvasRow {
+  const object = cells[1] ?? '';
+  const base = { section, line, text, cells, ...(table ? { table } : {}) };
+  if (section === 'add') return { ...base, kind: object === 'Event' ? 'event' : object === 'Deal_Contribution__c' ? 'dc' : object.toLowerCase(), ref: object === 'Event' ? ccKeyOf(cells[9]) : null };
+  if (section === 'use_cases') return { ...base, kind: object.toLowerCase(), ref: UC_KEY_RE.exec(cells[12] ?? '')?.[1] ?? null };
+  return { ...base, kind: `update:${object}`, ref: cells[2] || null };
+}
+
+/** The legacy section a legacy heading opens (a canvas staged before WO-1), or null. */
+function legacySectionOf(ln: string): CanvasRow['section'] | null {
+  if (/^#\s+ADD\b/.test(ln)) return 'add';
+  if (/^#\s+USE CASES\b/.test(ln)) return 'use_cases';
+  if (/^#\s+UPDATE\b/.test(ln)) return 'update';
+  return null;
+}
+
+/** Every data row of the work order's tables (headers and separators left out), per-object tables or legacy. */
 export function canvasRowsOf(markdown: string): CanvasRow[] {
   const out: CanvasRow[] = [];
   let section: CanvasRow['section'] | null = null;
+  let spec: TableSpec | null = null;
   markdown.split('\n').forEach((ln, i) => {
-    if (/^#\s+ADD\b/.test(ln)) section = 'add';
-    else if (/^#\s+USE CASES\b/.test(ln)) section = 'use_cases';
-    else if (/^#\s+UPDATE\b/.test(ln)) section = 'update';
-    else if (/^#\s/.test(ln)) section = null;
+    if (isHeading(ln)) {
+      spec = tableOfHeading(ln);
+      section = spec ? spec.section : legacySectionOf(ln);
+    }
     if (!section) return;
     const cells = cellsOf(ln);
     if (!cells || isSeparator(cells) || !/^\d+$/.test(cells[0] ?? '')) return; // the header row's `#` is not a number
-    const object = cells[1] ?? '';
-    if (section === 'add') out.push({ section, kind: object === 'Event' ? 'event' : object === 'Deal_Contribution__c' ? 'dc' : object.toLowerCase(), line: i, text: ln, cells, ref: object === 'Event' ? ccKeyOf(cells[9]) : null });
-    else if (section === 'use_cases') out.push({ section, kind: object.toLowerCase(), line: i, text: ln, cells, ref: UC_KEY_RE.exec(cells[12] ?? '')?.[1] ?? null });
-    else out.push({ section, kind: `update:${object}`, line: i, text: ln, cells, ref: cells[2] || null });
+    const s = spec as TableSpec | null;
+    out.push(s ? rowOf(section, legacyCellsOf(s, cells), i, ln, s.id) : rowOf(section, cells, i, ln));
   });
   return out;
+}
+
+/** A row's line written again from legacy-layout cells, in the table it is in (a legacy row stays legacy). */
+export function rowLine(r: Pick<CanvasRow, 'table' | 'kind'>, legacyCells: readonly string[]): string {
+  const spec = r.table ? tableOfKind(r.kind) : null;
+  return spec ? lineInTable(spec, legacyCells) : `|${legacyCells.join('|')}|`;
+}
+
+/**
+ * A line the writers made (they write the per-object tables) for the table the row is in: unchanged on a new-layout
+ * canvas, back to the legacy layout (Object cell second) when the row sits in a legacy table.
+ */
+export function lineForRow(r: Pick<CanvasRow, 'table' | 'kind'>, line: string): string {
+  if (r.table) return line;
+  const spec = tableOfKind(r.kind);
+  const cells = cellsOf(line);
+  return spec && cells && cells[1] !== spec.object ? `|${legacyCellsOf(spec, cells).join('|')}|` : line;
 }
 
 export interface CanvasDrop {
@@ -187,8 +221,20 @@ export function rerenderCanvas(input: CanvasActionInput, rows: CanvasRow[], drop
   const keptUcRows = kept.filter((r) => r.section === 'use_cases').length;
   const out: string[] = [];
   let n = 0;
+  // WO-1: a per-object table is recounted from its own kept rows, and leaves the canvas when none are left
+  let skipping = false;
   lines.forEach((ln, i) => {
     if (drop.has(i)) return;
+    const spec = tableOfHeading(ln);
+    if (spec) {
+      const mine = kept.filter((r) => r.table === spec.id).map((r) => r.cells);
+      skipping = mine.length === 0;
+      n = 0;
+      if (!skipping) out.push(tableHeading(spec, mine));
+      return;
+    }
+    if (isHeading(ln)) skipping = false;
+    if (skipping) return;
     if (/^#\s+ADD\b/.test(ln) && /h of activities/.test(ln)) {
       n = 0;
       out.push(`# ADD (${keptEvents.length + dcAdds} rows · ${hours.toFixed(2)} h of activities${dcAdds ? ` · ${words(dcAdds, 'deal contribution')}` : ''})`);

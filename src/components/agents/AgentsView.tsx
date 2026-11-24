@@ -269,7 +269,6 @@ export function AgentsView() {
       <div className="flex min-h-full flex-col gap-5 px-6 pt-5 pb-6" data-agents-root>
         <AgentsHeader
           tab="runs"
-          waiting={waitingCount}
           sentence={sentence}
           actions={
             <>

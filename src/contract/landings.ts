@@ -195,6 +195,11 @@ export const UseCaseQuestion = z.object({
   text: z.string(),
   /** pick_opp: the opportunities it can go on (open, your 100% DC), each with its Org62 id. */
   opps: z.array(z.object({ org62Id: z.string(), name: z.string() })).default([]),
+  /**
+   * The app suggested this use case (a use-case candidate you accepted, src/engines/use-cases): which one, and for
+   * pick_opp the opp it was accepted on when that is one of `opps` (the pre-fill, never applied for you).
+   */
+  suggested: z.object({ candidateId: z.string(), org62Id: z.string().nullable(), why: z.string() }).nullable().optional(),
 });
 export type UseCaseQuestion = z.infer<typeof UseCaseQuestion>;
 

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\"), keyed by the completion pass ledger hash. Re-key offline after a prompt or skill change: npm run eval:record.",
+  "entries": [
+    {
+      "hash": "6adf99ae3292ec8a8797a7d4b6ce9489",
+      "label": "2026-11-17 10:47Z | Update the ACME security doc with an SSO section",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"source\": \"s1\", \"basis\": \"delivered\", \"confidence\": 0.8, \"reason\": \"my revision adds the SSO section to the asked doc\"}]}"
+    }
+  ]
+}

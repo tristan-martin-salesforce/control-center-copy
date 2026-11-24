@@ -7,6 +7,8 @@
  */
 import type { ActionDestination, Draft, DraftStatus } from '@/contract';
 
+import { legacyShape } from './tables';
+
 export interface CanvasActionInput {
   title: string;
   markdown: string;
@@ -25,7 +27,10 @@ export interface CanvasActionInput {
  * Slack's documented limit is 1 MiB (1,048,576 bytes) of markdown per `document_content`
  * (https://docs.slack.dev/surfaces/canvases/); 900,000 leaves a margin for the title and the request around it.
  * Slack also documents 300 cells per table, but a 600-cell table (59 rows × 10 columns) was created and read back
- * complete on 2026-11-13, so tables are never split for it. The old 12,000-character cap came from the autopilot's
+ * complete on 2026-11-13, so tables are never split for it. WO-1 (2026-11-23): one table per object and verb, with
+ * fewer columns each (src/lib/canvas/tables.ts: Events to create 9, Deal Contributions to create 6, use cases to create
+ * 12, every update table 6, Specialist Forecasts 4), so more rows fit under the documented 300 cells (33 Event rows,
+ * 50 DC or update rows, 25 use-case rows) and the bytes per row fall (no Object cell, no empty cells of another type). The old 12,000-character cap came from the autopilot's
  * split size, not from Slack, and split one batch into 8 canvases.
  */
 export const CANVAS_MAX_BYTES = 900_000;
@@ -50,7 +55,7 @@ export const fitsOneCanvas = (markdown: string, limit: number = CANVAS_MAX_BYTES
 
 /** D-67: Use_Case__c rows in a work order: creates (USE CASES table) and Stage / Go-Live fixes (UPDATE table). */
 export function ucRowCount(markdown: string): number {
-  return markdown.split('\n').filter((l) => /^\|[^|]*\|Use_Case__c\|/.test(l)).length;
+  return legacyShape(markdown).split('\n').filter((l) => /^\|[^|]*\|Use_Case__c\|/.test(l)).length;
 }
 
 export function canvasActionFor(i: CanvasActionInput): ActionDestination {

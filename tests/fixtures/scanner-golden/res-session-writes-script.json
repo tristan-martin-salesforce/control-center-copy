@@ -1,0 +1,43 @@
+{
+  "id": "res-session-writes-script",
+  "title": "A finished Claude session with a PR makes a \"write the script\" ask likely done (rule D4, no model call)",
+  "storyline": "03-scanner-quality.md R3 trigger 5 (a linked session changing state) and rule D4, placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-16T17:00:00.000Z",
+      "seen_at": "2026-11-16T17:05:00.000Z",
+      "from_me": false,
+      "body": "Can you write the data migration script for the Halvergate sandbox? It needs to load the member fixtures.",
+      "meta": { "channelId": "D0PERSONK1", "channelType": "im", "author": { "name": "PERSON_K", "email": "person_k@example.com", "externalId": "U0PERSONK" }, "participants": [{ "name": "PERSON_K", "externalId": "U0PERSONK" }] },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "claude_sessions",
+      "kind": "claude_session",
+      "occurred_at": "2026-11-17T12:30:00.000Z",
+      "seen_at": "2026-11-17T12:35:00.000Z",
+      "from_me": true,
+      "title": "Halvergate data migration script",
+      "body": "Wrote the member fixtures migration script and opened PR #57: https://git.example.com/halvergate/sandbox/pull/57",
+      "meta": { "sessionId": "SESSION_PLACEHOLDER_0057", "status": "done" }
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Write the Halvergate data migration script",
+      "keywords": ["migration script"],
+      "origin": "s1",
+      "ask_quote": "write the data migration script"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "likely", "class": "settled", "cite": "s2", "rule": "D4", "why": "the session that names the script finished with a PR (the session trigger runs the check; D4 decides with no model): Likely done, one confirm" }
+  ]
+}

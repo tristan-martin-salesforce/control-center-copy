@@ -9,10 +9,10 @@ import { canvasUrlFor } from '@/lib/canvas/payload';
 import { shortHash } from './hash';
 import type { DeliveryRecord } from './types';
 
-const DEST: Record<DeliveryRecord['channel'], string> = { slack: 'Slack', gmail: 'Gmail', vdp: 'VDP', slack_canvas: 'Slack canvas', feedback: 'the feedback channel' };
+const DEST: Record<DeliveryRecord['channel'], string> = { slack: 'Slack', gmail: 'Gmail', vdp: 'VDP', slack_canvas: 'Slack canvas', feedback: 'the feedback channel', release: 'the announcement channel' };
 
 /** Where a retryable failure is tried again: messages from the Outbox, Activity's writes on Activity. */
-const RETRY_WHERE: Record<DeliveryRecord['channel'], string> = { slack: 'retry from the Outbox', gmail: 'retry from the Outbox', feedback: 'retry from the Outbox', slack_canvas: 'Apply it again on Activity', vdp: 'push it again on Activity ▸ VDP' };
+const RETRY_WHERE: Record<DeliveryRecord['channel'], string> = { slack: 'retry from the Outbox', gmail: 'retry from the Outbox', feedback: 'retry from the Outbox', release: 'retry from the Outbox', slack_canvas: 'Apply it again on Activity', vdp: 'push it again on Activity ▸ VDP' };
 
 /** B3: a write that may have landed (no answer, or the app stopped mid-delivery): never "failed, nothing was sent". */
 export const isOutcomeUnknown = (rec: Pick<DeliveryRecord, 'state' | 'error'>) => rec.state === 'failed' && rec.error?.code === 'outcome_unknown';

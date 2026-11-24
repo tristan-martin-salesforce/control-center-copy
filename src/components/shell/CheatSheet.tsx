@@ -54,7 +54,8 @@ export function CheatSheet({ open, onClose }: { open: boolean; onClose: () => vo
         <span className="ml-3 text-caption text-muted">Single keys never fire while you type in a field.</span>
         <IconButton icon="close" label="Close" size="sm" className="ml-auto" onClick={onClose} data-autofocus />
       </div>
-      <div className="cc-scroll max-h-[calc(80vh-3.5rem)] overflow-y-auto px-5 py-4">
+      {/* a scroller is a tab stop, so the keyboard can scroll it (WCAG 2.1.1) */}
+      <div tabIndex={0} role="region" aria-labelledby="cc-cheat-title" className="cc-scroll max-h-[calc(80vh-3.5rem)] overflow-y-auto rounded-b-xl px-5 py-4 focus-visible:shadow-[inset_0_0_0_2px_var(--color-focus)] focus-visible:outline-none">
         <div className="columns-1 gap-8 md:columns-2 xl:columns-3">
           {cheatSheetGroups(destinations).map((g) => (
             <section key={g.id} className="mb-5 break-inside-avoid">

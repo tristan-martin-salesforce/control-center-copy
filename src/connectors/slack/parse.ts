@@ -18,7 +18,16 @@
  *    The concise format carries no ts, so the runner asks for the detailed one.
  *  - `slack_read_channel` (detailed): `=== Message from Name <email> (U…) at TIME ===` + `Message TS: …` + text.
  * Nothing here logs or keeps text beyond the returned objects; redaction happens when items are normalized.
+ *
+ * Drift (08 CONN-9, R5): tool text that carries the format's own markers (a "### Result n of m" block, a thread
+ * parent, a "=== Message from" line) but parses to zero messages throws `ParseDrift`: Slack changed its format, and
+ * recording nothing while the run "succeeds" would silently drop recall. Text without the markers (no results, an
+ * error message) is not drift. The recorder counts it, and the runner fails the run as DATA.PARSE_DRIFT, which pauses
+ * the scope with "the format changed; report it".
  */
+import { ParseDrift } from '../../errors/drift';
+
+export { ParseDrift } from '../../errors/drift';
 
 export type SlackChannelType = 'im' | 'mpim' | 'channel';
 
@@ -110,6 +119,7 @@ export function parseSlackSearch(raw: unknown): { messages: ParsedSlackMessage[]
       text,
     });
   }
+  if (!out.length && /^### Result [1-9]\d* of [1-9]\d*\s*$/m.test(results)) throw new ParseDrift('slack.search', 'result blocks present but none parsed');
   return { messages: out, cursor };
 }
 
@@ -144,6 +154,7 @@ export function parseSlackThread(raw: unknown, channelId: string, requestedTs?: 
     .map((c) => parseThreadChunk(c, channelId))
     .filter((m): m is ParsedSlackMessage => !!m)
     .map((m) => ({ ...m, ...(root && m.ts !== root ? { threadTs: root } : {}) }));
+  if (!parent && !replies.length && /=== THREAD PARENT MESSAGE ===|^--- Reply 1 of [1-9]/m.test(text)) throw new ParseDrift('slack.thread', 'thread sections present but none parsed');
   return { messages: [...(parent ? [parent] : []), ...replies], cursor };
 }
 
@@ -166,6 +177,7 @@ export function parseSlackChannel(raw: unknown, channelId: string): { messages: 
     }
     out.push({ channelId, ...authorOf(head[1]), ts, text: lines.join('\n').trim(), ...(extra.length ? { extra } : {}) });
   }
+  if (!out.length && /^=== Message from /m.test(text)) throw new ParseDrift('slack.channel', 'message headers present but none parsed');
   return { messages: out };
 }
 

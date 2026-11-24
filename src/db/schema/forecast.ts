@@ -14,7 +14,7 @@ import { sql } from 'drizzle-orm';
 import { check, date, index, jsonb, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { accounts, opportunities } from './entities';
-import { amount, createdAt, ownerUserId, tstz, updatedAt } from './columns';
+import { amount, createdAt, id15, ownerUserId, tstz, updatedAt } from './columns';
 
 export const specialistForecasts = pgTable(
   'specialist_forecasts',
@@ -27,6 +27,7 @@ export const specialistForecasts = pgTable(
     url: text('url'),
     /** Opportunity__c, and the local opp and account it matches (by Org62 id). */
     org62OpportunityId: text('org62_opportunity_id'),
+    org62OpportunityId15: id15('org62_opportunity_id15', 'org62_opportunity_id'),
     opportunityId: uuid('opportunity_id').references(() => opportunities.id, { onDelete: 'set null' }),
     accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
     opportunityName: text('opportunity_name'),

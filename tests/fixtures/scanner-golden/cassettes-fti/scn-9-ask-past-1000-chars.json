@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "afec6c7ef0dee165f1d94b9af48c7a9d",
+      "label": "classify | D0PERSOND1:1794510000.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0PERSOND1:1794510000.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Send PERSON_D the Data 360 connector security whitepaper\", \"who\": \"PERSON_D\", \"deliverable\": \"whitepaper\", \"due\": \"2026-11-19\", \"conf\": 0.93, \"cite\": \"can you send me the security whitepaper for the Data 360 connector by Thursday?\", \"link\": null, \"why\": \"direct ask at the end of a long recap, due Thursday\"}]}"
+    }
+  ]
+}

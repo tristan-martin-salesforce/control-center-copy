@@ -44,6 +44,18 @@ export function activitySyncHandler(deps: ActivitySyncDeps): JobHandler {
   };
 }
 
+/**
+ * 06 R9: the Org62 re-checks a created logging canvas gets, queued by the `outbox.dispatch` job right after Apply
+ * (src/outbox/job.ts `onCanvasApplied`; wired in src/worker/index.ts). The same call the "Copy Slackbot prompt" click
+ * makes, with reason `applied` (reads about 5, 15, 30 and 60 minutes later, deduped per minute, without marking
+ * Slackbot as told, W0-10), so the checks no longer depend on that click. It only queues read-only Org62 scans; nothing is written anywhere.
+ */
+export function canvasAppliedRecheck(handle: DbHandle, make: (userId: string) => Pick<DbDataSource, 'checkCanvasOrg62'> = (userId) => new DbDataSource({ handle, userId })) {
+  return async (ctx: { userId: string }, draftId: string): Promise<void> => {
+    await make(ctx.userId).checkCanvasOrg62({ params: { id: draftId }, body: { reason: 'applied' } } as never);
+  };
+}
+
 export function activitySyncJobDef(deps: ActivitySyncDeps): JobHandlerDef {
   return {
     kind: 'activity.sync',

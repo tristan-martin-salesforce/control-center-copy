@@ -14,7 +14,6 @@ import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 
 import { EntityType as EntityTypeEnum, type Actor, type AuditEntry, type EntityRef, type EntityType, type FieldChange, type Receipt, type ReceiptChange } from '@/contract';
 import type { Db, DbOrTx } from '@/db/client';
-import { statementSql } from '@/db/queries';
 import { auditEvents, changeSets } from '@/db/schema';
 
 import { hrefFor } from '../mock/views';
@@ -340,7 +339,16 @@ function isNews(cs: CsRow, rows: ReadonlyArray<Pick<AuditRow, 'entityType' | 'ch
 
 /** Latest not-undone engine close of each item (for "Closed for you" undo), via Q6's transition log. */
 export async function closeEntries(db: Db, userId: string, from: Date): Promise<Map<string, string>> {
-  const res = await db.execute<{ work_item_id: string; undo_change_set_id: string | null }>(statementSql('Q6', [userId, from.toISOString()]));
+  // Q6's rows (DATA-MODEL §6: its WHERE and ORDER BY), the two columns read here: its evidence joins are on primary
+  // keys (one row each) and only fed columns nobody reads (post-2.0 Home SQL)
+  const res = await db.execute<{ work_item_id: string; undo_change_set_id: string | null }>(sql`
+    select t.work_item_id, t.change_set_id as undo_change_set_id
+      from work_item_transitions t
+      join work_items wi on wi.id = t.work_item_id
+     where wi.owner_user_id = ${userId}
+       and t.to_status = 'done' and t.actor_kind = 'engine'
+       and t.occurred_at >= ${from.toISOString()} and t.undone_at is null
+     order by t.occurred_at desc`);
   const out = new Map<string, string>();
   for (const r of res.rows) if (r.undo_change_set_id && !out.has(r.work_item_id)) out.set(r.work_item_id, r.undo_change_set_id);
   return out;

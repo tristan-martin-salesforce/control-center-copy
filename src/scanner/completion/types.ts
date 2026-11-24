@@ -1,5 +1,5 @@
 /**
- * Completion pass (CMP-1, docs/ui/SCANNER.md §4.9): types shared by the candidate collector, the model check and
+ * Completion pass (CMP-1, docs/reference/SCANNER.md §4.9): types shared by the candidate collector, the model check and
  * the `completion.check` job.
  *
  * The pass reads open work items that are mine and the source items that arrived since each item's last check,
@@ -54,6 +54,11 @@ export interface CompletionItem {
   /** Drive files and links the item references (deliverables, links, evidence refs). */
   fileRefs: string[];
   evidence: CompletionEvidence[];
+  /**
+   * R1, the correction rule both closers share (src/engines/closure/correction.ts): false when the user reopened it, kept
+   * it, marked it Not done, or it is on an ask-first list. The pass then writes at most Likely ("Confirm"). Undefined = may.
+   */
+  mayAutoClose?: boolean;
 }
 
 /** A source item that may say an item is done. */
@@ -83,6 +88,7 @@ export interface CompletionReadStore {
    * Open items that are mine (LIVE_STATUSES, involvement owner/contributor, created at or before `asOf`).
    * `statuses` overrides the status filter (evaluation replays read items whatever their current status).
    */
+  /** Every live item of mine, newest first; `limit` omitted = all (caps audit 2026-11-21: the pass took the newest 400). */
   completionItems(opts?: { asOf?: string; limit?: number; statuses?: readonly string[] }): Promise<CompletionItem[]>;
   /** Source items that arrived in (seenAfter, seenUntil], newest first. */
   completionSources(opts: { seenAfter: string; seenUntil: string; limit?: number }): Promise<CompletionSource[]>;
@@ -104,7 +110,15 @@ export type Relation =
   | 'same_channel'
   | 'same_file'
   | 'same_event'
-  | 'same_account';
+  | 'same_account'
+  /** R7: the asker's short acknowledgement ("got it, thanks") after my line in the item's conversation. */
+  | 'ack'
+  /** R7: a Drive revision of the item's file (its own relation; an edit alone never closes). */
+  | 'file_revision'
+  /** R7: meeting notes of the item's meeting, or notes with the asker that name the item. */
+  | 'meeting_notes'
+  /** R7: a Claude session about the item (its status line and last message). */
+  | 'session';
 
 /**
  * Ties strong enough to back an auto-close: the conversation the item lives in. A message to the asker elsewhere is

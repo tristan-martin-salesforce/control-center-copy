@@ -17,7 +17,11 @@ import { useApi } from '@/client/hooks';
 import { toast } from '@/client/toast';
 import { usePromptWording } from '@/components/domain/ResultLinks';
 import { Button, Icon, IconButton, Overlay, Skeleton, useTimeZone } from '@/ui';
+import { fieldDef } from '@/lib/landings/fields';
 import { cx } from './_bits';
+
+/** A use case's Org62 field in plain words (src/lib/landings/fields.ts: "Name", "Agent type"), never its API name. */
+const ucLabel = (field: string) => fieldDef('use_case', 'org62', field).label;
 
 const FIELD = 'h-8 w-full min-w-0 rounded-md border border-line-input bg-surface-input px-2 text-body text-fg hover:border-line-strong focus:border-accent focus:outline-none';
 const AREA = 'min-h-20 w-full min-w-0 rounded-md border border-line-input bg-surface-input px-2 py-1.5 text-body text-fg hover:border-line-strong focus:border-accent focus:outline-none';
@@ -393,7 +397,7 @@ function EventEditor({ e, taskTypes, taskTypeRequired, busy, onCancel, onSave }:
     <EditorShell
       busy={busy}
       onCancel={onCancel}
-      hint="Subject and times stay the meeting's. Meeting_Type__c follows the task type (Workshop → Data Cloud Workshop, POC → Proof of Concept). The edit is kept on the Time row."
+      hint="Subject and times stay the meeting's. The meeting type follows the task type (Workshop → Data Cloud Workshop, POC → Proof of Concept). The edit is kept on the Time row."
       onSave={() =>
         onSave({
           entryVersion: e.entry!.version,
@@ -446,7 +450,7 @@ function DcEditor({ d, busy, onCancel, onSave }: { d: CanvasReviewDc; busy: bool
       <Field label="Split %">
         <input className={FIELD} type="number" min={1} max={100} step={1} value={split} onChange={(x) => setSplit(x.target.value)} />
       </Field>
-      <Field label="Role (Opportunity_Role__c)">
+      <Field label="Role on the opportunity">
         <input className={FIELD} value={role} maxLength={80} onChange={(x) => setRole(x.target.value)} />
       </Field>
       <Field label="Comment" wide>
@@ -465,24 +469,24 @@ function UseCaseEditor({ u, options, busy, onCancel, onSave }: { u: CanvasReview
   const pick = (vals: readonly string[], cur: string) => [...new Set([cur, ...vals].filter(Boolean))];
   return (
     <EditorShell busy={busy} onCancel={onCancel} hint="Org62's values only. Kept for this use case, so the next canvas has it too; Notes keeps its source line and CC-UC# key last." onSave={() => onSave({ ...changed, ...(typesChanged ? { agentTypes: types } : {}) })}>
-      <Field label="Use_Case_Name__c" wide>
+      <Field label={ucLabel('Use_Case_Name__c')} wide>
         <input className={FIELD} maxLength={255} value={v.name} onChange={set('name')} />
       </Field>
-      <Field label="Product__c">
+      <Field label={ucLabel('Product__c')}>
         <select className={FIELD} value={v.product} onChange={set('product')}>
           {pick(options.ucProducts, v.product).map((x) => (
             <option key={x}>{x}</option>
           ))}
         </select>
       </Field>
-      <Field label="Entitlement_Leveraged__c">
+      <Field label={ucLabel('Entitlement_Leveraged__c')}>
         <select className={FIELD} value={v.entitlement} onChange={set('entitlement')}>
           {pick(options.ucEntitlements, v.entitlement).map((x) => (
             <option key={x}>{x}</option>
           ))}
         </select>
       </Field>
-      <Field label="Stage__c">
+      <Field label={ucLabel('Stage__c')}>
         <select className={FIELD} value={v.stage} onChange={set('stage')}>
           <option value="">(not set)</option>
           {options.ucStages.map((x) => (
@@ -490,11 +494,11 @@ function UseCaseEditor({ u, options, busy, onCancel, onSave }: { u: CanvasReview
           ))}
         </select>
       </Field>
-      <Field label="Go_Live_Date__c">
+      <Field label={ucLabel('Go_Live_Date__c')}>
         <input className={FIELD} type="date" value={v.goLive} onChange={set('goLive')} />
       </Field>
       <fieldset className="min-w-0 space-y-1 @min-[36rem]/review:col-span-2">
-        <legend className="text-caption font-bold text-muted">Use_Case_Agent_Type__c</legend>
+        <legend className="text-caption font-bold text-muted">{ucLabel('Use_Case_Agent_Type__c')}</legend>
         <div className="flex max-h-32 flex-wrap gap-x-3 gap-y-1 overflow-y-auto">
           {options.ucAgentTypes.map((t) => (
             <label key={t} className="inline-flex items-center gap-1.5 text-body">
@@ -504,13 +508,13 @@ function UseCaseEditor({ u, options, busy, onCancel, onSave }: { u: CanvasReview
           ))}
         </div>
       </fieldset>
-      <Field label="Business_Problem_Solved__c" wide>
+      <Field label={ucLabel('Business_Problem_Solved__c')} wide>
         <textarea className={AREA} maxLength={32_768} value={v.businessProblem} onChange={set('businessProblem')} />
       </Field>
-      <Field label="Business_Problem_KPIs__c" wide>
+      <Field label={ucLabel('Business_Problem_KPIs__c')} wide>
         <textarea className={AREA} maxLength={32_768} value={v.kpis} onChange={set('kpis')} />
       </Field>
-      <Field label="Notes__c" wide>
+      <Field label={ucLabel('Notes__c')} wide>
         <textarea className={AREA} maxLength={32_000} value={v.notes} onChange={set('notes')} />
       </Field>
     </EditorShell>
@@ -521,7 +525,7 @@ function UpdateEditor({ u, stages, busy, onCancel, onSave }: { u: CanvasReviewUp
   const [v, setV] = useState(u.newValue);
   return (
     <EditorShell busy={busy} onCancel={onCancel} onSave={() => onSave(v)} hint="Kept for this record and field, so the next canvas has it too.">
-      <Field label={`${u.field}: new value`}>
+      <Field label={`${ucLabel(u.field)}: new value`}>
         {u.field === 'Stage__c' ? (
           <select className={FIELD} value={v} onChange={(x) => setV(x.target.value)}>
             {stages.map((x) => (

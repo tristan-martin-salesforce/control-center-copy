@@ -10,6 +10,7 @@
  * title and content, or when the work order is too big for one canvas.
  */
 import type { DispatchMode } from '@/contract';
+import { canvasRowsOf } from '@/lib/canvas/preflight';
 
 import { classifyDeliveryError } from '../errors';
 import { canonicalJson } from '../hash';
@@ -61,8 +62,11 @@ async function readback(read: ReadFn, ctx: ReadbackContext): Promise<ReadbackOut
   } catch (err) {
     return { readback: 'unconfirmed', detail: `Read-back failed (${classifyDeliveryError(err).code})`, matchedExternalId: null };
   }
-  const firstRow = /\|1\|Event\|/.test(String((ctx.payload.args as { content?: string } | undefined)?.content ?? ''));
-  if (/Slackbot: this canvas is a complete work order/.test(text) && (!firstRow || /\|1\|Event\|/.test(text))) return { readback: 'confirmed', detail: 'Canvas created ✓ (open it in Slack and tell Slackbot "Execute this canvas")', matchedExternalId: id };
+  // the first Event row: in WO-1's EVENTS TO CREATE table its CC# key (no Object cell to look for), in a legacy canvas `|1|Event|`
+  const content = String((ctx.payload.args as { content?: string } | undefined)?.content ?? '');
+  const firstEvent = canvasRowsOf(content).find((r) => r.kind === 'event');
+  const marker = firstEvent ? (firstEvent.table ? (firstEvent.ref ? `CC#${firstEvent.ref}` : firstEvent.text) : '|1|Event|') : null;
+  if (/Slackbot: this canvas is a complete work order/.test(text) && (!marker || text.includes(marker))) return { readback: 'confirmed', detail: 'Canvas created ✓ (open it in Slack and tell Slackbot "Execute this canvas")', matchedExternalId: id };
   return { readback: 'unconfirmed', detail: 'Read-back found the canvas but not the work order in it', matchedExternalId: id };
 }
 

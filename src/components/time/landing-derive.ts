@@ -14,7 +14,7 @@ const WORDS: Record<LandingState, string> = {
   verified: 'In it, read back and matching',
   differs: 'In it, with other values than the other system',
   missing: 'Not found there after it was sent (or deleted there)',
-  staged: 'On a canvas or item waiting for your Apply',
+  staged: 'In a batch or item waiting for your Apply',
   sent: 'Sent: waiting for the next read',
   not_sent: 'Not there, and nothing is on its way',
 };
@@ -32,14 +32,14 @@ export function whereLine(x: Pick<UseCaseLanding, 'org62' | 'vdp'>): string {
 
 const WRITE_WORDS: Record<WriteState, string> = {
   proposed: 'proposed',
-  approved: 'approved: on the next canvas',
+  approved: 'approved: in the next batch',
   dismissed: 'dismissed',
   staged: 'waiting for Apply',
   sent: 'sent',
   verified: 'in Org62',
   failed: 'Apply failed',
   removed: 'taken off before Apply',
-  rejected: 'canvas rejected',
+  rejected: 'batch rejected',
 };
 const WRITE_TONE: Record<WriteState, Tone> = { proposed: 'ai', approved: 'neutral', dismissed: 'neutral', staged: 'neutral', sent: 'brand', verified: 'ok', failed: 'risk', removed: 'neutral', rejected: 'neutral' };
 

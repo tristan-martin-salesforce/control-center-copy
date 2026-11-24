@@ -1,7 +1,7 @@
 /**
- * Shared primitives and enums for the Control Center API contract.
+ * Shared primitives and enums for the Command Center API contract.
  *
- * Conventions (see docs/ui/CONTRACT.md):
+ * Conventions (see docs/reference/CONTRACT.md):
  * - ids are opaque strings; timestamps are ISO-8601 instants (UTC `Z` or with an offset);
  *   calendar days are `YYYY-MM-DD`.
  * - enum values are snake_case; field names are camelCase.
@@ -30,7 +30,7 @@ export const Url = z.string().min(1); // http(s), claude://, slack://, mailto: โ
 export const Minutes = z.number().int().min(0);
 
 // ---------------------------------------------------------------------------
-// Enums (exact vocabularies from docs/ui/UI-SPEC.md)
+// Enums (exact vocabularies from docs/archive/2026-build/UI-SPEC.md)
 // ---------------------------------------------------------------------------
 
 /** Work-item kinds (UI-SPEC ยง11). "Promise" is NOT a kind: it is a `commitment` with `isBackground: true`. */
@@ -122,8 +122,12 @@ export type SaveModel = z.infer<typeof SaveModel>;
 export const Tone = z.enum(['ok', 'warn', 'risk', 'brand', 'neutral', 'ai']);
 export type Tone = z.infer<typeof Tone>;
 
-/** Chat model choice (CONTRACT-1): per request (`ChatRequest.model`) or the `settings.chat.defaultModel`. */
-export const ChatModel = z.enum(['sonnet', 'opus']);
+/**
+ * Chat model choice (CONTRACT-1): per request (`ChatRequest.model`) or the `settings.chat.defaultModel`. Assistant v2
+ * (H-6, 2026-11-20): `haiku` joins (the Auto router's fast tier); `auto` is a request choice, not a model
+ * (`ChatModelChoice` in ./chat.ts).
+ */
+export const ChatModel = z.enum(['sonnet', 'opus', 'haiku']);
 export type ChatModel = z.infer<typeof ChatModel>;
 
 /** Who made a change. Every change is attributable and undoable (R-UI-18). */

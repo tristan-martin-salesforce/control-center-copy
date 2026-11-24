@@ -16,7 +16,12 @@ export interface ListFrameProps {
   /** Accessible name of the page region ("Work"). */
   label: string;
   /** One sentence, bold where it matters. */
-  lead: ReactNode;
+  lead?: ReactNode;
+  /**
+   * The page's own header in place of lead / sub / aside: the kit PageHeader (01-ui-audit R10, one title source),
+   * drawn in the same padded head.
+   */
+  header?: ReactNode;
   /** A quiet second line under the lead (keys, the border rule). */
   sub?: ReactNode;
   /** Right of the lead: "3 of 34", one page action at most. */
@@ -32,18 +37,24 @@ export interface ListFrameProps {
   'data-state'?: string;
 }
 
-export function ListFrame({ label, lead, sub, aside, banner, tools, children, bodyRef, bodyClassName, ...rest }: ListFrameProps) {
+export function ListFrame({ label, lead, header, sub, aside, banner, tools, children, bodyRef, bodyClassName, ...rest }: ListFrameProps) {
   return (
     <div className="cc-list" role="region" aria-label={label} data-state={rest['data-state']}>
-      <header className="cc-list-head">
-        <div className="min-w-0 flex-[1_1_36rem]">
-          <p className="cc-list-lead" data-testid="list-lead" aria-live="polite">
-            {lead}
-          </p>
-          {sub ? <div className="cc-list-sub">{sub}</div> : null}
+      {header ? (
+        <div className="cc-list-head">
+          <div className="min-w-0 flex-1">{header}</div>
         </div>
-        {aside ? <div className="cc-list-aside">{aside}</div> : null}
-      </header>
+      ) : (
+        <header className="cc-list-head">
+          <div className="min-w-0 flex-[1_1_36rem]">
+            <p className="cc-list-lead" data-testid="list-lead" aria-live="polite">
+              {lead}
+            </p>
+            {sub ? <div className="cc-list-sub">{sub}</div> : null}
+          </div>
+          {aside ? <div className="cc-list-aside">{aside}</div> : null}
+        </header>
+      )}
       {banner ? <div className="cc-list-banner">{banner}</div> : null}
       <div className="cc-list-body">
         <section className="cc-list-panel" aria-label={`${label} list`}>

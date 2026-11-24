@@ -37,11 +37,27 @@ export function failureOf(d: Pick<Draft, 'attempts' | 'verification'>): string |
 }
 
 /**
- * A message pushed as a draft in its own app waits there for you to send it: say so ("Pushed as Slack draft") and
+ * A failure in words a seller reads (01-ui-audit UI-7, R7: never the raw error): "Gmail API 503: backendError" says
+ * Gmail had a problem on its side and Retry sends it again. A line that is already a sentence stays as it is; the
+ * raw text stays in the row's details panel (its attempts list) for a report.
+ */
+export function plainFailure(raw: string | null, destination?: Pick<Draft['destination'], 'kind'>): string | null {
+  if (!raw) return null;
+  const app = destination?.kind === 'slack' ? 'Slack' : destination?.kind === 'email' ? 'Gmail' : 'The other app';
+  if (/\b(401|403)\b|unauthori[sz]ed|invalid_auth|token (?:expired|revoked)|signed out|re-?auth/i.test(raw)) return `${app} needs you to sign in again; then Retry.`;
+  if (/\b429\b|rate.?limit|too many requests/i.test(raw)) return `${app} is busy right now (too many requests). Retry in a minute.`;
+  if (/\b5\d\d\b|backendError|timed? ?out|ETIMEDOUT|ECONNRESET|unavailable|fetch failed|socket hang up/i.test(raw)) return `${app} had a temporary problem on its side. Retry sends it again.`;
+  // a bare code, an API name or a stack-ish token is not a sentence a seller can act on
+  if (!/\s/.test(raw.trim()) || /\b[a-z]+[A-Z]\w*\b|\b\w+_\w+\b|\bAPI\b|Error\b/.test(raw)) return `${app} didn't take it. Retry, or open the row for what it said.`;
+  return raw;
+}
+
+/**
+ * A message pushed as a draft in its own app waits there for you to send it: say so ("Saved as Slack draft") and
  * where to find it ("in Slack ▸ Drafts"). Null for structured actions (applied, not pushed).
  */
 export function stagedLabel(destination: Pick<Draft['destination'], 'kind'> | undefined): string | null {
-  if (destination?.kind === 'slack') return 'Pushed as Slack draft';
+  if (destination?.kind === 'slack') return 'Saved as Slack draft';
   if (destination?.kind === 'email') return 'Saved as Gmail draft';
   return null;
 }
@@ -63,7 +79,7 @@ export function outboxStatus(d: Draft, group: OutboxGroup, tz?: string): OutboxS
     case 'scheduled':
       return { tone: 'brand', label: d.scheduledFor ? `Scheduled · ${fmtDayIn(d.scheduledFor, tz)} ${fmtClockIn(d.scheduledFor, tz)}` : 'Scheduled', dashed: true, detail: null, left: false };
     case 'failed':
-      return { tone: 'risk', label: 'Failed', dashed: false, detail: failureOf(d), left: false };
+      return { tone: 'risk', label: 'Failed', dashed: false, detail: plainFailure(failureOf(d), d.destination), left: false };
     case 'sent': {
       // a structured action (a canvas, a VDP change, the feedback post) is applied, not sent
       const action = d.destination?.kind === 'action';
@@ -75,7 +91,7 @@ export function outboxStatus(d: Draft, group: OutboxGroup, tz?: string): OutboxS
           // where the pushed draft waits for you to send it, then what the read-back found
           const where = stagedWhere(d.destination);
           const detail = [where ? `Find it ${where}` : null, d.verification?.detail ?? null].filter(Boolean).join(' · ') || null;
-          return { tone: 'neutral', label: stagedLabel(d.destination) ?? 'Draft pushed', dashed: false, detail, left: true };
+          return { tone: 'neutral', label: stagedLabel(d.destination) ?? 'Draft saved', dashed: false, detail, left: true };
         }
         case 'verified':
           return { tone: 'ok', label: action ? 'Applied · verified' : 'Verified', dashed: false, detail: d.verification?.detail ?? null, left: true };
@@ -105,8 +121,10 @@ export function canApprove(group: OutboxGroup): boolean {
 
 /** Button copy. In dry run the label says so, so nobody expects a delivery. */
 export function approveLabel(d: Pick<Draft, 'mode'> & { destination?: Draft['destination'] }, group: OutboxGroup, dryRun: boolean): string {
-  // A structured action changes something in its app: Apply, not send.
-  const base = group === 'failed' ? 'Retry' : d.destination?.kind === 'action' ? 'Approve & apply' : d.mode === 'send' ? 'Approve & send' : 'Approve: push draft';
+  // A structured action changes something in its app: Apply, not send. Draft mode leaves a draft in Slack or Gmail for
+  // you to send there, and says where in plain words (01-ui-audit UI-16: "push draft" was jargon).
+  const where = d.destination?.kind === 'slack' ? 'Slack' : d.destination?.kind === 'email' ? 'Gmail' : null;
+  const base = group === 'failed' ? 'Retry' : d.destination?.kind === 'action' ? 'Approve & apply' : d.mode === 'send' ? 'Approve & send' : where ? `Approve: draft in ${where}` : 'Approve as a draft';
   return dryRun ? `${base} (dry run)` : base;
 }
 

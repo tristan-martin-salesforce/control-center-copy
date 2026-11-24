@@ -1,7 +1,7 @@
 /**
  * The private overlay contract. The overlay file itself (curated narrative: work items, drafts, briefs,
  * rank reasons, scenario targets) lives OUTSIDE the repo at
- *   ~/Library/Application Support/control-center/fixtures/overlay.mjs
+ *   ~/Library/Application Support/command-center/fixtures/overlay.mjs
  * and is never committed. This file only describes its shape (no data).
  */
 import type { docFromText } from '../../src/server/datasource/mock/render';

@@ -12,6 +12,7 @@ import { ScanRunStatus } from './health';
 import { DraftStatus } from './nba';
 import { ActivityPatch, WorkItemPatch } from './requests';
 import { PolicyRule, PolicyWeightKey } from './settings';
+import { ChatHoldView } from './spend';
 import { Proposal, Resolution } from './work';
 
 export const ContextRef = EntityRef.extend({
@@ -37,7 +38,7 @@ export type ChatProposalStatus = z.infer<typeof ChatProposalStatus>;
 // ---------------------------------------------------------------------------
 
 /**
- * One structured change in a chat proposal (`chat_propose_changes`). Nothing lands until the user clicks
+ * One structured change in a chat proposal (`propose kind changes`). Nothing lands until the user clicks
  * Apply (POST /proposals/:id/apply): the whole list then runs in ONE change set with actor `chat` and
  * comes back as a receipt (Undo via its auditId).
  */
@@ -102,7 +103,7 @@ const CHAT_EDIT_OPS = [
 ] as const;
 
 /**
- * D-58 `chat_app_change`: one call of a `stage` route of the app's API (src/contract/routes.ts, `assistant: 'stage'`),
+ * D-58 `propose kind calls`: one call of a `stage` route of the app's API (src/contract/routes.ts, `assistant: 'stage'`),
  * params and body checked by the route's own schemas. Apply runs it through the DataSource method the UI calls; each
  * call is its own change set, undone per receipt line (src/server/chat/app-routes.ts).
  */
@@ -117,7 +118,7 @@ export const RouteCallChange = z.object({
 });
 export type RouteCallChange = z.infer<typeof RouteCallChange>;
 
-/** The edit ops `chat_propose_changes` takes (every op but route_call). */
+/** The edit ops `propose kind changes` takes (every op but route_call). */
 export const ChatEditChange = z.discriminatedUnion('op', [...CHAT_EDIT_OPS]);
 export type ChatEditChange = z.infer<typeof ChatEditChange>;
 
@@ -125,7 +126,117 @@ export const ChatChange = z.discriminatedUnion('op', [...CHAT_EDIT_OPS, RouteCal
 export type ChatChange = z.infer<typeof ChatChange>;
 export type ChatChangeOp = ChatChange['op'];
 
-/** A manual scan started from chat (`chat_rescan`), read from the job and scan-run tables (the tool row shows it). */
+// ---------------------------------------------------------------------------
+// Assistant v2 (holistic review 2026-11-20, lane 05 §5; H-6): Auto routing, the plan card, memory. All additive.
+// ---------------------------------------------------------------------------
+
+/** What a message may ask for: a model, or `auto` (the router picks the tier per turn). */
+export const ChatModelChoice = ChatModel.or(z.literal('auto'));
+export type ChatModelChoice = z.infer<typeof ChatModelChoice>;
+
+/** The router's reading of a user turn (src/llm/chat/router.ts), deterministic, before any model call. */
+export const ChatIntent = z.enum(['lookup', 'act', 'explain', 'draft', 'research', 'chat']);
+export type ChatIntent = z.infer<typeof ChatIntent>;
+
+export const ChatTier = z.enum(['fast', 'balanced', 'strong']);
+export type ChatTier = z.infer<typeof ChatTier>;
+
+/** Which tier answered and why (the message header: "Haiku · a lookup"). */
+export const ChatRoute = z.object({
+  intent: ChatIntent,
+  tier: ChatTier,
+  model: ChatModel,
+  /** One short line: "a lookup", "you chose Sonnet", "Settings: always Opus". */
+  why: z.string(),
+  /** The user's choice (message or Settings) decided, not the router. */
+  override: z.boolean().default(false),
+});
+export type ChatRoute = z.infer<typeof ChatRoute>;
+
+/** One step of the model's own plan (`plan` tool). */
+export const ChatPlanStep = z.object({
+  /** The tool the step uses (`query`, `search`, `run` …). */
+  tool: z.string(),
+  /** What it does, in the user's words. */
+  what: z.string(),
+  /** A `run` step's sub-run kind (research, read_in, vdp_find_assets, org62_lookup). */
+  run: z.string().optional(),
+  /** The governor's estimate for the step (p90, USD). */
+  estUsd: z.number().min(0).optional(),
+});
+export type ChatPlanStep = z.infer<typeof ChatPlanStep>;
+
+/**
+ * The plan card. Shown before a research-class run (a plan with a `run` step waits for Run / Edit / Skip) and, for
+ * any other plan, as a line of what the turn will do. The estimate is the spend governor's, from `llm_calls` history.
+ */
+export const ChatPlan = z.object({
+  id: Id,
+  steps: z.array(ChatPlanStep).min(1),
+  why: z.string().optional(),
+  estimate: z.object({ p50: z.number().min(0), p90: z.number().min(0), basis: z.enum(['history', 'default']) }),
+  /** waiting: the turn waits for the answer; run / skipped / edited: answered; info: nothing to answer. */
+  status: z.enum(['waiting', 'run', 'skipped', 'edited', 'info']),
+  /** The user's edit ("Edit": what to change), passed to the model. */
+  note: z.string().optional(),
+});
+export type ChatPlan = z.infer<typeof ChatPlan>;
+
+/** POST /chat/plan-answer: the plan card's answer. `edit` carries the note; the turn re-plans from it. */
+export const ChatPlanAnswerRequest = z.object({
+  planId: Id,
+  answer: z.enum(['run', 'skip', 'edit']),
+  note: z.string().max(4000).optional(),
+});
+export type ChatPlanAnswerRequest = z.infer<typeof ChatPlanAnswerRequest>;
+export const ChatPlanAnswerResult = z.object({ delivered: z.boolean() });
+export type ChatPlanAnswerResult = z.infer<typeof ChatPlanAnswerResult>;
+
+/**
+ * The Assistant's memory (`remember`, `chat_memory`): a thread's notes and compaction summaries, and the user's
+ * preferences (threadId null). Pinned entries ride on every turn of their scope and are never compacted away.
+ */
+export const ChatMemoryKind = z.enum(['note', 'preference', 'summary']);
+export type ChatMemoryKind = z.infer<typeof ChatMemoryKind>;
+/**
+ * SEC-8: the message an entry came from, resolved on read (`scope=pinned`): your message in that thread that the turn
+ * which kept it answered (the latest one at or before the entry; for a preference, the latest that asked to keep it).
+ */
+export const ChatMemorySource = z.object({
+  threadId: Id,
+  threadTitle: z.string(),
+  messageId: Id,
+  at: IsoDateTime,
+  /** The first words of your message, one line. */
+  excerpt: z.string(),
+});
+export type ChatMemorySource = z.infer<typeof ChatMemorySource>;
+export const ChatMemoryEntry = z.object({
+  id: Id,
+  threadId: Id.nullable(),
+  kind: ChatMemoryKind,
+  text: z.string(),
+  pinned: z.boolean(),
+  /** A summary's last covered message (its position in the thread, 0-based); null otherwise. */
+  coversThroughSeq: z.number().int().nullable().default(null),
+  createdAt: IsoDateTime,
+  /** SEC-8, additive: filled with `scope=pinned` (null: the message is gone or was never found); absent otherwise. */
+  source: ChatMemorySource.nullable().optional(),
+});
+export type ChatMemoryEntry = z.infer<typeof ChatMemoryEntry>;
+/**
+ * threadId: that thread's entries plus your preferences; neither: preferences only. `scope=pinned` (SEC-8, Settings ▸
+ * Assistant): everything that rides into other turns on its own, every pinned entry in any thread and every
+ * preference, oldest first, each with the message it came from.
+ */
+export const ChatMemoryQuery = z.object({ threadId: Id.optional(), scope: z.enum(['pinned']).optional() });
+export type ChatMemoryQuery = z.infer<typeof ChatMemoryQuery>;
+export const ChatMemoryPayload = z.object({ entries: z.array(ChatMemoryEntry) });
+export type ChatMemoryPayload = z.infer<typeof ChatMemoryPayload>;
+export const DeleteChatMemoryResult = z.object({ deleted: z.boolean() });
+export type DeleteChatMemoryResult = z.infer<typeof DeleteChatMemoryResult>;
+
+/** A manual scan started from chat (`run rescan`), read from the job and scan-run tables (the tool row shows it). */
 export const ChatScan = z.object({
   /** Stable id of the card: the queued job's id (the scan run appears once the worker starts it). */
   id: Id,
@@ -193,6 +304,20 @@ export const ChatUsage = z.object({
   outputTokens: z.number().int(),
   costUsd: z.number(),
   turns: z.number().int(),
+  /** Of `costUsd`: what sub-runs (research, Org62 lookups) cost on their own line (ASSIST-1). Additive. */
+  subRunUsd: z.number().optional(),
+  /**
+   * A turn that continued a message stopped at its cost limit ("Allow more", ASSIST-2): what that stopped message
+   * cost, so the receipt shows both (`costUsd` is this turn only). Additive.
+   */
+  continuedFromUsd: z.number().optional(),
+  /** Assistant v2: the tier that answered and the tool calls the turn made (the receipt: "Haiku · 3 steps · $0.004"). */
+  tier: ChatTier.optional(),
+  steps: z.number().int().optional(),
+  /** Assistant v2: the turn resumed the thread's SDK session (else it was rebuilt from the stored, compacted history). */
+  resumed: z.boolean().optional(),
+  /** W12-8: this turn summarised this many older turns of the thread (compaction; its cost is in `subRunUsd`). Additive. */
+  summarizedTurns: z.number().int().min(1).optional(),
 });
 export type ChatUsage = z.infer<typeof ChatUsage>;
 
@@ -226,8 +351,18 @@ export const ChatPart = z.discriminatedUnion('type', [
     result: z.string().nullable().optional(),
     /** BE-CHAT: the latest `tool-progress` (a chat-started scan: queued 0/3, running 1–2/3, finished 3/3). */
     progress: ChatToolProgress.optional(),
+    /** Assistant v2: what the call cost on its own (a live read through a relay, a sub-run), booked with the thread id. */
+    costUsd: z.number().min(0).optional(),
+    /**
+     * A guard held the call for you (SEC-8 `remember`, SEC-9 `run reauth`: the user's message didn't ask for it): `ok`
+     * is false but it is not a failure; the row is neutral. Absent on rows written before the flag (the summary's
+     * "(say …)" ending is the fallback).
+     */
+    held: z.boolean().optional(),
   }),
   z.object({ type: z.literal('receipt'), receipt: Receipt }),
+  /** Assistant v2: the model's plan card (see ChatPlan), with its final status. */
+  z.object({ type: z.literal('plan'), plan: ChatPlan }),
   z.object({
     type: z.literal('proposal'),
     proposal: Proposal,
@@ -258,6 +393,8 @@ export const ChatMessage = z.object({
   isMorningBrief: z.boolean().default(false),
   /** Assistant messages: the model that answered. */
   model: ChatModel.optional(),
+  /** Assistant v2: the router's choice for this turn (tier and why), shown on the message header. */
+  route: ChatRoute.optional(),
   /** Assistant messages: how the turn ended (complete = `done`). Absent on older messages. */
   status: z.enum(['complete', 'error', 'stopped']).optional(),
   /** BE-CHAT: assistant messages answered by a model: tokens and cost of the turn. */
@@ -295,10 +432,13 @@ export type ChatThreadsPayload = z.infer<typeof ChatThreadsPayload>;
  */
 export const ChatSseEvent = z.discriminatedUnion('type', [
   /** Header (CONTRACT-1): ids for the turn and the model answering it (ChatRequest.model ?? settings.chat.defaultModel). */
-  z.object({ type: z.literal('start'), threadId: Id, messageId: Id, userMessageId: Id, model: ChatModel }),
+  z.object({ type: z.literal('start'), threadId: Id, messageId: Id, userMessageId: Id, model: ChatModel, route: ChatRoute.optional() }),
+  /** Assistant v2: the plan card (new, or its answered status). A `waiting` plan is answered with POST /chat/plan-answer. */
+  z.object({ type: z.literal('plan'), messageId: Id, plan: ChatPlan }),
   z.object({ type: z.literal('text-delta'), messageId: Id, delta: z.string() }),
   z.object({ type: z.literal('tool-start'), id: Id, name: z.string(), summary: z.string(), args: z.string().optional() }),
-  z.object({ type: z.literal('tool-result'), id: Id, summary: z.string(), ok: z.boolean(), result: z.string().optional() }),
+  /** `held`: a guard held the call for you, not a failure (see ChatPart `tool`.held). */
+  z.object({ type: z.literal('tool-result'), id: Id, summary: z.string(), ok: z.boolean(), result: z.string().optional(), costUsd: z.number().min(0).optional(), held: z.boolean().optional() }),
   /** BE-CHAT: a running tool's progress (chat-started scans). Same `id` as its tool-start; the tool-result still ends it. */
   z.object({ type: z.literal('tool-progress'), id: Id, done: z.number().int().min(0), total: z.number().int().min(1) }),
   z.object({ type: z.literal('receipt'), receipt: Receipt }),
@@ -306,6 +446,17 @@ export const ChatSseEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('proposal'), id: Id, proposal: Proposal, summary: z.string() }),
   /** BE-CHAT `card`: see ChatCard. */
   z.object({ type: z.literal('resource'), resource: ChatResource, card: ChatCard.optional() }),
+  /**
+   * ASSIST-9 (2026-11-20): the turn's spend so far in USD (model calls + sub-runs, estimated from the rate card until
+   * the final `usage`), sent as it climbs. Older clients drop it (unknown events are ignored).
+   */
+  z.object({ type: z.literal('usage-delta'), messageId: Id, spentUsd: z.number().min(0), model: z.string(), subRunUsd: z.number().min(0).optional(), hold: ChatHoldView.optional() }),
+  /**
+   * Spend governor (H-5): the answer passed its hold and waits at its next step for the user. The card answers through
+   * POST /chat/spend-answer (approve $moreUsd · deny); the turn then continues or wraps up from what it has. A turn no
+   * longer listening (the stream closed) ends as a budget stop that "Allow more" continues.
+   */
+  z.object({ type: z.literal('spend-ask'), messageId: Id, holdId: Id, question: z.string(), spentUsd: z.number().min(0), heldUsd: z.number().min(0), moreUsd: z.number().min(0) }),
   z.object({ type: z.literal('done'), threadId: Id, messageId: Id, userMessageId: Id }),
   z.object({ type: z.literal('error'), error: ApiErrorBody }),
 ]);

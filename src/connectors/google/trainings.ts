@@ -10,7 +10,8 @@
 import type { ConnectorHealthProbe, CoverageObject, Cursor, DeterministicFetcher, FetchResult, NormalizedSourceItem, TimeWindow } from '@/scanner/types';
 import { redact, redactExcerpt } from '../redact';
 import { decodeCursor, encodeCursor, extractUrls, h16, htmlToText, looksLikeHtml, normalizeText, systemClock, throwIfAborted, type Clock } from '../util';
-import type { GoogleTools } from './client';
+// injected: the connector runtime's text port (src/connectors/runtime: GoogleWorkspaceClient behind direct_mcp)
+import type { TextToolPort as GoogleTools } from '../runtime/types';
 import { listEvents } from './calendar';
 import type { Me } from './gmail';
 import { newTextOf } from './gmail';

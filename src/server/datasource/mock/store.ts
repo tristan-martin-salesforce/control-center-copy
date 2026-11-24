@@ -4,6 +4,9 @@
  *
  * Rule: never mutate a stored object in place. Always `tx.put` a new object.
  */
+import type { DcSuggestionRow } from '@/engines/attribution/dc';
+import type { LearnedRule } from '@/engines/attribution/types';
+import type { UcCandidateRow } from '@/engines/use-cases/types';
 import { nanoid } from 'nanoid';
 import type {
   Account,
@@ -101,7 +104,16 @@ export interface Collections {
   vdpIdentity: IdentityOverride;
   /** 2026-11-13 audit B2: your edits on canvas rows before Apply (src/lib/canvas/overrides.ts; the db's kv), per row key (not in seeds). */
   rowOverrides: RowOverrideRec;
+  /** The attribution engine's learned rules (the db's mapping_rules; not in seeds: learned from your corrections). */
+  learnedRules: LearnedRule;
+  /** The DC suggestions and their decisions (the db's dc_suggestions; not in seeds: the batch makes them). */
+  dcSuggestions: DcSuggestionRec;
+  /** Use cases to add (the db's use_case_candidates; not in seeds: the extraction makes them, mock/use-cases.ts). */
+  useCaseCandidates: UcCandidateRow;
 }
+
+/** A stored DC suggestion (src/engines/attribution/dc.ts) with when it was decided. */
+export type DcSuggestionRec = DcSuggestionRow & { decidedAt: string | null };
 export type CollectionName = keyof Collections;
 
 /** Which query topics a write to each collection invalidates. */
@@ -144,6 +156,9 @@ export const COLLECTION_TOPICS: Record<CollectionName, LiveTopic[]> = {
   timeDismissRules: ['time', 'settings'],
   vdpIdentity: ['deals', 'today'],
   rowOverrides: ['draft', 'time', 'deals'],
+  learnedRules: ['settings', 'time'],
+  dcSuggestions: ['time', 'deals', 'home'],
+  useCaseCandidates: ['time', 'deals'],
 };
 
 const keyOf: { [K in CollectionName]: (v: Collections[K]) => string } = {
@@ -182,6 +197,9 @@ const keyOf: { [K in CollectionName]: (v: Collections[K]) => string } = {
   timeDismissRules: (v) => v.key,
   vdpIdentity: (v) => v.key,
   rowOverrides: (v) => v.key,
+  learnedRules: (v) => v.id,
+  dcSuggestions: (v) => v.id,
+  useCaseCandidates: (v) => v.id,
 };
 
 type Maps = { [K in CollectionName]: Map<string, Collections[K]> };
@@ -232,6 +250,9 @@ export class Store {
       timeDismissRules: new Map(),
       vdpIdentity: new Map(),
       rowOverrides: new Map(),
+      learnedRules: new Map(),
+      dcSuggestions: new Map(),
+      useCaseCandidates: new Map(),
     };
   }
 

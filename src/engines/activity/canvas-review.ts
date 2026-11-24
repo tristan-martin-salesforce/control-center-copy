@@ -8,6 +8,7 @@
 import { type Org62EventPayload, refOf, toOrg62Event } from './entry';
 import { lightningLink, slackbotPrompt } from './handoff';
 import { type QuarterProgress, type WeekRollup } from './rollup';
+import { STATE_FOLDER_DISPLAY } from '@/lib/state-folder-name';
 import { toMs } from './time';
 import type { ActivityConfig, ActivityEntry } from './types';
 
@@ -102,7 +103,7 @@ export function renderReviewCanvas(input: ReviewInput): string {
     out.push(`${ready.length} approved events, ${rows.reduce((s, r) => s + r.Duration__c, 0).toFixed(2)} h. Pick one way to load them. Each one disappears from here once the read-back finds it in Org62.`);
     out.push('');
     out.push('1. **Slackbot:** paste the prompt below into Slackbot (it can write to Org62; Claude can\'t).');
-    out.push('2. **Data Loader:** Insert → Event → the newest `batch-*.csv` in `~/Library/Application Support/control-center/autopilot/outbox/`.');
+    out.push(`2. **Data Loader:** Insert → Event → the newest \`batch-*.csv\` in \`${STATE_FOLDER_DISPLAY}/autopilot/outbox/\`.`);
     out.push('3. **One by one:** click a link, check the form, Save.');
     out.push('');
     out.push('```');
@@ -231,7 +232,7 @@ export function renderReviewCanvas(input: ReviewInput): string {
     out.push('');
   }
   out.push('---');
-  out.push(`Source: \`tools/activity-autopilot\` in the control-center repo.${input.footerNote ? ' ' + input.footerNote : ''}`);
+  out.push(`Source: \`tools/activity-autopilot\` in the command-center repo.${input.footerNote ? ' ' + input.footerNote : ''}`);
   return out.join('\n');
 }
 

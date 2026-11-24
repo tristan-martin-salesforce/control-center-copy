@@ -6,7 +6,7 @@
 import type { DispatchMode } from '@/contract';
 
 /** Outbound channels with a delivery adapter. Contract destination `email` maps to `gmail`, `vdp` to `vdp`. */
-export type OutboxChannel = 'slack' | 'gmail' | 'vdp' | 'slack_canvas' | 'feedback';
+export type OutboxChannel = 'slack' | 'gmail' | 'vdp' | 'slack_canvas' | 'feedback' | 'release';
 
 /**
  * Read-back after a real action:

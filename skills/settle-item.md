@@ -1,12 +1,12 @@
 ---
 skill: settle-item
-version: 1.5.0
+version: 1.6.0
 kind: judge
 model: claude-haiku-5-5
 effort: medium
 budget_usd_per_call: 0.05
 output: json (one object, src/engines/settle/prompt.ts)
-used_by: the Settle pass (src/engines/settle, docs/ui/SCANNER.md §4.11)
+used_by: the Settle pass (src/engines/settle, docs/reference/SCANNER.md §4.11)
 ---
 
 # settle-item: does this item still need me?
@@ -21,7 +21,9 @@ One JSON object:
 
 - `now`, `timezone`, `me`;
 - `item`: `kind` (`ask` = someone asked me, `commitment` = I promised, `task`, `follow_up`, `training`), `title` (the
-  thing to finish), `purpose`, `due`, `firstSeen` (when the app first saw it), `status`;
+  thing to finish), `purpose`, `due`, `firstSeen` (when the app first saw it), `status`. A `done` item was closed for
+  me by the app and comes back only because someone wrote in its conversation since: judge it like an open one, and
+  answer `still_yours` when the new line shows it is not finished (a chase, "that link doesn't open"), so it reopens;
 - `hints`: facts computed in code, e.g. `ageDaysWhenSeen`, `dueBeforeFirstSeen`, `duePassed`, `myRepliesAfterAsk`,
   `askerMessagesAfterAsk`, `firstReplyAfterMin`. `askCutOff: true` means the ask's text was cut at its stored length:
   the scanner read the whole message, so when the title names a request you can't see, trust the title. Don't call

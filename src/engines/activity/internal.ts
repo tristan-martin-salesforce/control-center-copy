@@ -132,7 +132,7 @@ export interface DismissSource {
   /** `repo:<name>` · `docs:unmapped` · `series:<calendar>|<series id>` */
   key: string;
   kind: DismissSourceKind;
-  /** "control-center" (repo), "unmapped Drive docs", "'Weekly asset sync'" (series). */
+  /** "command-center" (repo), "unmapped Drive docs", "'Weekly asset sync'" (series). */
   label: string;
 }
 

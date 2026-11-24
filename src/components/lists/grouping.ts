@@ -67,9 +67,10 @@ export type FocusSection = 'looks_done' | 'do_now' | 'this_week' | 'chase' | 'th
 
 /** LD-1: likely-done work first, out of Do now: it waits for one click (Confirm or Not done), not for work. */
 export const FOCUS_ORDER: FocusSection[] = ['looks_done', 'do_now', 'this_week', 'chase', 'think_ahead', 'fit_in'];
+/** "Due today", not "Do now": Home's Do now is the top 3, so the same words never name a list of 9 (01-ui-audit UI-17, R3). */
 export const FOCUS_LABEL: Record<FocusSection, string> = {
   looks_done: 'Looks done: confirm',
-  do_now: 'Do now',
+  do_now: 'Due today',
   this_week: 'Do this week',
   chase: 'Chase',
   think_ahead: 'Think ahead',

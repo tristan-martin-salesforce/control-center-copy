@@ -70,6 +70,12 @@ export interface OutboxJobPort {
 export interface OutboxJobDeps<S = unknown> {
   port: (ctx: Parameters<JobHandler<S>>[0]) => OutboxJobPort;
   gateway: OutboxGateway | null;
+  /**
+   * 2026-11-20 (06 R9): after a logging canvas was really created (state `delivered`, not a dry run), queue the Org62
+   * re-checks, so they no longer wait for the user to copy the Slackbot prompt. Best effort: a failure here never
+   * touches the delivery's result. Read-only work (it only enqueues Org62 reads).
+   */
+  onCanvasApplied?: (ctx: Parameters<JobHandler<S>>[0], draftId: string) => Promise<void>;
 }
 
 export function parseJobPayload(raw: Record<string, unknown>): OutboxJobPayload | null {
@@ -181,7 +187,7 @@ export async function runOutboxJob(p: OutboxJobPayload, port: OutboxJobPort, gat
   }
   const rec0 = engine.prepare({ draftId: d.id, draftVersion: p.version, destination: d.destination, mode: p.mode, payload, dryRun: s.dryRun, attemptNo: s.attemptNo, confirmation, idempotencyKey: `outbox.dispatch:${d.id}:${p.attemptId}` });
   const rec = await engine.deliver({ ...rec0, id: `dlv_${p.attemptId}` }, confirmation, { holdMs: 0, verifyReadback: s.verifyReadback, signal: opts.signal });
-  return { state: rec.state, draftId: d.id, attemptId: p.attemptId, ...(rec.readback ? { readback: rec.readback } : {}), ...(rec.error ? { code: rec.error.code } : {}) };
+  return { state: rec.state, draftId: d.id, attemptId: p.attemptId, channel: rec.channel, ...(rec.readback ? { readback: rec.readback } : {}), ...(rec.error ? { code: rec.error.code } : {}) };
 }
 
 /** The queue `POST /drafts/:id/dispatch` enqueues `outbox.dispatch` on. */
@@ -195,6 +201,14 @@ export function outboxDispatchHandler<S = unknown>(deps: OutboxJobDeps<S>): JobH
   return async (ctx) => {
     const p = parseJobPayload(ctx.job.payload);
     if (!p) return { skipped: 'bad_payload' };
-    return runOutboxJob(p, deps.port(ctx), deps.gateway, { now: ctx.clock, signal: ctx.signal });
+    const res = await runOutboxJob(p, deps.port(ctx), deps.gateway, { now: ctx.clock, signal: ctx.signal });
+    if (res.state === 'delivered' && res.channel === 'slack_canvas' && deps.onCanvasApplied) {
+      try {
+        await deps.onCanvasApplied(ctx, p.draftId);
+      } catch (err) {
+        ctx.log('org62 re-check not queued after canvas apply', { code: err instanceof Error ? err.name : 'error' });
+      }
+    }
+    return res;
   };
 }

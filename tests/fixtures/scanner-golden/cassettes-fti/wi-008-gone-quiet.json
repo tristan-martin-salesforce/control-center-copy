@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "652663c58ebe4c9cd2c2f25268b342fd",
+      "label": "classify | D0NADIA003:1792432800.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0NADIA003:1792432800.000000\", \"v\": \"ask\", \"kind\": \"follow_up\", \"title\": \"Follow up with PERSON_AR on the route exceptions proposal\", \"who\": \"PERSON_N\", \"deliverable\": \"follow-up\", \"due\": null, \"conf\": 0.86, \"cite\": \"Can you follow up with PERSON_AR on the route exceptions proposal if we hear nothing?\", \"link\": null, \"why\": \"ask in a DM to follow up\"}]}"
+    },
+    {
+      "hash": "695b52abead26e0a104e65f014a21999",
+      "label": "classify | gm-wi-008-gone-quiet-s2",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"gm-wi-008-gone-quiet-s2\", \"v\": \"progress\", \"due\": null, \"conf\": 0.85, \"cite\": \"following up on the route exceptions agent proposal with the integration diagram\", \"link\": \"w1\", \"why\": \"my follow-up email to PERSON_AR\"}]}"
+    },
+    {
+      "hash": "ba061d8774ed60134bec668e7b25fd35",
+      "label": "classify | gm-wi-008-gone-quiet-s3",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"gm-wi-008-gone-quiet-s3\", \"v\": \"fyi\", \"due\": null, \"conf\": 0.8, \"cite\": \"We have our ops summit this week and will come back to you afterwards\", \"link\": \"w1\", \"why\": \"PERSON_AR will answer after the summit\"}]}"
+    },
+    {
+      "hash": "5fbfe3a6c01ce44773b639ef5d895fad",
+      "label": "classify | gm-wi-008-gone-quiet-s4",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"gm-wi-008-gone-quiet-s4\", \"v\": \"progress\", \"due\": null, \"conf\": 0.85, \"cite\": \"I would love to hear whether the route exceptions proposal landed with your leadership\", \"link\": \"w1\", \"why\": \"my second nudge to PERSON_AR\"}]}"
+    },
+    {
+      "hash": "d623c21f0e8f34234e309664fd3eedca",
+      "label": "classify | D0NADIA003:1793916000.000000 , D0NADIA003:1793916720.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0NADIA003:1793916000.000000\", \"v\": \"fyi\", \"due\": null, \"conf\": 0.75, \"cite\": \"PERSON_AR still isn't replying to me either. Any luck on your side?\", \"link\": \"w1\", \"why\": \"status check on the follow-up; I answered right after\"}, {\"ref\": \"D0NADIA003:1793916720.000000\", \"v\": \"fyi\", \"due\": null, \"conf\": 0.8, \"cite\": \"Nothing since her Oct 25 note. I sent two nudges, no replies.\", \"link\": \"w1\", \"why\": \"my status update: still no reply\"}]}"
+    }
+  ]
+}

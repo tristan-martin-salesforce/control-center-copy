@@ -51,7 +51,7 @@ const AMBIGUOUS: ReadonlySet<string> = new Set(['transient', 'unknown']);
  */
 const CHECK_BEFORE_RETRY: ReadonlySet<DeliveryRecord['channel']> = new Set(['slack_canvas']);
 
-const WHERE: Record<DeliveryRecord['channel'], string> = { slack: 'Slack', gmail: 'Gmail', vdp: 'VDP', slack_canvas: 'Slack', feedback: 'Slack' };
+const WHERE: Record<DeliveryRecord['channel'], string> = { slack: 'Slack', gmail: 'Gmail', vdp: 'VDP', slack_canvas: 'Slack', feedback: 'Slack', release: 'Slack' };
 
 /** The error of a write whose outcome is unknown: it may have landed, so it is never retried on its own. */
 export function outcomeUnknown(channel: DeliveryRecord['channel'], why: 'no_answer' | 'interrupted'): NonNullable<DeliveryRecord['error']> {

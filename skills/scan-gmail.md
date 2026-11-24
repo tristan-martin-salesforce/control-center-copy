@@ -9,7 +9,7 @@ effort: low
 mcp_servers: []                   # none: you have no Gmail tools, only what was prefetched
 allowed_tools: [cc_get_context, cc_record_source_items, cc_find_candidates, cc_link_evidence, cc_propose_item, cc_propose_initiative, cc_flag_unlinked, cc_report_coverage, cc_finish]
 fetcher: src/connectors/google/gmail.ts
-spec: docs/ui/SCANNER.md
+spec: docs/reference/SCANNER.md
 requirements: [R-UI-1, R-UI-3, R-UI-20, R-UI-22]
 ---
 
@@ -50,6 +50,7 @@ Every item is `kind: "email"`, one per message. Use these fields; ignore the res
 | `payload.mentionsAttachment` | The text says "attached"/"attaching" |
 | `payload.urls` | Links in the new text |
 | `payload.bulk` | Newsletter / no-reply / notification sender |
+| `payload.docsAsk` | A Google Docs "assigned you an action item" (`kind: action_item`) or comment mention (`kind: mention`) mail, with the doc as `fileRef`: an **ask of me** about that doc (4.2), never bulk |
 | `payload.calendarNotice` | Invitation, acceptance, "proposed new time" mail |
 
 ## 3. Exact steps (no MCP calls; `cc` tools only)

@@ -5,11 +5,11 @@
  * open in the panel stays; arrivals wait behind the pill while you are busy; the selection moves to its neighbour.
  */
 import { createElement as h, useState } from 'react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { noteLocalWrite, resetIntent } from '@/client/intent';
 import { LINGER_MS, useLiveList, useSelectionSurvives, type LiveList, type LiveListOptions } from '@/components/lists/live-list';
-import { cleanup, render, waitFor } from '@/components/composer/__tests__/dom';
+import { advance, cleanup, render } from '@/components/composer/__tests__/dom';
 
 const { act } = await import('react');
 
@@ -30,11 +30,17 @@ async function mount(data: Row[], opts?: LiveListOptions) {
 const rows = (...ids: string[]) => ids.map((id) => ({ id }));
 const ids = () => last!.items.map((r) => r.id);
 
+// The hooks read Date.now() and set timers (linger, the "new" mark, your own writes' window): all fake, so a slow
+// render can never age a mark or a linger past its window between two lines of a test.
 beforeEach(() => {
+  vi.useFakeTimers();
   resetIntent();
   last = null;
 });
-afterEach(async () => cleanup());
+afterEach(async () => {
+  await cleanup();
+  vi.useRealTimers();
+});
 
 describe('useLiveList', () => {
   it('keeps the order on screen and places an arrival at its natural place, marked new', async () => {
@@ -67,7 +73,9 @@ describe('useLiveList', () => {
     expect(ids()).toEqual(['a', 'b', 'c']);
     expect(last!.liveOf('b')).toBe('leaving');
     expect(last!.isLeaving('b')).toBe(true);
-    await waitFor(() => !ids().includes('b'), LINGER_MS + 2000);
+    await advance(LINGER_MS - 1);
+    expect(ids()).toEqual(['a', 'b', 'c']); // still fading
+    await advance(100);
     expect(ids()).toEqual(['a', 'c']);
   });
 
@@ -82,7 +90,7 @@ describe('useLiveList', () => {
     const { update } = await mount(rows('a', 'b'), { keep: 'b' });
     await update(rows('a'), { keep: 'b' });
     expect(last!.liveOf('b')).toBe('gone');
-    await new Promise((r) => setTimeout(r, LINGER_MS + 100));
+    await advance(LINGER_MS + 100);
     await update(rows('a'), { keep: 'b' });
     expect(ids()).toEqual(['a', 'b']);
     await update(rows('a'), { keep: null });

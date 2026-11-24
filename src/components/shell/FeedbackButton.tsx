@@ -48,7 +48,7 @@ export function TopbarFeedback() {
   const active = panel.open && panel.entity?.kind === 'feedback';
   return (
     <Tooltip content="Report a bug or an idea: the app diagnoses it, swaps names for placeholders, and you edit it before Send" side="bottom">
-      <Button variant="secondary" size="sm" onClick={open} aria-label={FEEDBACK_LABEL} aria-pressed={active} data-feedback-entry className={cn(active && 'bg-selected')}>
+      <Button variant="secondary" size="sm" onClick={open} aria-label={`Feedback: ${FEEDBACK_LABEL}`} aria-pressed={active} data-feedback-entry className={cn(active && 'bg-selected')}>
         <Icon name="bug" size="sm" />
         <span className="@max-[760px]/topbar:sr-only">Feedback</span>
       </Button>

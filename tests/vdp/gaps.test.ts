@@ -309,6 +309,19 @@ describe('account-level gaps: the company, then the VDP, then what it needs', ()
     expect(r.unlinked[0]).toMatchObject({ id: 'opp:O5:opp_without_vdp', fix: { kind: 'app', op: 'create_vdp', suggested: '00000000-0000-4000-8000-0000000000c1', values: { salesforce_opportunity_ids: ['006EEEEEEEEEEEE'] } } });
   });
 
+  it('caps audit: an opp past VDP\'s 20-opportunity limit is told so, not pointed at a create that leaves it off', () => {
+    const many = Array.from({ length: 22 }, (_, i) => opp({ id: `M${i}`, org62OpportunityId: `006M${String(i).padStart(11, '0')}`, closeDate: `2026-12-${String(i + 1).padStart(2, '0')}` }));
+    const closedOpps = [...opps.map((o) => (o.id === 'O1' ? { ...o, isOpen: false } : o)), ...many];
+    const r = computeVdpGaps({ ...base, opps: closedOpps, vdps: [vdp({ fiscalYear: 26, fiscalQuarter: 2 })] });
+    const rows = r.unlinked.filter((g) => g.code === 'opp_without_vdp' && g.opportunityId?.startsWith('M'));
+    expect(rows).toHaveLength(22);
+    const ids = (rows[0]!.fix as unknown as { values: { salesforce_opportunity_ids: string[] } }).values.salesforce_opportunity_ids;
+    expect(ids).toHaveLength(20);
+    const past = rows.filter((g) => (g.fix as { unsupported: string | null }).unsupported);
+    expect(past).toHaveLength(2);
+    expect((past[0]!.fix as { unsupported: string }).unsupported).toMatch(/at most 20 opportunities/);
+  });
+
   it('VD-34 use-case titles differing only by a number are different', () => {
     expect(sameUseCaseTitle('Use case 1', 'Use case 2')).toBe(false);
     expect(sameUseCaseTitle('Agent – Phase 1', 'Agent – Phase 2')).toBe(false);

@@ -56,7 +56,7 @@ export function digestDoc(fileId: string, title: string, markdown: string): Driv
   return { kind: 'doc', fileId, title: redact(title).text, sections, digestHash };
 }
 
-export function digestSheet(fileId: string, title: string, tabs: Array<{ name: string; size?: string; values: string }>): DriveDigest {
+export function digestSheet(fileId: string, title: string, tabs: Array<{ name: string; size?: string; values: string }>, notRead = 0): DriveDigest {
   const sheets: SheetDigest[] = tabs.map((t) => ({
     name: redact(t.name).text,
     size: t.size,
@@ -65,7 +65,7 @@ export function digestSheet(fileId: string, title: string, tabs: Array<{ name: s
     text: store(t.values),
   }));
   const digestHash = sha1('sheet', ...sheets.map((s) => `${s.name}|${s.size ?? ''}|${s.hash}`));
-  return { kind: 'sheet', fileId, title: redact(title).text, sheets, digestHash };
+  return { kind: 'sheet', fileId, title: redact(title).text, sheets, ...(notRead > 0 ? { sheetsNotRead: notRead } : {}), digestHash };
 }
 
 export function digestOpaque(fileId: string, title: string, size: number | undefined, mimeType: string | undefined): DriveDigest {

@@ -1,0 +1,54 @@
+{
+  "id": "wi-006-reply-pending",
+  "title": "An ask answered only with a promise stays open",
+  "storyline": "sample-data/CAST-work.md wi-006 (Confirm which IdP groups map to Agentforce permission sets, in writing), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "gmail",
+      "kind": "email_message",
+      "occurred_at": "2026-11-13T23:00:00.000Z",
+      "seen_at": "2026-11-13T23:10:00.000Z",
+      "from_me": false,
+      "title": "Question on supported SAML attribute mapping",
+      "body": "Hi team, we are preparing the SSO configuration for the Saltmere POC. Is there documentation on which SAML attributes are used to populate permission set assignments? Pat is aware, I am asking here as well so it is not lost. PERSON_S",
+      "meta": { "author": { "name": "PERSON_S", "email": "person_s@example.com" }, "threadId": "thr-saml-attributes" }
+    },
+    {
+      "id": "s2",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-16T22:12:00.000Z",
+      "seen_at": "2026-11-16T22:20:00.000Z",
+      "from_me": false,
+      "body": "<@U0ME00001> can you confirm which of our IdP groups the POC needs to map to Agentforce permission sets? Security wants that in writing before Thursday's sync. Our current groups are in the attached sheet.",
+      "meta": { "channelId": "C0SALT001", "channelType": "channel", "channelName": "saltmere-security", "author": { "name": "PERSON_S", "email": "person_s@example.com", "externalId": "U0PERSONS" } },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s3",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-16T22:40:00.000Z",
+      "seen_at": "2026-11-16T22:50:00.000Z",
+      "from_me": true,
+      "thread_of": "s2",
+      "body": "Thanks, I'll confirm the mapping in writing before Thursday's sync.",
+      "meta": { "channelId": "C0SALT001", "channelType": "channel", "channelName": "saltmere-security" }
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Confirm which IdP groups map to Agentforce permission sets, in writing",
+      "keywords": ["IdP groups", "permission sets"],
+      "origin": "s2",
+      "ask_quote": "can you confirm which of our IdP groups"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "rule": "none", "why": "my only reply is a promise; the mapping has not been sent" }
+  ]
+}

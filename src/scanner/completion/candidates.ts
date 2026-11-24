@@ -1,6 +1,6 @@
 /**
  * Deterministic candidate collection for the completion pass (no model). For one open item, which newly arrived
- * source items plausibly say it is done? The rules (docs/ui/SCANNER.md §4.9):
+ * source items plausibly say it is done? The rules (docs/reference/SCANNER.md §4.9):
  *
  *   same_thread        the same Slack thread as its origin / progress evidence                       strong
  *   same_dm            the same Slack DM (or group DM) as that evidence                              strong
@@ -12,15 +12,20 @@
  *   same_file          a Drive file the item references (a revision, or a link to it)                medium
  *   same_event         its calendar event changed, or I scheduled one with the asker                 medium
  *   same_account       my message on the item's account that shares two title keywords               weak
+ *   ack                the asker's "got it, thanks" right after my line in the item's conversation    medium (R7)
+ *   file_revision      a Drive revision of a file the item references                                medium (R7)
+ *   meeting_notes      notes of the item's meeting, or notes with the asker naming the item           medium (R7)
+ *   session            a Claude session that names the item (or shares its file)                     medium (R7)
  *
- * Only Slack, Gmail, Calendar and Drive items are candidates (notes, Org62 and sessions have their own signals).
- * Everything here is pure: the pass feeds it what the store read.
+ * Slack, Gmail, Calendar, Drive, Gemini notes and Claude sessions are candidates (Org62 has its own read-backs).
+ * A pleasantry is dropped unless it is the asker acknowledging my line (R7: before, "got it, thanks" was always
+ * dropped, so the check never saw the asker confirm). Everything here is pure: the pass feeds it what the store read.
  */
 import { tokenize, toMs } from '../store-memory';
 import type { PersonRef } from '../types';
 import { STRONG_RELATIONS, type Candidate, type CompletionEvidence, type CompletionItem, type CompletionSource, type Relation } from './types';
 
-export const CANDIDATE_CONNECTORS = new Set(['slack', 'gmail', 'calendar', 'drive']);
+export const CANDIDATE_CONNECTORS = new Set(['slack', 'gmail', 'calendar', 'drive', 'gemini_notes', 'claude_sessions']);
 
 const lower = (s: string) => s.trim().toLowerCase();
 
@@ -163,7 +168,23 @@ export function relationsOf(f: ItemFacts, s: CompletionSource): Relation[] {
   const files = new Set(s.fileRefs.map(normFileRef));
   const df = driveFileOf(s);
   if (df) files.add(df);
-  if ([...files].some((x) => f.fileRefs.has(x))) out.add('same_file');
+  const sameFile = [...files].some((x) => f.fileRefs.has(x));
+  if (sameFile) out.add('same_file');
+  if (sameFile && df && f.fileRefs.has(df)) out.add('file_revision');
+
+  const keywordHits = () => tokenize(`${s.title ?? ''} ${s.text ?? ''}`).filter((k) => f.keywords.has(k)).length;
+  if (s.connector === 'gemini_notes') {
+    // R7: the notes of the item's own meeting, or a meeting with the asker whose notes name the item.
+    const sameEvent = (!!s.threadRef && f.eventRefs.has(s.threadRef)) || f.eventRefs.has(s.externalId);
+    const withAsker = participants.some((p) => personKeys(p).some((k) => f.counterpartKeys.has(k)));
+    if (sameEvent || (withAsker && keywordHits() >= 2)) out.add('meeting_notes');
+    for (const r of ['from_asker', 'to_asker', 'same_thread', 'context_thread'] as const) out.delete(r);
+  }
+  if (s.connector === 'claude_sessions') {
+    // R7: a session working on the item (its title and last line name it, or it touches the item's file).
+    if (sameFile || keywordHits() >= 2) out.add('session');
+    for (const r of ['from_asker', 'to_asker', 'same_thread', 'context_thread', 'same_account'] as const) out.delete(r);
+  }
 
   if (s.connector === 'calendar') {
     const sameEvent = f.eventRefs.has(s.externalId) || (!!s.threadRef && f.eventRefs.has(s.threadRef));
@@ -206,8 +227,30 @@ export function isPleasantry(text: string | undefined): boolean {
  * The candidates for one item, strongest first (at most `maxPerItem`), returned oldest first so the prompt
  * reads as a timeline. A source counts only when it happened after the ask (Calendar: arrived after it).
  */
+/** The conversation a Slack/Gmail line belongs to (thread, else DM channel), for "after my line" checks. */
+function conversationOf(x: { connector: string; externalId: string; threadRef?: string }): string | undefined {
+  if (x.connector === 'gmail') return x.threadRef ? `g:${x.threadRef}` : undefined;
+  if (x.connector !== 'slack') return undefined;
+  const ch = slackChannel(x.externalId) ?? slackChannel(x.threadRef);
+  if (ch && isDmChannel(ch)) return `d:${ch}`;
+  return x.threadRef ? `t:${x.threadRef}` : undefined;
+}
+
 export function collectCandidates(item: CompletionItem, sources: CompletionSource[], o: CollectOptions, facts = itemFacts(item)): Candidate[] {
   const out: Candidate[] = [];
+  // R7: when did I last write in each conversation after the ask (my evidence lines and anything the store read)?
+  const mine = new Map<string, number[]>();
+  for (const x of [...item.evidence.filter((e) => e.fromMe), ...sources.filter((s) => s.fromMe)]) {
+    const conv = conversationOf(x);
+    const at = toMs(x.occurredAt);
+    if (!conv || at == null || at <= facts.askAt) continue;
+    mine.set(conv, [...(mine.get(conv) ?? []), at]);
+  }
+  const followsMine = (s: CompletionSource) => {
+    const conv = conversationOf(s);
+    const at = toMs(s.occurredAt);
+    return !!conv && at != null && (mine.get(conv) ?? []).some((t) => t < at);
+  };
   for (const s of sources) {
     if (!CANDIDATE_CONNECTORS.has(s.connector)) continue;
     if (facts.originIds.has(s.sourceItemId) || facts.completionIds.has(s.sourceItemId)) continue;
@@ -217,7 +260,12 @@ export function collectCandidates(item: CompletionItem, sources: CompletionSourc
     if (at == null || at <= facts.askAt) continue;
     const relations = relationsOf(facts, s);
     if (!relations.length) continue;
-    if (s.connector === 'slack' && isPleasantry(s.text)) continue;
+    if ((s.connector === 'slack' || s.connector === 'gmail') && isPleasantry(s.text)) {
+      // R7: the asker's "got it, thanks" after my line is their acknowledgement: kept, tagged `ack`. Other Slack chatter
+      // goes (it only crowds the slots).
+      if (!s.fromMe && relations.includes('from_asker') && followsMine(s)) relations.push('ack');
+      else if (s.connector === 'slack') continue;
+    }
     out.push({ source: s, relations, strong: relations.some((r) => STRONG_RELATIONS.has(r)) });
   }
   const resolves = (c: Candidate) => !c.source.fromMe && c.relations.includes('from_asker') && RESOLUTION_RE.test(c.source.text ?? '');

@@ -6,8 +6,11 @@
  * health / today / briefs (…) event arrives, so no extra server fan-out is needed.
  */
 import type { HomePayload, RouteInput } from '@/contract';
-import { buildHome, nextWorkingDay, type HomeInput } from '@/engines/home';
+import { buildHome } from '@/engines/home/build';
+import { nextWorkingDay } from '@/engines/home/time';
+import type { HomeInput } from '@/engines/home/types';
 import { connectorRowsFor, personaOf } from '@/personas';
+import { engineOf } from '@/engines/priority/v2/shadow';
 import type { MockAuditLog, Store } from './store';
 import { buildSince, hydrateItem, mockCapacity } from './views';
 
@@ -31,7 +34,7 @@ export function homeInputFromStore(src: HomeSource, wide: boolean, day: 'today' 
   const now = src.now();
   const settings = s.settings();
   const meta = s.meta();
-  const since = buildSince(s, src.audit, meta.lastActiveAt, now);
+  const since = buildSince(s, src.audit.entries, meta.lastActiveAt, now);
   const spend = s.spend();
   const timezone = settings.profile.timezone || meta.timezone;
   const items = s.all('workItems').map((w) => hydrateItem(s, w));
@@ -70,6 +73,7 @@ export function homeInputFromStore(src: HomeSource, wide: boolean, day: 'today' 
     dcNeeds: src.dcNeeds?.(), // DC-31: one count source with Deals
     waitingForCanvas: src.waitingForCanvas?.(), // 2026-11-13 audit C2: never "Nothing missing" while they wait
     decisions: s.all('needDecisions'), // Log & fix rows set aside (Not now / Not needed)
+    priorityEngine: engineOf(settings as { priority?: unknown }), // the shown ranking: Home's Admin row
   };
 }
 

@@ -39,5 +39,7 @@ export function runSpend(
     modelReason: o.modelReason,
     contentHash: result.contentHash ?? ledgerHash(o.model, ...o.hashOf),
     outcome: runOutcome(result),
+    // 0027: what the run measured, for a row no pass trace row covers.
+    ...(result.measure ? { measure: result.measure } : {}),
   };
 }

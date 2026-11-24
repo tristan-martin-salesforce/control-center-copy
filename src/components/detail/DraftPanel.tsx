@@ -31,6 +31,7 @@ import { useRightPanel } from '@/components/shell/panel';
 import { Button, EmptyState, IconButton, PanelBoundary, PanelError, Skeleton, StatePill, useTimeZone } from '@/ui';
 import { CanvasRunStatus } from '@/components/time/CanvasRuns';
 import { isWithdrawnDraft } from '@/outbox/withdraw';
+import { isReleaseItem, releaseRowFacts } from '@/outbox/adapters/release-handoff';
 import { actionHeading } from '@/lib/actions';
 import { maybeDelivered } from '@/lib/canvas/payload';
 import { CopyPromptButton, OpenResult, useCanvasPromptOf } from '@/components/domain/ResultLinks';
@@ -44,7 +45,7 @@ const STATUS: Partial<Record<DraftStatus, { tone: Tone; label: string }>> = {
   scheduled: { tone: 'neutral', label: '◷ Scheduled' },
   sending: { tone: 'brand', label: '● Sending' },
   sent: { tone: 'ok', label: '✓ Sent' },
-  staged: { tone: 'ok', label: '✓ Pushed as draft' },
+  staged: { tone: 'ok', label: '✓ Saved as draft' },
   verified: { tone: 'ok', label: '✓ Verified' },
   verify_failed: { tone: 'warn', label: '▲ Not verified' },
   failed: { tone: 'risk', label: '✕ Failed' },
@@ -69,7 +70,7 @@ export interface DraftPanelProps {
 const LEFT_QUEUE: Partial<Record<DraftStatus, string | null>> = {
   sending: 'Sending',
   sent: 'Sent',
-  staged: 'Pushed as draft',
+  staged: 'Saved as draft',
   verified: 'Sent',
   verify_failed: 'Sent',
   scheduled: 'Scheduled',
@@ -86,6 +87,9 @@ const ACTION_STATUS: Partial<Record<DraftStatus, { tone: Tone; label: string }>>
   verified: { tone: 'ok', label: '✓ Applied · verified' },
   verify_failed: { tone: 'warn', label: '▲ Applied · not verified' },
 };
+
+/** A release item whose folder or channel isn't set (D-90). */
+const SET_UP_FIRST: { tone: Tone; label: string } = { tone: 'warn', label: '▲ Set up first' };
 
 /** An admin item stays put after Apply (it shows the outcome); only these take it out of the queue. */
 const ACTION_LEFT_QUEUE: ReadonlySet<DraftStatus> = new Set(['rejected', 'discarded']);
@@ -147,7 +151,9 @@ function Loaded({ draft, onOpenItem, onOpenDraft }: { draft: Draft; onOpenItem?:
   const [p, setP] = useState<ComposerPrimaryState | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const task = useApi('getItem', { params: { id: draft.workItemId ?? '' } }, { enabled: !!draft.workItemId });
-  const status = isWithdrawnDraft(draft) ? WITHDRAWN : ((draft.destination.kind === 'action' ? ACTION_STATUS[draft.status] : undefined) ?? STATUS[draft.status]);
+  // a release item with no Drive folder / channel can't go (D-90): it says what to set, never "Ready to apply"
+  const releaseMissing = draft.status === 'ready' && draft.destination.kind === 'action' && isReleaseItem(draft.destination) ? releaseRowFacts(draft.destination).missing : null;
+  const status = isWithdrawnDraft(draft) ? WITHDRAWN : releaseMissing ? SET_UP_FIRST : ((draft.destination.kind === 'action' ? ACTION_STATUS[draft.status] : undefined) ?? STATUS[draft.status]);
   const channel = draft.destination.kind === 'slack' ? 'Slack' : 'Email';
   const openItem = draft.workItemId ? () => (onOpenItem ? onOpenItem(draft.workItemId!) : panel.openDetails({ kind: 'work_item', id: draft.workItemId! })) : null;
 
@@ -165,7 +171,7 @@ function Loaded({ draft, onOpenItem, onOpenDraft }: { draft: Draft; onOpenItem?:
   const advance = useCallback(
     (next: string) => {
       const done = LEFT_QUEUE[draft.status];
-      // a pushed draft: say where it waits ("Pushed as Slack draft", find it in Slack ▸ Drafts)
+      // a pushed draft: say where it waits ("Saved as Slack draft", find it in Slack ▸ Drafts)
       const where = draft.status === 'staged' ? stagedWhere(draft.destination) : null;
       if (done) toast({ key: `draft-queue:${draft.id}`, title: draft.status === 'staged' ? (stagedLabel(draft.destination) ?? done) : done, body: `${where ? `Find it ${where}. ` : ''}On to the next draft.`, tone: 'success' });
       openDraft(next);
@@ -221,7 +227,7 @@ function Loaded({ draft, onOpenItem, onOpenDraft }: { draft: Draft; onOpenItem?:
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented) {
           e.preventDefault();
-          ref.current?.send();
+          if (!releaseMissing) ref.current?.send();
         }
       }}
     >
@@ -256,6 +262,11 @@ function Loaded({ draft, onOpenItem, onOpenDraft }: { draft: Draft; onOpenItem?:
             {prompt && draft.status !== 'failed' && draft.status !== 'sending' ? <CopyPromptButton prompt={prompt} title={draft.destination.kind === 'action' ? draft.destination.target.label : ''} testId="action-copy-prompt" /> : null}
           </div>
         ) : null}
+        {releaseMissing ? (
+          <p role="alert" className="mb-4 rounded-md border border-line bg-surface-muted px-3 py-2 text-body text-fg" data-testid="release-missing-panel">
+            {releaseMissing}
+          </p>
+        ) : null}
         <Composer key={draft.id} draft={draft} ref={ref} variant="inline" primaryPlacement="external" onPrimaryChange={setP} />
       </div>
       <footer className="flex shrink-0 flex-wrap items-center gap-x-1 gap-y-2 border-t border-line bg-surface px-6 py-4" data-panel-footer>
@@ -267,7 +278,7 @@ function Loaded({ draft, onOpenItem, onOpenDraft }: { draft: Draft; onOpenItem?:
             {p.busyLabel}
           </span>
         ) : p && !p.hidden ? (
-          <Button variant="primary" size="md" disabled={p.disabled} loading={p.loading} title={p.disabled && p.blockedReason ? p.blockedReason : `${p.label} (⌘↵)`} onClick={() => ref.current?.send()} className="mr-1" data-panel-primary>
+          <Button variant="primary" size="md" disabled={p.disabled || !!releaseMissing} loading={p.loading} title={releaseMissing ?? (p.disabled && p.blockedReason ? p.blockedReason : `${p.label} (⌘↵)`)} onClick={() => ref.current?.send()} className="mr-1" data-panel-primary>
             {p.label}
           </Button>
         ) : null}

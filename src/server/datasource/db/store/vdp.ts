@@ -6,6 +6,10 @@
  *  - Linked to my accounts and opportunities by Org62 id (15-character prefix), then by the linked opp's account, then
  *    by company name (src/engines/vdp/gaps.ts `linkVdp`).
  *  - `detail` holds the whole normalized VDP; the summary columns (counts, AE/TA, missing gap codes) are derived.
+ *  - D-98 (0036): the parts the app reads and edits are child rows too (vdp_use_cases, vdp_assets, vdp_members, the
+ *    phase history), stamped `mirrored_at`, and each read is one `mirror_reads` row (../vdp-mirror.ts). Readers get
+ *    use cases, assets and people from the child rows; a row mirrored before 0036 falls back to `detail` until the
+ *    next read or the kv.backfill job writes its children. `detail` stays for one release.
  *  - A complete read marks rows it no longer lists `gone_at` (kept, never deleted); a VDP that returns clears it.
  *  - Each read also settles the VDP asset candidates (store/vdp-candidates.ts): one VDP now shows is closed (`in_vdp`),
  *    and a VDP that appears takes the candidates its account collected before it existed.
@@ -23,6 +27,8 @@ import { ACCOUNT_HIERARCHY_KV, hierarchyOf, type AccountHierarchy } from '@/lib/
 import { vdpCapabilities } from '@/lib/vdp/capabilities';
 import type { VdpMirrorBatch, VdpMirrorSink, VdpServerInfo, VdpSnapshot } from '@/lib/vdp/types';
 
+import { loadVdpChildren, readHash, recordMirrorRead, withChildren, writeVdpChildren } from '../vdp-mirror';
+import { readMemo } from '../reads/session';
 import { reconcileCandidates } from './vdp-candidates';
 
 export interface VdpRecordRow {
@@ -50,7 +56,11 @@ export async function deletedOrg62OppIds(db: DbOrTx, userId: string): Promise<st
 }
 
 /** My accounts and opportunities as the gap engine reads them (from the tables: the sink and getVdpCoverage). */
-export async function loadGapEntities(db: Db, userId: string): Promise<{ accounts: GapAccount[]; opps: GapOpp[] }> {
+export function loadGapEntities(db: Db, userId: string): Promise<{ accounts: GapAccount[]; opps: GapOpp[] }> {
+  return readMemo(db, `gapEntities:${userId}`, () => readGapEntities(db, userId)); // one read per Home/Today request
+}
+
+async function readGapEntities(db: Db, userId: string): Promise<{ accounts: GapAccount[]; opps: GapOpp[] }> {
   // DC-24: an archived account (merged away in Org62: its opps moved to the survivor) is no VDP's account any more; a
   // VDP whose header still carries its id links through its opps to the account that took them over
   const accs = await db
@@ -70,7 +80,7 @@ export async function loadGapEntities(db: Db, userId: string): Promise<{ account
       // mine on one opp are summed (a Flex 50/50, both mine, is 100%).
       dcSplit: sql<number | null>`(select sum(dc.split_percent)::float8 from deal_contributions dc left join opportunities o2 on o2.id = dc.opportunity_id
           where dc.owner_user_id = ${userId} and dc.is_mine and dc.deleted_upstream_at is null
-            and (dc.opportunity_id = "opportunities"."id" or ("opportunities"."org62_opportunity_id" is not null and left(o2.org62_opportunity_id, 15) = left("opportunities"."org62_opportunity_id", 15))))`,
+            and (dc.opportunity_id = "opportunities"."id" or ("opportunities"."org62_opportunity_id" is not null and o2.org62_opportunity_id15 = "opportunities"."org62_opportunity_id15")))`,
       closeDate: opportunities.closeDate,
     })
     .from(opportunities)
@@ -81,8 +91,18 @@ export async function loadGapEntities(db: Db, userId: string): Promise<{ account
   };
 }
 
-export async function loadVdpRecords(db: DbOrTx, userId: string): Promise<VdpRecordRow[]> {
+export function loadVdpRecords(db: DbOrTx, userId: string): Promise<VdpRecordRow[]> {
+  return readMemo(db, `vdpRecords:${userId}`, () => readVdpRecords(db, userId)); // one read per Home/Today request
+}
+
+async function readVdpRecords(db: DbOrTx, userId: string): Promise<VdpRecordRow[]> {
   const rows = await db.select().from(vdpRecords).where(eq(vdpRecords.ownerUserId, userId));
+  // D-98: the child tables for rows the 0036 mirror wrote; the blob for the rest (the dual-read window)
+  const children = await loadVdpChildren(
+    db,
+    userId,
+    rows.filter((r) => r.mirroredAt && r.detail).map((r) => r.id),
+  );
   return rows.map((r) => ({
     vdpSlug: r.vdpSlug,
     vdpId: r.vdpId,
@@ -93,7 +113,7 @@ export async function loadVdpRecords(db: DbOrTx, userId: string): Promise<VdpRec
     goneAt: iso(r.goneAt),
     archived: r.archived,
     url: r.url,
-    snapshot: (r.detail as VdpSnapshot | null) ?? null,
+    snapshot: r.detail ? (children.has(r.id) ? withChildren(r.detail as unknown as VdpSnapshot, children.get(r.id)!) : (r.detail as unknown as VdpSnapshot)) : null,
   }));
 }
 
@@ -164,12 +184,17 @@ export async function saveVdpMirror(db: Db, userId: string, batch: VdpMirrorBatc
         lastSeenAt: readAt,
         updatedAt: readAt,
       };
-      await tx
+      const [row] = await tx
         .insert(vdpRecords)
         .values({ ownerUserId: userId, vdpSlug: s.slug, ...cols })
-        .onConflictDoUpdate({ target: [vdpRecords.ownerUserId, vdpRecords.vdpSlug], set: cols });
+        .onConflictDoUpdate({ target: [vdpRecords.ownerUserId, vdpRecords.vdpSlug], set: cols })
+        .returning({ id: vdpRecords.id });
+      // D-98: the child rows (use cases, assets, people, phase history) of what this read saw
+      await writeVdpChildren(tx, userId, row!.id, s, readAt);
       written += 1;
     }
+    // D-98 (mirror convention): one row per read
+    await recordMirrorRead(tx, userId, { source: 'vdp', scope: 'my_vdps', readAt, rows: batch.snapshots.length, complete: batch.complete, hash: readHash(batch.snapshots.map((s) => `${s.id}|${s.lastActivityAt ?? ''}|${s.useCases.length}|${s.assets.length}`)) });
     let removed = 0;
     if (batch.complete) {
       const seen = batch.snapshots.map((s) => s.id);

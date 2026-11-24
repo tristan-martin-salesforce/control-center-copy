@@ -3,11 +3,11 @@
  * Directories are chmod 700 and files chmod 600. Override the root with CC_STRESS_DIR (tests use a tmp dir).
  */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { inStateDir } from '../../../src/lib/state-folder';
 
 export function stressRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return env.CC_STRESS_DIR ?? path.join(os.homedir(), 'Library/Application Support/control-center/stress');
+  return env.CC_STRESS_DIR ?? inStateDir('stress');
 }
 
 export function privDir(...parts: string[]): string {

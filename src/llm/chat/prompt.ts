@@ -1,15 +1,21 @@
 /**
- * Chat prompt (BE-CHAT). Layout follows the scanner's caching rule:
- *   systemPrompt = [ skills/chat-assistant.md body            ← static, byte-stable
+ * Chat prompt (Assistant v2, lane 05 §5.3 "keep the system prompt byte-stable"). Layout:
+ *
+ *   systemPrompt = [ skills/chat-assistant.md body                        ← static, byte-stable (cached)
  *                  , SYSTEM_PROMPT_DYNAMIC_BOUNDARY
- *                  , now + context pack JSON + "Looking at" ]  ← per turn
- *   prompt       = thread so far (compact) + the message
- * Every dynamic string is credential-redacted.
+ *                  , persona block + which live sources this persona has ]  ← stable per persona (cached across turns)
+ *   prompt       = ## Now · ## Looking at · ## Context pack (compact) · ## Remembered (pinned notes, preferences)
+ *                  [ ## Thread so far: only when the SDK session can't be resumed, rebuilt from the stored history with
+ *                    older turns replaced by their compaction summary ]
+ *                  ## Message
+ *
+ * Nothing per turn sits before the boundary, so a resumed session pays cache reads for the skill, the tools and the
+ * whole earlier thread, and writes only the new turn. Every dynamic string is credential-redacted.
  */
-import type { ChatMessage, ContextRef } from '@/contract';
+import type { ChatMemoryEntry, ChatMessage, ChatRoute, ContextRef } from '@/contract';
 import { renderPersonaBlock, type ResolvedPersona } from '@/personas';
 import { redactText } from '../redact';
-import { SOQL_MAX_IN, SOQL_MAX_LIMIT, soqlObjectsFor } from './soql';
+import { stoppedAtStepLimit } from './router';
 import { loadSkill } from '../skill-loader';
 
 export const CHAT_SKILL_PATH = 'skills/chat-assistant.md';
@@ -32,36 +38,35 @@ export function localIso(d: Date, tz: string): string {
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
 }
 
-const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-
 /** One line per card a message produced, so the model knows what is pending, applied or prepared. */
 function partLines(m: ChatMessage): string[] {
   const out: string[] = [];
   for (const p of m.parts ?? []) {
     switch (p.type) {
       case 'proposal':
-        out.push(`[proposal ${p.proposal.id} ${p.status ?? p.proposal.status}: ${cut(p.summary ?? p.proposal.reason, 160)}]`);
-        // A6: the card's lines ride along, so "apply the rest" or "drop the third one" knows what the card holds
-        for (const c of p.proposal.changes) out.push(`  - ${cut(`${c.label ?? c.field}: ${lineValue(c.before)} → ${lineValue(c.after)}`, 200)}`);
+        out.push(`[proposal ${p.proposal.id} ${p.status ?? p.proposal.status}: ${p.summary ?? p.proposal.reason}]`);
+        for (const c of p.proposal.changes) out.push(`  - ${c.label ?? c.field}: ${lineValue(c.before)} → ${lineValue(c.after)}`);
         break;
       case 'receipt': {
-        const failed = p.receipt.failed ?? [];
-        out.push(`[receipt: ${cut(p.receipt.summary, 200)}${p.receipt.changes.some((c) => c.undoneAt) ? ' (undone)' : ''}]`);
-        for (const f of failed) out.push(`  - failed: ${cut(`${f.label}: ${f.reason}`, 240)}`);
+        out.push(`[receipt: ${p.receipt.summary}${p.receipt.changes.some((c) => c.undoneAt) ? ' (undone)' : ''}]`);
+        for (const f of p.receipt.failed ?? []) out.push(`  - failed: ${f.label}: ${f.reason}`);
         break;
       }
+      case 'plan':
+        out.push(`[plan ${p.plan.id} ${p.plan.status}: ${p.plan.steps.map((s) => s.what).join('; ')}]`);
+        break;
       case 'tool':
-        if (/(^|\.)scan$/.test(p.name)) out.push(`[${p.name}: ${cut(p.summary, 120)}]`);
+        out.push(`[${p.name}: ${p.summary}]`);
         break;
       case 'resource': {
         const c = p.card;
         if (c?.kind === 'draft') out.push(`[draft ${c.draft.draftId} to ${c.draft.to}: ${c.draft.status}, not sent]`);
         else if (c?.kind === 'session') out.push(`[session ${c.session.id} prepared in ${c.session.folder}, not opened]`);
-        else out.push(`[link: ${cut(p.resource.label, 80)}]`);
+        else out.push(`[link: ${p.resource.label}]`);
         break;
       }
       case 'error':
-        out.push(`[error: ${cut(p.error.message, 120)}]`);
+        out.push(`[error: ${p.error.message}]`);
         break;
       default:
         break;
@@ -70,82 +75,130 @@ function partLines(m: ChatMessage): string[] {
   return out;
 }
 
-/** A card line's value in the history (short; objects as compact JSON). */
 const lineValue = (v: unknown): string => (v === null || v === undefined || v === '' ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
 
-/**
- * How much of one earlier message the next turn sees (A6, 2026-11-13). The user's own messages stay whole up to a
- * very long paste (a list pasted once lasts the thread); the Assistant's replies keep 8,000 characters (their tables
- * and what they staged), and the cards they produced carry their lines.
- */
-export const HISTORY_USER_MAX = 120_000;
-export const HISTORY_ASSISTANT_MAX = 8_000;
-/**
- * The whole thread's budget: sized to the model's context (200k tokens) with headroom for the skill, the tools, the
- * context pack and this turn's own tool results. Older messages drop first.
- */
-export const HISTORY_MAX_CHARS = 320_000;
+/** One message as the rebuilt thread shows it: whole (Assistant v2: no per-message cut; compaction bounds the thread). */
+export function renderMessage(m: ChatMessage): string {
+  const who = m.role === 'user' ? 'User' : 'Assistant';
+  const body = [redactText(m.text || (m.role === 'assistant' ? '(no text)' : '')), ...partLines(m).map(redactText)].filter(Boolean).join('\n');
+  return `${who}: ${body}`;
+}
 
-/** The thread so far, newest last, bounded by `maxChars` (older messages drop first). */
-export function renderHistory(messages: ChatMessage[], o: { maxMessages?: number; maxChars?: number } = {}): string {
-  const maxMessages = o.maxMessages ?? 400;
-  const maxChars = o.maxChars ?? HISTORY_MAX_CHARS;
-  const blocks: string[] = [];
-  let total = 0;
-  for (const m of messages.slice(-maxMessages).reverse()) {
-    if (m.role === 'system') continue;
-    const who = m.role === 'user' ? 'User' : 'Assistant';
-    const body = [cut(redactText(m.text || (m.role === 'assistant' ? '(no text)' : '')), m.role === 'user' ? HISTORY_USER_MAX : HISTORY_ASSISTANT_MAX), ...partLines(m).map(redactText)].filter(Boolean).join('\n');
-    const block = `${who}: ${body}`;
-    if (total + block.length > maxChars && blocks.length) break;
-    blocks.push(block);
-    total += block.length;
-  }
-  return blocks.reverse().join('\n\n');
+/** The thread so far, whole, oldest first. */
+export function renderHistory(messages: ChatMessage[]): string {
+  return messages
+    .filter((m) => m.role !== 'system')
+    .map(renderMessage)
+    .join('\n\n');
+}
+
+/** A rough token count for text (4 characters a token): the compaction trigger's measure. */
+export const approxTokens = (s: string) => Math.ceil(s.length / 4);
+
+/**
+ * The compaction trigger (no arbitrary cap: a real price limit). A rebuilt thread stays under half of Haiku 5.5's
+ * long-prompt price tier (100K prompt tokens, 5× above it; src/llm/models.ts), so the rest of the turn (skill, tools,
+ * tool results) never pushes a fast-tier turn into the long tier. Older turns are summarized into `chat_memory`; the
+ * latest turns and every pinned note stay whole.
+ */
+export const COMPACT_AT_TOKENS = 50_000;
+/** Turns kept whole after a compaction (the recent context the next answer leans on). */
+export const COMPACT_KEEP_RECENT = 6;
+
+/**
+ * The stored thread with older turns replaced by the newest summary that covers them. `needs` = what to summarize next
+ * (the messages after the summary but before the recent ones) when the rebuilt thread is over the trigger.
+ */
+export function compactedHistory(messages: ChatMessage[], memory: ChatMemoryEntry[], o: { compactAt?: number; keepRecent?: number } = {}): { text: string; tokens: number; summaryId: string | null; needs: { from: number; to: number; messages: ChatMessage[] } | null } {
+  const visible = messages.filter((m) => m.role !== 'system');
+  const summary = memory.filter((e) => e.kind === 'summary' && e.coversThroughSeq !== null).sort((a, b) => (b.coversThroughSeq ?? 0) - (a.coversThroughSeq ?? 0))[0];
+  const from = summary ? Math.min(visible.length, (summary.coversThroughSeq ?? -1) + 1) : 0;
+  const rest = visible.slice(from);
+  const head = summary ? `Summary of the earlier conversation (messages 1-${from}):\n${redactText(summary.text)}` : '';
+  const text = [head, renderHistory(rest)].filter(Boolean).join('\n\n');
+  const tokens = approxTokens(text);
+  const keep = o.keepRecent ?? COMPACT_KEEP_RECENT;
+  const over = tokens > (o.compactAt ?? COMPACT_AT_TOKENS) && rest.length > keep;
+  return { text, tokens, summaryId: summary?.id ?? null, needs: over ? { from, to: visible.length - keep - 1, messages: visible.slice(from, visible.length - keep) } : null };
 }
 
 export function renderLookingAt(context: ContextRef[]): string | null {
   if (!context.length) return null;
   const auto = context.find((c) => c.via === 'auto');
-  const lines = context.map((c) => `- ${c.type} ${c.id}: ${redactText(cut(c.label, 120))}${c === auto ? ' (looking at)' : ''}`);
-  return lines.join('\n');
+  return context.map((c) => `- ${c.type} ${c.id}: ${redactText(c.label)}${c === auto ? ' (looking at)' : ''}`).join('\n');
+}
+
+/**
+ * The compact context pack (Assistant v2): who, the counts, the top of the list, today's meetings, what is broken.
+ * The rest is one `query` away, so it is not re-sent every turn.
+ */
+export function compactPack(pack: Record<string, unknown>): Record<string, unknown> {
+  const t = (pack.today ?? {}) as { top3?: Array<{ id: string; title: string; rank?: number | null; due?: string | null; startBy?: string | null }>; moreTodayCount?: number; triageCount?: number; navCounts?: Record<string, unknown> };
+  const cal = (pack.calendar ?? []) as Array<{ id?: string; title?: string; start?: string; end?: string; account?: string | null }>;
+  const health = (pack.health ?? {}) as { broken?: Array<{ id: string; label: string; state: string }>; spend?: unknown; workerAlive?: boolean };
+  const outbox = (pack.outbox ?? {}) as { dryRun?: boolean; counts?: unknown };
+  return {
+    me: pack.me ?? null,
+    top3: (t.top3 ?? []).map((x) => ({ id: x.id, title: x.title, rank: x.rank ?? null, due: x.due ?? null, startBy: x.startBy ?? null })),
+    counts: { moreToday: t.moreTodayCount ?? null, triage: t.triageCount ?? null, ...(t.navCounts ?? {}) },
+    meetingsToday: cal.map((e) => ({ id: e.id, title: e.title, start: e.start, account: e.account ?? null })),
+    outbox: { dryRun: outbox.dryRun ?? null, counts: outbox.counts ?? null },
+    broken: (health.broken ?? []).map((c) => ({ id: c.id, label: c.label, state: c.state })),
+    workerAlive: health.workerAlive ?? null,
+  };
+}
+
+/** One line per live source the turn can read (or that it can't). Deterministic per persona: before the boundary. */
+export function renderLiveReads(r: { live: boolean; sources: string[] }): string {
+  if (!r.live) return "No live reads in this mode (the app's own data only): search and fetch on slack, gmail, drive, calendar, org62 and vdp say \"not available here\". Say so when it matters.";
+  return `Live sources (search, fetch; read only): ${r.sources.join(', ')}. Org62 only through find/name/account (the app builds the SELECT).`;
 }
 
 export interface ChatPromptInput {
   skillBody: string;
   pack: Record<string, unknown>;
-  history: ChatMessage[];
   context: ContextRef[];
   text: string;
   now: Date;
   timezone: string;
-  /** D-55: the user's persona (the Persona block, after the cache boundary). */
   persona?: ResolvedPersona | null;
-  /** D-58: which live reads this turn has (the scanners' Slack / Org62 tools, Google), and what couldn't load. */
-  reads?: { live: boolean; slack: string[]; org62: string[]; unavailable: string[] };
+  reads?: { live: boolean; sources: string[] };
+  /** Pinned notes and preferences (memory). */
+  remembered?: ChatMemoryEntry[];
+  /** The rebuilt thread (no resumable session); absent when the session resumes. */
+  history?: string | null;
+  route?: ChatRoute | null;
+  /** ASSIST-2: a stopped answer this turn continues ("Allow more"). */
+  continuation?: ChatMessage | null;
 }
 
-/** One line per live source the turn can read (or that it can't, and why). Deterministic. */
-export function renderLiveReads(r: NonNullable<ChatPromptInput['reads']>, p: ResolvedPersona | null | undefined): string {
-  if (!r.live) return "No live reads in this mode (the app's own data only): Slack, Org62, Gmail, Drive and Calendar tools answer \"not available here\". Say so when it matters.";
-  const lines: string[] = [];
-  if (r.slack.length) lines.push(`- Slack: ${r.slack.join(', ')}`);
-  if (r.org62.length) lines.push(`- Org62 (SELECT only, LIMIT ≤ ${SOQL_MAX_LIMIT}, IN lists ≤ ${SOQL_MAX_IN}): ${r.org62.join(', ')} on ${soqlObjectsFor(p ?? null).join(', ')}`);
-  lines.push('- Gmail, Drive, Calendar: chat_gmail_search, chat_gmail_thread, chat_drive_search, chat_drive_read, chat_calendar_events');
-  if (r.unavailable.length) lines.push(`- Not connected this turn: ${r.unavailable.join(', ')}`);
+/** Why the stopped answer stopped, in the continuation's first line: Steps per message (P31-1, "continue") or the cost limit ("Allow more"). */
+export const CONTINUE_AFTER_STEP_LIMIT = 'Your previous answer stopped at your Steps per message limit before it finished. The user said continue: continue it from where it stopped. Do not start over.';
+export const CONTINUE_AFTER_COST_LIMIT = 'Your previous answer stopped at its cost limit before it finished. The user allowed more: continue it from where it stopped. Do not start over.';
+
+/** ASSIST-2: the stopped answer a continuation picks up, whole: its text and every tool call with its recorded result. */
+export function renderContinuation(m: ChatMessage): string {
+  const tools = (m.parts ?? []).filter((p): p is Extract<ChatMessage['parts'][number], { type: 'tool' }> => p.type === 'tool');
+  const head = stoppedAtStepLimit(m) ? CONTINUE_AFTER_STEP_LIMIT : CONTINUE_AFTER_COST_LIMIT;
+  const lines = [head, '', '### What you wrote so far', redactText(m.text || '(nothing yet)')];
+  if (tools.length) {
+    lines.push('', '### Calls you made, with their results as recorded');
+    for (const t of tools) lines.push(`- ${t.name} (${redactText(t.args ?? t.summary)}): ${t.ok === false ? 'failed: ' : ''}${redactText(t.result ?? t.summary)}`);
+  }
   return lines.join('\n');
 }
 
 export function buildChatPrompt(i: ChatPromptInput, boundary: string): { systemPrompt: string[]; prompt: string } {
+  const stable = [...(i.persona ? [renderPersonaBlock(i.persona)] : []), ...(i.reads ? [`## Live reads\n${renderLiveReads(i.reads)}`] : [])].join('\n\n');
   const looking = renderLookingAt(i.context);
-  const dynamic = [
+  const remembered = (i.remembered ?? []).filter((e) => e.kind !== 'summary' && (e.pinned || e.kind === 'preference' || e.threadId !== null));
+  const header = [
     `## Now\n${localIso(i.now, i.timezone)} (${i.timezone})`,
     looking ? `## Looking at\n${looking}` : '## Looking at\n(nothing in focus)',
-    `## Context pack (JSON)\n${JSON.stringify(i.pack)}`,
-    ...(i.persona ? [renderPersonaBlock(i.persona)] : []),
-    ...(i.reads ? [`## Live reads\n${renderLiveReads(i.reads, i.persona)}`] : []),
-  ].join('\n\n');
-  const history = renderHistory(i.history);
-  const prompt = [history ? `## Thread so far\n${history}` : '', `## Message\n${redactText(i.text)}`].filter(Boolean).join('\n\n');
-  return { systemPrompt: [i.skillBody, boundary, dynamic], prompt };
+    `## Context pack (JSON)\n${JSON.stringify(compactPack(i.pack))}`,
+    ...(remembered.length ? [`## Remembered\n${remembered.map((e) => `- ${e.kind === 'preference' ? 'preference' : 'note'}${e.pinned ? ' (pinned)' : ''}: ${redactText(e.text)}`).join('\n')}`] : []),
+    ...(i.route ? [`## Route\n${i.route.intent} on ${i.route.model}${i.route.intent === 'research' ? ': plan first (plan), then run' : ''}`] : []),
+  ];
+  const prompt = [...header, i.history ? `## Thread so far\n${i.history}` : '', i.continuation ? `## Continue your stopped answer\n${renderContinuation(i.continuation)}` : '', `## Message\n${redactText(i.text)}`].filter(Boolean).join('\n\n');
+  return { systemPrompt: [i.skillBody, boundary, stable], prompt };
 }

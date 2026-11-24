@@ -14,6 +14,7 @@ import type { Draft, OutboxItem, VdpApply, VdpCoveragePayload, VdpCoverageRow, V
 import type { BadgeTone } from '@/components/domain';
 import { clock } from '@/components/domain/lib/time';
 import { vdpStatusSentence } from '@/engines/vdp/status';
+import { entryOf } from '@/errors/catalog';
 
 /** The staged drafts by id, so an item's "Review & apply" opens the very draft it staged. */
 export const draftsById = (items: readonly Pick<OutboxItem, 'draft'>[]): Map<string, Draft> => new Map(items.map((i) => [i.draft.id, i.draft]));
@@ -93,7 +94,7 @@ export function adminQueue(items: readonly OutboxItem[]): OutboxItem[] {
 export function adminTitle(d: Draft): string {
   if (d.destination.kind !== 'action') return d.plainText.split('\n')[0] ?? 'Draft';
   const a = d.destination.action;
-  return `${a.startsWith('vdp.') ? 'VDP' : a.startsWith('feedback.') ? 'Feedback' : 'Slack canvas'} · ${d.destination.target.label}`;
+  return `${a.startsWith('vdp.') ? 'VDP' : a.startsWith('feedback.') ? 'Feedback' : 'Logging batch'} · ${d.destination.target.label}`;
 }
 
 /**
@@ -107,4 +108,12 @@ export function findAllPlan(a: Pick<VdpCoveragePayload['assets'], 'targets' | 'r
   const cents = (n: number) => Math.round(n * 100) / 100;
   const allUsd = cents(all * run);
   return { all, fits, fitsUsd: cents(fits * run), allUsd, shortUsd: Math.max(0, Math.ceil((allUsd - a.dayLeftUsd) * 100 - 1e-6) / 100) };
+}
+
+/**
+ * The VDP re-auth button's words, from the error catalog (src/errors/catalog.ts, AUTH.VDP.COOKIE_EXPIRED's action), so
+ * Activity ▸ VDP says what Health and the toasts say ("Re-auth VDP"), never a local string.
+ */
+export function vdpReauthLabel(code = 'AUTH.VDP.COOKIE_EXPIRED'): string {
+  return entryOf(code).action?.label ?? 'Re-auth VDP';
 }

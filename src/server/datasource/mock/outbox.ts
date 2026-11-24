@@ -12,7 +12,7 @@
  * The client's SendFlow already ran the undo window before it calls dispatch, so there is no server hold here.
  * Every step is one audited `tx` (actor user for the confirm, system for delivery and read-back).
  */
-import type { AuditEntry, DispatchMode, DispatchResult, Draft, LiveNotify, RouteInput, SendingSettingsPatch, Settings } from '@/contract';
+import type { ActionDestination, AuditEntry, DispatchMode, DispatchResult, Draft, LiveNotify, RouteInput, SendingSettingsPatch, Settings, StageReleaseResult } from '@/contract';
 import { LOG_AGAIN_FLAG } from '@/engines/activity/org62-check';
 import { loggingProfile } from '@/engines/activity/persona';
 import { canvasInputOf } from '@/lib/canvas/payload';
@@ -20,8 +20,15 @@ import { preflightSummary, type CanvasPreflightContext } from '@/lib/canvas/pref
 import { personaOf } from '@/personas';
 import { isPendingLogCanvas, preflightDraft } from '@/server/time/canvas-preflight';
 import { feedbackHeld } from '@/lib/feedback/payload';
+import { actionDoc, actionSummary } from '@/lib/actions';
+import { resolveDistribution } from '@/ops/distribution';
+import { actionDraftFor } from '@/server/vdp/coverage';
 import {
   attemptDetail,
+  handedOff,
+  isReleaseHandoff,
+  isReleaseItem,
+  stageRelease,
   attemptOf,
   confirmDelivery,
   defaultModeFor,
@@ -38,7 +45,7 @@ import {
   type OutboxTransport,
 } from '@/outbox';
 import { AppError, invalid } from '../../errors';
-import { payloadFor, renditionFor } from './render';
+import { payloadFor, renderAll, renditionFor } from './render';
 import type { Store, Tx } from './store';
 import { hrefFor } from './views';
 import { actionApp } from '@/lib/actions';
@@ -151,6 +158,9 @@ export class MockOutbox {
     }
     const mode = body.mode;
     const payload = payloadFor(d.destination, d.doc, mode);
+    if (isReleaseHandoff(d.destination)) return this.markHandedOff(d, mode, payload, body.confirmToken); // D-90: never delivers
+    // D-90: a release announcement with no channel (or an empty post) says what to set; nothing is recorded or sent
+    if (isReleaseItem(d.destination) && typeof payload.invalid === 'string') throw invalid(`Not sent: ${payload.invalid}`);
     const rendition = renditionFor(d.destination, d.doc);
     const nowIso = this.host.now().toISOString();
     let confirmation;
@@ -230,6 +240,49 @@ export class MockOutbox {
       });
     }
     return { draft: after, dryRun: false, payload, rendition, attempt, auditId: entry!.id };
+  }
+
+  // ---- D-90 (W12-7): the release items (src/outbox/release.ts; the db's twin: db/index.ts + db/outbox-release.ts) ----
+
+  /** POST /outbox/releases: the two items, idempotent per version (the db's rule, over the store). */
+  async stageRelease(body: RouteInput<'stageRelease'>['body']): Promise<StageReleaseResult> {
+    const store = () => this.host.store();
+    const save = (dest: ActionDestination, audit: { action: string; summary: string }, cur?: Draft): Draft => {
+      const doc = actionDoc(dest);
+      const draft = cur
+        ? this.host.bump({ ...cur, destination: dest, doc, plainText: actionSummary(dest), rendered: renderAll(dest, doc), status: 'ready' as const })
+        : actionDraftFor(dest, { id: this.host.newId('d'), now: this.host.now().toISOString(), workItemId: null, rendered: (x) => renderAll(dest, x) });
+      this.host.tx({ actor: 'user', action: audit.action, summary: audit.summary.slice(0, 200), entity: { type: 'draft', id: draft.id, label: dest.target.label }, undoable: false }, (tx) => tx.put('drafts', draft));
+      return draft;
+    };
+    return stageRelease(
+      {
+        drafts: async () => store().all('drafts'),
+        distribution: async () => {
+          const d = resolveDistribution((store().settings() as { distribution?: unknown }).distribution ?? null);
+          return { driveFolderId: d.driveFolderId, announceChannel: d.announceChannel, announceChannelName: d.announceChannelName };
+        },
+        dryRun: async () => store().settings().sending.dryRun !== false,
+        insert: async (dest, audit) => save(dest, audit),
+        replace: async (cur, dest, audit) => save(dest, audit, cur),
+      },
+      body,
+    );
+  }
+
+  /** "Mark uploaded": the confirm is spent like any Apply, then the item is handed off. No delivery, no tool call. */
+  private markHandedOff(d: Draft, mode: DispatchMode, payload: Record<string, unknown>, confirmToken: string): DispatchResult {
+    if (typeof payload.invalid === 'string') throw invalid(`Not handed off: ${payload.invalid}`);
+    const nowIso = this.host.now().toISOString();
+    try {
+      confirmDelivery({ draftId: d.id, draftVersion: d.version, mode, payloadHash: payloadHash(payload), confirmToken, expectedToken: this.host.confirmTokenFor(d, mode), at: nowIso });
+    } catch (err) {
+      if (err instanceof NotConfirmedError) throw invalid(err.message);
+      throw err;
+    }
+    const next = this.host.bump(handedOff(d, nowIso, this.host.newId('att')));
+    const { entry } = this.host.tx({ actor: 'user', action: 'release.handed_off', summary: `Marked uploaded: ${where(d)}`.slice(0, 200), entity: { type: 'draft', id: d.id, label: where(d) }, undoable: false }, (tx) => tx.put('drafts', next));
+    return { draft: next, dryRun: false, payload, rendition: renditionFor(d.destination, d.doc), attempt: next.attempts[next.attempts.length - 1]!, auditId: entry!.id };
   }
 
   /** Read-back after a (simulated) write; updates status + verification, closes the item on a verified send. */

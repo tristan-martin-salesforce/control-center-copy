@@ -141,9 +141,9 @@ export function HistoryPage() {
   const thisMonth = !!today && shownMonth === monthOfDay(today);
 
   return (
-    <ContextPage label="History">
+    <ContextPage label="Journal">
       <ContextHead
-        title="History"
+        title="Journal"
         sentence={d ? daySentence(d) : 'Loading the day…'}
         actions={
           <div className="flex items-center gap-1">

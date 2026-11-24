@@ -10,7 +10,9 @@ import { navigate } from '@/components/shell/router';
 
 export type AgentsTab = 'runs' | 'tools';
 
-export function AgentsHeader({ tab, sentence, waiting, actions }: { tab: AgentsTab; sentence?: ReactNode; waiting?: number; actions?: ReactNode }) {
+/** The Runs tab carries no count: the runs waiting on you are the header's "All waiting · N" and the sidebar's badge, and a
+ * "Runs 1" over "Running now 3" read as a mismatch (01-ui-audit UI-3). */
+export function AgentsHeader({ tab, sentence, actions }: { tab: AgentsTab; sentence?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="flex flex-col gap-3" data-agents-head>
       {/* The topbar holds the page title (h1); the masthead is one sentence, like Today's. */}
@@ -31,7 +33,7 @@ export function AgentsHeader({ tab, sentence, waiting, actions }: { tab: AgentsT
         value={tab}
         onChange={(v) => navigate(v === 'runs' ? '/agents' : '/agents/tools')}
         tabs={[
-          { value: 'runs', label: 'Runs', count: waiting || undefined },
+          { value: 'runs', label: 'Runs' },
           { value: 'tools', label: 'Tools' },
         ]}
       />

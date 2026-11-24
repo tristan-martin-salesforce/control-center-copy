@@ -60,7 +60,7 @@ export interface StartOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   fetch?: typeof fetch;
-  /** Where CLI tools write outputs. Defaults to ~/Library/Application Support/control-center/tool-runs/<id>-<ts>. */
+  /** Where CLI tools write outputs. Defaults to ~/Library/Application Support/command-center/tool-runs/<id>-<ts>. */
   runDir?: string;
 }
 

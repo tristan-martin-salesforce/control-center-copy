@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\") for the resolution check (skills/resolve-item.md), keyed by ledgerHash(model, skill, system, user). Re-key offline after a prompt or skill change: npx tsx tests/evals/scanner/record-resolution.ts.",
+  "entries": [
+    {
+      "hash": "2e10ab63cc922e1feddf8b5e34d72bad",
+      "label": "claude-haiku-5-5 | 2026-11-12 15:12Z | Share the ACME deck with PERSON_F",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"cite\": null, \"confidence\": 0.1, \"needs\": \"share the ACME deck with PERSON_F\"}]}"
+    }
+  ]
+}

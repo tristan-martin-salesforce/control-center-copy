@@ -93,7 +93,7 @@ describe('talk-track adapter (mock NDJSON server)', () => {
     ]);
     const upload = m.requests[2]!;
     expect(upload.headers['content-type']).toMatch(/^multipart\/form-data/);
-    expect(upload.body).toContain('name="files"; filename="control-center-context.md"');
+    expect(upload.body).toContain('name="files"; filename="command-center-context.md"');
     expect(upload.body).toContain('A calendar description.');
   });
 

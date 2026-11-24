@@ -9,7 +9,7 @@ effort: low
 mcp_servers: []
 allowed_tools: [cc_get_context, cc_record_source_items, cc_find_candidates, cc_link_evidence, cc_propose_item, cc_propose_initiative, cc_flag_unlinked, cc_report_coverage, cc_finish]
 fetcher: src/connectors/claude/sessions.ts
-spec: docs/ui/SCANNER.md
+spec: docs/reference/SCANNER.md
 requirements: [R-UI-1]
 cadence: file watch (5 s debounce) plus a 10 min sweep
 ---
@@ -105,4 +105,4 @@ One pass over the prefetched sessions. Report the registry window and every sess
 
 **D. Errored scheduled run.** `scheduled: true`, `errorKind: "api_error"`. Link `context` if it matches an item (`session_errored: api_error; resumable=true`). Never a waiting alert.
 
-**E. Waiting, no item.** Untagged, unscheduled, `waiting`, no candidate. `cc_flag_unlinked({reason:"session waiting on me, no work item", hints:["Control Center", "input needed"]})`.
+**E. Waiting, no item.** Untagged, unscheduled, `waiting`, no candidate. `cc_flag_unlinked({reason:"session waiting on me, no work item", hints:["Command Center", "input needed"]})`.

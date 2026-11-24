@@ -329,9 +329,15 @@ export function passSpendOf(seq: number, p: Record<string, unknown>): PassSpend 
 /** The triage skill (`triage-slack`): what a run's triage and escalation passes run. */
 export const TRIAGE_SKILL_KEY = DEFAULT_TRIAGE.skillPath.replace(/^.*\//, '').replace(/\.md$/, '');
 
-/** The skill a pass ran: triage and escalation passes run the triage skill, the traversal its connector's own. */
+/**
+ * The skill a pass ran: triage and escalation passes run the triage skill, the traversal its connector's own. A
+ * fetch-then-interpret pass names its skill key after the first colon (`classify:classify-items`,
+ * `fetch:relay:slack:slack_search_public_and_private`), so its row books on that skill (src/scanner/interpret/runner.ts).
+ */
 export function passSkill(pass: string, connectorSkill: string | null): string | null {
-  return pass === 'triage' || pass === 'escalate' ? TRIAGE_SKILL_KEY : connectorSkill;
+  if (pass === 'triage' || pass === 'escalate') return TRIAGE_SKILL_KEY;
+  const named = pass.indexOf(':');
+  return named > 0 ? pass.slice(named + 1) : connectorSkill;
 }
 
 /** How far a pass's cost may run past what is left of the total and still be that pass (six-decimal rounding, D0). */

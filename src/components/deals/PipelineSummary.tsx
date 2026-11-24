@@ -55,7 +55,7 @@ function Tile({ label, short, href, active, value, sub, icon, testId, aria }: { 
       href={href}
       data-testid={testId}
       aria-current={active ? 'true' : undefined}
-      aria-label={aria}
+      // named by what it shows (label, value, count: WCAG 2.5.3); the full sentence is the tooltip
       title={aria}
       className={cn(TILE, 'flex-1 basis-0 rounded-lg border', active ? 'border-accent bg-selected' : 'border-line bg-surface hover:bg-surface-muted')}
     >
@@ -95,7 +95,6 @@ export function DealsSummaryTiles({ p, filter }: { p: DealsPipeline; filter: Pip
                 key={seg.key}
                 href={pipeHref(f)}
                 aria-current={is(f) ? 'true' : undefined}
-                aria-label={words}
                 title={words}
                 className={cn(TILE, 'flex-1 basis-0', i === 0 ? 'rounded-l-lg' : 'rounded-r-lg border-l border-line', is(f) ? 'bg-selected shadow-[inset_0_0_0_1px_var(--color-accent)]' : 'hover:bg-surface-muted')}
               >

@@ -103,8 +103,9 @@ function ConflictSides({ diff }: { diff: DiffOp[] }) {
     <div className="min-w-0 rounded-md bg-surface px-2.5 py-2">
       <p className="mb-1 text-caption text-muted">{title}</p>
       {parts.length ? (
-        <ul className="space-y-0.5">
-          {parts.slice(0, 4).map((t, i) => (
+        // every differing span (caps audit F-13: the choice is keep or take, so nothing is hidden); a long list scrolls
+        <ul className="max-h-48 space-y-0.5 overflow-y-auto" data-conflict-spans>
+          {parts.map((t, i) => (
             <li key={i} className={cx('text-body', tone)}>
               “{t.length > 140 ? `${t.slice(0, 140)}…` : t}”
             </li>

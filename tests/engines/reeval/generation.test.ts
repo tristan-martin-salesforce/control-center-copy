@@ -1,6 +1,6 @@
 /** Re-eval orchestration: coalescing, generation bump + cancel, the commit fence, and races. */
 import { describe, expect, it } from 'vitest';
-import { coalesce, nextGeneration, reevalDedupeKey, shouldCommit, type JobState } from '@/engines/reeval';
+import { coalesce, nextGeneration, reevalDedupeKey, shouldCommit, type JobState } from '@/engines/reeval/generation';
 import { CHANGE_KINDS, type ChangeKind, type ReevalEvent } from '@/engines/types';
 import { int, pick, rng } from '../priority/fixtures';
 

@@ -1,8 +1,10 @@
 'use client';
 /**
- * Settings v2 (docs/ui/DESIGN-V2.md "Settings: three panes"; UI-SPEC §8, §12):
- *   section nav (grouped, each item shows its current value) · one selected section (label-left rows, its own
- *   save model in the header) · an effect pane showing what the setting changes.
+ * Settings v2 (docs/archive/2026-build/DESIGN-V2.md "Settings: three panes"; UI-SPEC §8, §12), in five sections
+ * (01-ui-audit R8): Me · Sources · Sending · Budgets · Data, then Advanced (folded):
+ *   section nav (each section's pages show their current value) · one selected page (label-left rows, its own
+ *   save model in the header) · an effect pane showing what the setting changes (beside the page from ~1,600 px
+ *   wide, under it below that).
  * The page never scrolls; each pane scrolls on its own. `?section=` is the URL state, "Find a setting" (⌘K while
  * on this page) filters the nav, and edits wait in each section while you look at another one.
  */
@@ -12,14 +14,19 @@ import { clearChatContext, setChatContext } from '@/components/chat';
 import { useApi } from '@/client/hooks';
 import { personaOf } from '@/personas';
 import { useCommands, useKeyBinding } from '@/client/keyboard';
-import { cn, KbdHint, PanelBoundary } from '@/ui';
+import { PageHeader } from '@/components/kit';
+import { cn, Icon, KbdHint, PanelBoundary } from '@/ui';
 import { fmtUsd } from '@/ui/format';
 import { AboutEffect, AboutSection, aboutSummary } from './AboutSection';
 import { AgentSection } from './AgentSection';
 import { AssistantLimitsSection, BudgetsSection, DisplaySection, ProfileSection, SendingSection, ThresholdsSection } from './BasicSections';
 import { Glyph } from './controls';
+import { AssistantMemoryBlock } from './AssistantMemory';
 import { ClosingSection } from './ClosingSection';
-import { asSectionId, closingSummary, matchSections, SECTION_GROUPS, SECTIONS, type SectionId } from './derive';
+import { ClosingEngineSection, RoutingAndRankingSection } from './EngineSwitches';
+import { asSectionId, closingSummary, groupOf, matchSections, sectionCrumb, SECTION_GROUPS, SECTIONS, type SectionId } from './derive';
+import { DataEffect, DataSection, retentionSummary } from './DataSection';
+import { CoverageSlot, SpendReceipts } from './SectionExtras';
 import { FeedbackSection } from '@/components/feedback/FeedbackSettingsSection';
 import { EffectPane } from './effects';
 import { UnsavedGuard, useDirtySections } from './form';
@@ -35,6 +42,9 @@ import { TimeEffect, TimeSection, timeSummary } from './TimeSection';
 import s from './settings.module.css';
 import { navigate } from '@/components/shell/router';
 
+/** The Settings frame's width (container px) from which the effect pane gets its own column (settings.module.css). */
+export const EFFECT_RAIL_MIN = 1360;
+
 const REPLIES: Record<string, string> = { L0: 'Replies suggested', L1: 'Replies drafted for you', L2: 'Replies staged', L3: 'Replies one-click', L4: 'Replies sent on their own' };
 
 function useSummaries(): { text: Partial<Record<SectionId, string>>; attn: { connectors: number } } {
@@ -43,6 +53,7 @@ function useSummaries(): { text: Partial<Record<SectionId, string>>; attn: { con
   const health = useApi('getHealth');
   const versions = useApi('getPolicyVersions');
   const appVersion = useApi('getVersion', undefined, { staleTime: 60_000 });
+  const retention = useApi('getRetention');
   const st = settings.data;
   const text: Partial<Record<SectionId, string>> = {};
   if (st) {
@@ -61,6 +72,7 @@ function useSummaries(): { text: Partial<Record<SectionId, string>>; attn: { con
     if (st.closing) text.closing = closingSummary(st.closing);
   }
   if (appVersion.data) text.about = aboutSummary(appVersion.data);
+  if (retention.data) text.data = retentionSummary(retention.data);
   const d = m.display;
   text.display = `${{ dark: 'Dark', light: 'Light', system: 'System' }[d.scheme]} · ${d.textSize} px · ${d.density}`;
   const t = m.thresholds.saved;
@@ -78,6 +90,7 @@ function SectionNav({ active, go, query }: { active: SectionId; go: (id: Section
   const dirty = useDirtySections();
   const visible = new Set(query.trim() ? matchSections(query, text) : SECTIONS.map((x) => x.id));
   const ref = useRef<HTMLElement>(null);
+  const [openAdvanced, setOpenAdvanced] = useState(false);
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     const items = [...(ref.current?.querySelectorAll<HTMLAnchorElement>('a[data-go]') ?? [])];
@@ -93,10 +106,30 @@ function SectionNav({ active, go, query }: { active: SectionId; go: (id: Section
       {SECTION_GROUPS.map((g) => {
         const items = g.items.filter((it) => visible.has(it.id));
         if (!items.length) return null;
+        // Advanced folds unless you opened it, a search reaches into it, or one of its pages is open
+        const folded = !!g.collapsed && !openAdvanced && !query.trim() && groupOf(active).id !== g.id;
         return (
-          <div className={s.group} key={g.label}>
-            <div className={s.groupLabel}>{g.label}</div>
-            {items.map((it) => (
+          <div className={s.group} key={g.id} data-group={g.id} role="group" aria-labelledby={`sg-${g.id}`}>
+            {g.collapsed ? (
+              <button
+                type="button"
+                id={`sg-${g.id}`}
+                aria-expanded={!folded}
+                onClick={() => setOpenAdvanced(folded)}
+                data-testid={`settings-group-${g.id}`}
+                className="flex items-center gap-1.5 rounded-md px-3 pt-1 pb-1 text-left text-body font-bold text-fg-heading hover:bg-surface-muted focus-visible:shadow-focus focus-visible:outline-none"
+              >
+                <Icon name={folded ? 'chevronright' : 'chevrondown'} size="xs" className="text-faint" />
+                {g.label}
+                <span className="ml-auto text-caption font-normal text-faint">{folded ? g.items.length : ''}</span>
+              </button>
+            ) : (
+              <div id={`sg-${g.id}`} className="px-3 pt-1 text-body font-bold text-fg-heading" data-testid={`settings-group-${g.id}`}>
+                {g.label}
+              </div>
+            )}
+            <div className="px-3 pb-1 text-caption text-faint">{g.blurb}</div>
+            {folded ? null : items.map((it) => (
               <a
                 key={it.id}
                 href={`?section=${it.id}`}
@@ -147,7 +180,12 @@ function SectionNav({ active, go, query }: { active: SectionId; go: (id: Section
 function ActiveSection({ id, connector, onConnector }: { id: SectionId; connector: string | null; onConnector: (id: string) => void }) {
   switch (id) {
     case 'profile':
-      return <ProfileSection />;
+      return (
+        <>
+          <ProfileSection />
+          <CoverageSlot />
+        </>
+      );
     case 'role':
       return <RoleSection />;
     case 'display':
@@ -163,12 +201,20 @@ function ActiveSection({ id, connector, onConnector }: { id: SectionId; connecto
     case 'agent':
       return <AgentSection />;
     case 'sending':
-      return <SendingSection />;
+      return (
+        <>
+          <SendingSection />
+          <ClosingEngineSection />
+        </>
+      );
     case 'budgets':
       return (
         <>
           <BudgetsSection />
           <AssistantLimitsSection />
+          <RoutingAndRankingSection />
+          <AssistantMemoryBlock />
+          <SpendReceipts />
         </>
       );
     case 'connectors':
@@ -179,6 +225,8 @@ function ActiveSection({ id, connector, onConnector }: { id: SectionId; connecto
       return <ScanningSection />;
     case 'feedback':
       return <FeedbackSection />;
+    case 'data':
+      return <DataSection />;
     case 'about':
       return <AboutSection />;
   }
@@ -187,7 +235,7 @@ function ActiveSection({ id, connector, onConnector }: { id: SectionId; connecto
 function Effect({ id, connector }: { id: SectionId; connector: string | null }) {
   return (
     <PanelBoundary name={`settings-effect-${id}`} resetKeys={[id]}>
-      {id === 'policy' ? <PolicyEffect /> : id === 'scanning' ? <ScanningEffect /> : id === 'time' ? <TimeEffect /> : id === 'role' ? <RoleEffect /> : id === 'about' ? <AboutEffect /> : <EffectPane section={id} connector={connector} />}
+      {id === 'policy' ? <PolicyEffect /> : id === 'scanning' ? <ScanningEffect /> : id === 'time' ? <TimeEffect /> : id === 'role' ? <RoleEffect /> : id === 'about' ? <AboutEffect /> : id === 'data' ? <DataEffect /> : <EffectPane section={id} connector={connector} />}
     </PanelBoundary>
   );
 }
@@ -204,7 +252,9 @@ function SettingsFrame() {
   const epaneRef = useRef<HTMLElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const width = useElementWidth(rootRef);
-  const narrow = width > 0 && width < 1000;
+  // the effect pane sits beside the page only when the form keeps room (01-ui-audit UI-32: at 1440 four columns
+  // squeezed it to ~550 px); below this it follows the page in the same scroll
+  const narrow = width > 0 && width < EFFECT_RAIL_MIN;
 
   const go = useCallback(
     (id: SectionId) => {
@@ -215,8 +265,8 @@ function SettingsFrame() {
     [params, pathname],
   );
   useEffect(() => {
-    spaneRef.current?.scrollTo({ top: 0 });
-    epaneRef.current?.scrollTo({ top: 0 });
+    spaneRef.current?.scrollTo?.({ top: 0 });
+    epaneRef.current?.scrollTo?.({ top: 0 });
   }, [active]);
 
   useEffect(() => {
@@ -237,7 +287,7 @@ function SettingsFrame() {
   );
 
   const commands = useMemo(() => {
-    const base = SECTIONS.map((x, n) => ({ id: `settings.${x.id}`, title: `Settings: ${x.label}`, group: 'Settings', order: n, keywords: x.keywords.split(' '), run: () => go(x.id) }));
+    const base = SECTIONS.map((x, n) => ({ id: `settings.${x.id}`, title: `Settings: ${groupOf(x.id).label} ▸ ${x.label}`, group: 'Settings', order: n, keywords: x.keywords.split(' '), run: () => go(x.id) }));
     const p = m.policy;
     const extra = [];
     if (p.dirty && !p.fresh) extra.push({ id: 'settings.policy.preview', title: 'Preview re-rank', group: 'Settings', order: 20, run: () => (go('policy'), p.runPreview()) });
@@ -245,7 +295,7 @@ function SettingsFrame() {
     if (p.dirty) extra.push({ id: 'settings.policy.discard', title: 'Discard policy edits', group: 'Settings', order: 22, run: () => p.discard() });
     if (p.lastApply) extra.push({ id: 'settings.policy.undo', title: 'Undo the last policy apply', group: 'Settings', order: 23, run: () => p.undo.mutate({ params: { id: p.lastApply!.auditId }, body: {} }) });
     const saves: Array<[string, boolean, () => void]> = [
-      ['Profile & role', m.profile.dirty, () => void m.profile.save()],
+      ['Profile & hours', m.profile.dirty, () => void m.profile.save()],
       ['Role & rules', m.role.dirty && !Object.keys(personaErrors(m.role.draft)).length, () => void m.role.save()],
       ['Thresholds', m.thresholds.dirty, m.thresholds.save],
       ['Budgets', m.budgets.dirty, () => void m.budgets.save()],
@@ -267,7 +317,7 @@ function SettingsFrame() {
   return (
     <div className={s.root} ref={rootRef} data-testid="settings-page" data-section={active}>
       <header className={s.topbar}>
-        <h1>Settings</h1>
+        <PageHeader route="settings" titleIn="topbar" inset={false} rule={false} className="min-w-0 flex-1" crumb={sectionCrumb(groupOf(active).label, SECTIONS.find((x) => x.id === active)?.label ?? '')} />
         <label className={s.find}>
           <Glyph name="search" className={s.findGlyph} />
           <input

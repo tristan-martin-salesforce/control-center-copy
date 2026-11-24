@@ -39,7 +39,7 @@ This verb exists only while VDP is an active feature in the Persona block (an SE
       "value": "Priority: High · Persona: Member services lead · CURRENT STATE: … DESIRED STATE: …", "evidenceIds": ["ev_31"] },
     { "section": "assets", "field": "Demo: unified profile", "op": "add", "value": "https://…", "evidenceIds": ["ev_33"] }
   ],
-  "followUps": ["Regenerate DC notes in the VDP after saving", "Share the use-case CSV with the AE (the AE owns the Use Case object)"]
+  "followUps": ["Regenerate DC notes in the VDP after saving", "Create the use cases in Org62 from the logging canvas (D-67: the SE owns them; the app queues them as rows on the next canvas you Apply)"]
 }
 ```
 

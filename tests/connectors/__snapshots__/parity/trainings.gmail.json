@@ -1,0 +1,213 @@
+{
+  "items": [
+    {
+      "connector": "trainings",
+      "kind": "training_notice",
+      "externalId": "18e0000000000001",
+      "dedupeKey": "training:gmail:18e0000000000001",
+      "contentHash": "38541908d031c0af",
+      "occurredAt": "2026-08-18T14:00:00.000Z",
+      "author": {
+        "name": "Chief Legal Officer",
+        "email": "clo@example.com"
+      },
+      "title": "FY27 Compliance Training Is Here",
+      "excerpt": "Please complete all assigned modules by Friday, Oct. 16. Modules are assigned in ACT (Astro's Course",
+      "redacted": false,
+      "threadRef": "gmail-thread:18e0000000000001",
+      "permalink": "https://mail.google.com/mail/u/0/#all/18e0000000000001",
+      "payload": {
+        "title": "FY27 Compliance Training Is Here",
+        "system": "ACT",
+        "link": "https://readiness.my.site.com/act/s/assignments",
+        "links": [
+          "https://readiness.my.site.com/act/s/assignments",
+          "https://trailhead.salesforce.com/content/employee/trails/annual-compliance-training-executive"
+        ],
+        "due": "2026-10-16",
+        "dueSource": "prose",
+        "status": "assigned",
+        "statusAsOf": "2026-03-10T18:00:00.000Z",
+        "loeMinutes": 150,
+        "mandatory": true,
+        "source": {
+          "kind": "gmail",
+          "id": "18e0000000000001",
+          "ts": "2026-08-18T14:00:00.000Z"
+        },
+        "evidenceQuote": "Please complete all assigned modules by Friday, Oct. 16. Modules are assigned in ACT (Astro's Course",
+        "itemKey": "ACT:fy27 compliance training",
+        "loginNote": "Authenticate in Okta before opening the link."
+      }
+    },
+    {
+      "connector": "trainings",
+      "kind": "training_notice",
+      "externalId": "18e0000000000002",
+      "dedupeKey": "training:gmail:18e0000000000002",
+      "contentHash": "54e4388a7fc3c996",
+      "occurredAt": "2026-07-23T15:00:00.000Z",
+      "author": {
+        "name": "Field Readiness",
+        "email": "fieldreadiness@example.com"
+      },
+      "title": "Action Required: You Have Overdue Consumption Simulation Assignments",
+      "excerpt": "You have overdue assignments. Open the module: https://click.mail.example.com/?qs=[REDACTED:url_tok…",
+      "redacted": true,
+      "threadRef": "gmail-thread:18e0000000000002",
+      "permalink": "https://mail.google.com/mail/u/0/#all/18e0000000000002",
+      "payload": {
+        "title": "Action Required: You Have Overdue Consumption Simulation Assignments",
+        "system": "Forge",
+        "link": "https://forge.example.com/modules/consumption-simulation",
+        "linkTracked": "https://click.mail.example.com/?qs=abcdef1234567890abcdef",
+        "links": [
+          "https://forge.example.com/modules/consumption-simulation"
+        ],
+        "status": "overdue",
+        "statusAsOf": "2026-03-10T18:00:00.000Z",
+        "mandatory": true,
+        "source": {
+          "kind": "gmail",
+          "id": "18e0000000000002",
+          "ts": "2026-07-23T15:00:00.000Z"
+        },
+        "evidenceQuote": "You have overdue assignments. Open the module: https://click.mail.example.com/?qs=[REDACTED:url_tok…",
+        "itemKey": "Forge:: you have consumption simulation assignments"
+      }
+    },
+    {
+      "connector": "trainings",
+      "kind": "training_notice",
+      "externalId": "18e0000000000003#cert0",
+      "dedupeKey": "training:gmail:18e0000000000003#cert0",
+      "contentHash": "22e7bde4078af87c",
+      "occurredAt": "2026-10-22T12:00:00.000Z",
+      "author": {
+        "name": "Trailhead Help",
+        "email": "trailheadhelp@example.com"
+      },
+      "title": "Salesforce Certified Data Cloud Consultant",
+      "excerpt": "Your credentials need maintenance. Certification Status Next Required Maintenance Badge Completion D",
+      "redacted": false,
+      "threadRef": "gmail-thread:18e0000000000003",
+      "permalink": "https://mail.google.com/mail/u/0/#all/18e0000000000003",
+      "payload": {
+        "title": "Salesforce Certified Data Cloud Consultant",
+        "system": "Cert",
+        "links": [],
+        "due": "2026-12-04",
+        "dueSource": "table",
+        "status": "assigned",
+        "statusAsOf": "2026-03-10T18:00:00.000Z",
+        "mandatory": true,
+        "source": {
+          "kind": "gmail",
+          "id": "18e0000000000003",
+          "ts": "2026-10-22T12:00:00.000Z"
+        },
+        "evidenceQuote": "Your credentials need maintenance. Certification Status Next Required Maintenance Badge Completion D",
+        "itemKey": "Cert:salesforce certified data cloud consultant",
+        "certStatus": "1 Maintenance Behind",
+        "nextBadge": "Data Cloud Spring Release Notes"
+      }
+    },
+    {
+      "connector": "trainings",
+      "kind": "training_notice",
+      "externalId": "18e0000000000003#cert1",
+      "dedupeKey": "training:gmail:18e0000000000003#cert1",
+      "contentHash": "50e132bf0573a319",
+      "occurredAt": "2026-10-22T12:00:00.000Z",
+      "author": {
+        "name": "Trailhead Help",
+        "email": "trailheadhelp@example.com"
+      },
+      "title": "Salesforce Certified AI Associate",
+      "excerpt": "Your credentials need maintenance. Certification Status Next Required Maintenance Badge Completion D",
+      "redacted": false,
+      "threadRef": "gmail-thread:18e0000000000003",
+      "permalink": "https://mail.google.com/mail/u/0/#all/18e0000000000003",
+      "payload": {
+        "title": "Salesforce Certified AI Associate",
+        "system": "Cert",
+        "links": [],
+        "due": "2026-12-04",
+        "dueSource": "table",
+        "status": "assigned",
+        "statusAsOf": "2026-03-10T18:00:00.000Z",
+        "mandatory": true,
+        "source": {
+          "kind": "gmail",
+          "id": "18e0000000000003",
+          "ts": "2026-10-22T12:00:00.000Z"
+        },
+        "evidenceQuote": "Your credentials need maintenance. Certification Status Next Required Maintenance Badge Completion D",
+        "itemKey": "Cert:salesforce certified ai associate",
+        "certStatus": "1 Maintenance Behind",
+        "nextBadge": "AI Spring Release Notes"
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "kind": "query_window",
+      "ref": "trainings:gmail:senders",
+      "from": "2025-11-10T17:00:00.000Z",
+      "to": "2026-03-10T18:00:00.000Z",
+      "meta": {
+        "hits": 4
+      }
+    },
+    {
+      "kind": "query_window",
+      "ref": "trainings:gmail:subjects",
+      "from": "2025-11-10T17:00:00.000Z",
+      "to": "2026-03-10T18:00:00.000Z",
+      "meta": {
+        "hits": 4
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18e0000000000001",
+      "from": "2026-08-18T14:00:00.000Z",
+      "to": "2026-08-18T14:00:00.000Z",
+      "meta": {
+        "training": true
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18e0000000000002",
+      "from": "2026-07-23T15:00:00.000Z",
+      "to": "2026-07-23T15:00:00.000Z",
+      "meta": {
+        "training": true
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18e0000000000003",
+      "from": "2026-10-22T12:00:00.000Z",
+      "to": "2026-10-22T12:00:00.000Z",
+      "meta": {
+        "training": true
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18e0000000000004",
+      "from": "2026-10-22T13:00:00.000Z",
+      "to": "2026-10-22T13:00:00.000Z",
+      "meta": {
+        "training": true
+      }
+    }
+  ],
+  "nextCursor": {
+    "value": "{\"seen\":{\"18e0000000000001\":1787061600,\"18e0000000000002\":1784818800,\"18e0000000000003\":1792670400,\"18e0000000000004\":1792674000},\"lastEpoch\":1792674000}",
+    "at": "2026-03-10T18:00:00.000Z"
+  },
+  "complete": true
+}

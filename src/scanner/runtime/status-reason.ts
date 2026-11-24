@@ -2,8 +2,16 @@
  * A connector's status reason in plain words: which scope failed and why. It is written to `connectors.status_reason`
  * (Health's impact line, Settings ▸ Connectors). Before, it was the classifier's code, and a tripwire, a cost cap or a
  * stuck run all came out as "unknown" (STAT-1).
+ *
+ * 11 R5 / 08 R2: an error's words come from the error catalog. The caller passes the failure's catalog code
+ * (src/errors/classify.ts), and the reason is that code's phrase (src/errors/render.ts `reasonOf`), so Health reads
+ * what the catalog says ("VDP plans: needs the corporate network: turn on Zscaler, retrying") instead of re-parsing the
+ * message. Without a code (rows and callers from before the catalog) the old message rules still apply. The runtime's
+ * own statuses (a tripwire, a cost cap, a split) are not errors and keep their words.
  */
 import { GATEWAY_DOWN_WORDS, GATEWAY_ERROR, GATEWAY_ERROR_WORDS } from '../../connectors/google/gateway';
+import { isCatalogCode } from '../../errors/catalog';
+import { reasonOf } from '../../errors/render';
 import type { ConnectorId } from '../types';
 import type { ErrorClass } from '../../llm/errors';
 
@@ -20,19 +28,32 @@ const SCOPE_LABEL: Partial<Record<ConnectorId, (scope: string) => string>> = {
   vdp: () => 'VDP plans',
 };
 
+/** A scope in Health's words ("Inbox", "Slack inbox", "Org62 opportunities"); the connector id when it has none. */
+export function scopeLabel(connector: ConnectorId, scope: string): string {
+  return SCOPE_LABEL[connector]?.(scope) ?? connector;
+}
+
 /** The connectors that read Google through devbar's MCP gateway. */
 const GOOGLE: ReadonlySet<ConnectorId> = new Set<ConnectorId>(['gmail', 'calendar', 'drive', 'gemini_notes', 'trainings']);
 
 /** "Channel scans: prompt over the size limit" (at most 240 characters; no ids or message text, only a blocked tool's name). */
-export function statusReason(connector: ConnectorId, scope: string, message: string, errorClass: ErrorClass, blockedTool?: string): string {
-  const label = SCOPE_LABEL[connector]?.(scope) ?? connector;
+/** Codes whose old, finer wording stays (which file failed; maintenance vs an error page), or that say nothing new. */
+const KEEP_MESSAGE_WORDS = new Set(['DATA.FILE_UNAVAILABLE', 'NET.GATEWAY_DOWN', 'BUG.UNKNOWN', 'BUG.TOOL_BLOCKED']);
+
+export function statusReason(connector: ConnectorId, scope: string, message: string, errorClass: ErrorClass, blockedTool?: string, code?: string | null): string {
+  const label = scopeLabel(connector, scope);
   const reason = (() => {
     if (/prefix tripwire/i.test(message)) return 'prompt over the size limit';
     if (/cost cap/i.test(message)) return 'a run hit its cost cap';
+    // W0-7: the window could not be split further: retried in smaller pages, then paused (DATA.PROMPT_CAP)
+    if (/DATA\.PROMPT_CAP/.test(message)) return 'one message set is too large to read, even in smaller pages; paused until you Rescan (Report this)';
+    if (/prompt cap/i.test(message)) return /no split left/.test(message) ? 'one message set is too large to read in one request; retrying in smaller pages' : 'a run was split to keep each request under the long-prompt price tier';
     if (/max_turns|max turns/i.test(message)) return 'a run hit its turn limit';
     if (/watchdog|run exceeded \d+ ?ms/i.test(message)) return 'a run took longer than its time limit';
     if (/without (?:a cursor|cc_finish)/i.test(message)) return 'a run stopped before finishing';
     if (blockedTool || /disallowed tool/i.test(message)) return `a tool call outside the read-only allowlist was blocked${blockedTool ? ` (${blockedTool})` : ''}`;
+    // the catalog's phrase for the failure's code (the scanner passes it; nothing re-parses the message)
+    if (code && isCatalogCode(code) && !KEEP_MESSAGE_WORDS.has(code)) return reasonOf(code);
     // a maintenance page: the service is down, not the user's sign-in (Google reads go through devbar's MCP gateway)
     if (/\[gateway_down\]|down for maintenance|under maintenance/i.test(message)) return GOOGLE.has(connector) ? GATEWAY_DOWN_WORDS : 'the service is down for maintenance (not your sign-in), retrying';
     if (errorClass === 'auth') return 'needs re-auth';

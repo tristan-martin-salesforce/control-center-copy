@@ -25,21 +25,23 @@ import { usePendingPath } from './nav-pending';
 import { pageTitleFor, usePageTitle } from './titles';
 import { UtilityPanel } from './UtilityPanel';
 
+/** The search field gives way first (shrink 8) so the next meeting chip keeps its title at 1440 (it read "1:1 …"). */
 export function SearchField({ onOpen, className }: { onOpen?: () => void; className?: string }) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      aria-label="Search or run a command"
+      // named by what it shows (WCAG 2.5.3); the longer phrase is the tooltip, the shortcut announced from here
+      title="Search or run a command"
       aria-keyshortcuts="Meta+K"
       className={cn(
-        'flex h-10 min-w-[12rem] flex-[0_1_27.5rem] items-center gap-2.5 rounded-md border border-line-strong bg-surface-input px-3 text-body text-faint transition-colors hover:border-line-input hover:text-muted focus-visible:outline-none focus-visible:shadow-focus',
+        'flex h-10 min-w-[12rem] flex-[0_8_27.5rem] items-center gap-2.5 rounded-md border border-line-strong bg-surface-input px-3 text-body text-faint transition-colors hover:border-line-input hover:text-muted focus-visible:outline-none focus-visible:shadow-focus',
         className,
       )}
     >
       <Icon name="search" size="md" />
       <span className="min-w-0 flex-1 truncate text-left">Search or ask…</span>
-      <KbdHint combo="mod+k" tone="quiet" />
+      <KbdHint combo="mod+k" tone="quiet" decorative />
     </button>
   );
 }
@@ -126,13 +128,13 @@ export function Topbar({ specimen, title: titleProp, className }: TopbarProps) {
           size="sm"
           aria-keyshortcuts="Meta+J"
           aria-pressed={assistantOpen}
-          aria-label="Assistant"
           onClick={() => (assistantOpen ? panel.toggleAssistant() : shell && !specimen ? shell.focusChat() : panel.openAssistant())}
           className={cn(assistantOpen && 'bg-selected')}
         >
           <Icon name="sparkles" size="sm" className="text-ai-700" />
+          {/* the name comes from this label (still read when it folds to sr-only) */}
           <span className="@max-[760px]/topbar:sr-only">Assistant</span>
-          <KbdHint combo="mod+j" tone="quiet" className="@max-[760px]/topbar:hidden" />
+          <KbdHint combo="mod+j" tone="quiet" decorative className="@max-[760px]/topbar:hidden" />
         </Button>
       </Tooltip>
     </header>

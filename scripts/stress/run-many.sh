@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Run several scenarios one after another; one log per scenario under the private runs dir.
-D="$HOME/Library/Application Support/control-center/stress/runs"
+D="$HOME/Library/Application Support/command-center/stress/runs"
 mkdir -p "$D"; chmod 700 "$D"
 for s in "$@"; do
   CC_NOTIFY=0 npx tsx scripts/stress/run.ts "$s" > "$D/$s.log" 2>&1

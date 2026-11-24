@@ -12,11 +12,12 @@
  * line, the 22 px title and purpose; Why (with evidence chips that open the source); Plan (your steps vs
  * agent steps, agent time in its own background lane) or the draft; Readiness; Same initiative; then the
  * evidence timeline, history (Undo per change), context, related, Drive and enrichment as collapsed groups.
- * The panel's sticky footer holds the ONE filled action plus quiet Snooze · Done · Not now · Resolve.
+ * The panel is the kit's DetailPanel frame (src/components/kit): its footer holds Later ▾ · Done ▾ (01-ui-audit R6)
+ * and the ONE filled action. The sheet and page headers show the same two menus (header/ItemVerbs.tsx).
  *
- * Keys while focus is in the detail (or anywhere on the page variant): d done · ⇧D resolve · s snooze ·
- * n not now · o open source · e edit title · ⌘↵ the primary · ⇧↵ full page (panel). Every action is also a
- * ⌘K command. The chat context is this item.
+ * Keys while focus is in the detail (or anywhere on the page variant): d done by me · ⇧D Done ▾ · l Later ▾ (s and
+ * n still open it for a release) · o open source · e edit title · ⌘↵ the primary · ⇧↵ full page (panel). Every menu
+ * choice is also a ⌘K command. The chat context is this item.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { Effort, EnrichmentChip, ItemActionRequest, NotNowReason, Person, Proposal, SourceRef, TodayPayload, WorkItem, WorkItemDetail } from '@/contract';
@@ -27,23 +28,25 @@ import { useFocusedCommands, useKeyBinding } from '@/client/keyboard';
 import { isEditableTarget } from '@/client/keyboard/keymap';
 import { useResumeExtra } from '@/client/resume';
 import { useChatContext } from '@/components/chat';
-import { SendCountdownToast, type ComposerHandle } from '@/components/composer';
+import type { ComposerHandle } from '@/components/composer';
 import { DomainClock, ProposalDiff, type ResolveValue, type WorkRowActionKey } from '@/components/domain';
 import { ReadInSection } from '@/components/readin';
+import { DetailPanel, useItemMenus, type MenuRequest } from '@/components/kit';
 import { useRightPanel } from '@/components/shell/panel';
-import { Button, ChangedElsewhere, cn, type ConflictField, EmptyState, PanelBoundary, PanelError, Skeleton, Tabs, tabPanelProps, useNow, usePanelState, useTimeZone } from '@/ui';
+import { ChangedElsewhere, cn, type ConflictField, EmptyState, PanelBoundary, PanelError, Tabs, tabPanelProps, useNow, usePanelState, useTimeZone } from '@/ui';
 import { DrivePanel } from './DrivePanel';
 import { Enrichment } from './Enrichment';
 import { FieldRegistryContext, type FieldRegistry } from './header/fields';
-import { ItemActions, NOT_NOW_REASONS, type ItemActionKey } from './header/ItemActions';
+import { ItemVerbs, moreWaysEntry, ResolvePopover } from './header/ItemVerbs';
 import { ItemHeader } from './header/ItemHeader';
 import { CLOSED_STATES, fmtMin, latestUndoable, mergePeople, openableSource, sameField } from './lib/derive';
 import { useItemAction, usePatchItem, useProposalMutation, useUndoAudit } from './lib/mutations';
 import './lib/register';
 import { panelAvailable } from './lib/panel-host';
 import { sectionLine, whyHeading } from './lib/panel-derive';
-import { PrimarySlotProvider, usePrimaryClaim, type PrimarySpec } from './lib/primary';
+import { PrimarySlotProvider } from './lib/primary';
 import { fmtWhen, whenPresets } from './lib/tz';
+import { DetailSkeleton, PanelPrimary, type ItemDetailVariant, type OwnPrimary } from './panel/frame';
 import { isEnriching } from './lib/enrichment-state';
 import { NbaSection } from './nba/NbaSection';
 import { openDeepLink } from './nba/ClaudeLaunchPanel';
@@ -52,12 +55,13 @@ import { ReadinessSection, SameInitiativeSection, WhySection } from './panel/sec
 import { ContextTab } from './tabs/ContextTab';
 import { EvidenceTab } from './tabs/EvidenceTab';
 import { WhyHere } from './tabs/WhyHere';
+import { WhyOpen } from './sections/why-open';
 import { HistoryTab } from './tabs/HistoryTab';
 import { RelatedTab } from './tabs/RelatedTab';
 import { navigate } from '@/components/shell/router';
 
 export type DetailTab = 'context' | 'evidence' | 'related' | 'history';
-export type ItemDetailVariant = 'panel' | 'sheet' | 'page';
+export type { ItemDetailVariant };
 
 export interface ItemDetailProps {
   itemId: string;
@@ -92,52 +96,6 @@ export function ItemDetail(props: ItemDetailProps) {
     <PanelBoundary name="item.detail" resetKeys={[props.itemId]}>
       <ItemDetailQuery {...props} />
     </PanelBoundary>
-  );
-}
-
-function DetailSkeleton({ variant }: { variant: ItemDetailVariant }) {
-  if (variant === 'page') {
-    return (
-      <div className="flex h-full flex-col" aria-busy aria-label="Loading task">
-        <div className="border-b border-line px-6 py-5">
-          <Skeleton variant="line" className="w-64" />
-          <Skeleton variant="line" className="mt-3 w-2/3" />
-          <div className="mt-3 flex gap-6">
-            {Array.from({ length: 4 }, (_, i) => (
-              <Skeleton key={i} variant="line" className="w-24" />
-            ))}
-          </div>
-        </div>
-        <div className="grid flex-1 content-start items-start gap-6 p-6 @5xl/detail:grid-cols-2">
-          <Skeleton variant="card" />
-          <Skeleton variant="row" count={6} />
-        </div>
-      </div>
-    );
-  }
-  if (variant === 'panel') {
-    return (
-      <div className="flex h-full flex-col" aria-busy aria-label="Loading task">
-        <div className="space-y-3 border-b border-line px-6 py-4">
-          <Skeleton variant="line" className="w-48" />
-          <Skeleton variant="line" className="w-3/4" />
-          <Skeleton variant="line" className="w-2/3" />
-        </div>
-        <div className="space-y-6 px-6 py-4">
-          <Skeleton variant="line" count={3} />
-          <Skeleton variant="block" className="h-24 w-full" />
-          <Skeleton variant="row" count={3} />
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-3" aria-busy aria-label="Loading task">
-      <Skeleton variant="line" className="w-1/2" />
-      <Skeleton variant="line" count={2} />
-      <Skeleton variant="block" className="h-20 w-full" />
-      <Skeleton variant="card" />
-    </div>
   );
 }
 
@@ -182,42 +140,6 @@ function useNowIds(): string[] | null {
   return hit ? hit.nowStack.cards.map((c) => c.item.id) : null;
 }
 
-/** The panel's sticky footer: the ONE filled action (the next step's, else the item's own verb) + quiet actions. */
-function PanelFooter({ fallback, forced, actions }: { fallback: PrimarySpec & { key: ItemActionKey }; forced: (PrimarySpec & { key: ItemActionKey }) | null; actions: (exclude: ItemActionKey[]) => ReactNode }) {
-  const claim = usePrimaryClaim();
-  const spec: PrimarySpec = forced ?? claim ?? fallback;
-  const fromNba = !forced && !!claim;
-  const exclude: ItemActionKey[] = fromNba ? [] : [(forced ?? fallback).key];
-  return (
-    <footer className="flex shrink-0 flex-wrap items-center gap-x-1 gap-y-2 border-t border-line bg-surface px-6 py-4" data-panel-footer>
-      {spec.countdown ? (
-        <SendCountdownToast deadline={spec.countdown.deadline} durationMs={spec.countdown.durationMs} label={spec.countdown.label} dryRun={spec.countdown.dryRun} onUndo={spec.countdown.onUndo} className="mr-1 max-w-full min-w-72" />
-      ) : spec.busyLabel ? (
-        <span role="status" className="mr-1 inline-flex h-9 items-center gap-2 rounded-md bg-surface-muted px-3 text-body text-muted">
-          <span aria-hidden className="size-3 animate-spin rounded-full border-2 border-current border-r-transparent" />
-          {spec.busyLabel}
-        </span>
-      ) : (
-        <Button
-          variant="primary"
-          size="md"
-          disabled={spec.disabled}
-          loading={spec.loading}
-          title={spec.disabled && spec.hint ? spec.hint : spec.kbd === 'mod+enter' ? `${spec.label} (⌘↵)` : undefined}
-          onClick={() => spec.run()}
-          className="mr-1"
-          data-nba-primary={fromNba || undefined}
-          data-panel-primary
-        >
-          {spec.label}
-        </Button>
-      )}
-      {actions(exclude)}
-      <span className="ml-auto hidden text-caption text-faint @min-[34rem]/panel:inline">Esc to close</span>
-    </footer>
-  );
-}
-
 function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, breadcrumb, className }: ItemDetailProps & { detail: WorkItemDetail; now: string; tz?: string; meName?: string }) {
   const { item, nba, draft } = detail;
   const id = item.id;
@@ -234,8 +156,8 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
   const rootRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useResumeExtra<DetailTab>(`detail-tab:${id}`, 'context');
   const [resolveOpen, setResolveOpen] = useState(false);
-  const [snoozeOpen, setSnoozeOpen] = useState(false);
-  const [notNowOpen, setNotNowOpen] = useState(false);
+  const [doneOpen, setDoneOpen] = useState(false);
+  const [laterOpen, setLaterOpen] = useState(false);
   const page = variant === 'page';
   const panel = variant === 'panel';
   const nowIds = useNowIds();
@@ -275,10 +197,12 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
       action.mutate({ params: { id, verb }, body: { ifVersion: action.versionOf(id) ?? item.version, ...body } }),
     [action, id, item.version],
   );
-  const done = () => act('done');
   const resolve = (v: ResolveValue) => act('resolve', { resolution: v.resolution, detail: v.detail, involvement: v.involvement });
   const snooze = (until: string) => act('snooze', { until });
   const notNow = (reason: NotNowReason) => act('not-now', { reason });
+  // Done ▾ / Later ▾ go through this detail's own action (its error banner and Retry see them too).
+  const sendMenu = useCallback((r: MenuRequest) => act(r.verb, r.body), [act]);
+  const menus = useItemMenus({ id, version: item.version }, { now, tz }, sendMenu);
   const snoozeTomorrow = () => {
     const t = whenPresets(now, tz).find((p) => p.id === 'tomorrow') ?? whenPresets(now, tz)[0];
     if (t) snooze(t.at);
@@ -339,11 +263,18 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
 
   // ---- keyboard + ⌘K ------------------------------------------------------------------------------
   const closed = CLOSED_STATES.has(item.state);
+  const openLater = () => (!closed ? setLaterOpen(true) : undefined);
+  // The panel's frame (kit DetailPanel) owns d / ⇧D / l (and the s, n aliases); the sheet and page bind them here.
   const keyMap: Record<string, () => void> = {
-    d: () => (!closed ? done() : undefined),
-    D: () => (!closed ? setResolveOpen(true) : undefined),
-    s: () => (!closed ? setSnoozeOpen(true) : undefined),
-    n: () => (!closed ? setNotNowOpen(true) : undefined),
+    ...(panel
+      ? {}
+      : {
+          d: () => (!closed ? menus.onDone('by_me') : undefined),
+          D: () => (!closed ? setDoneOpen(true) : undefined),
+          l: openLater,
+          s: openLater,
+          n: openLater,
+        }),
     o: () => (source ? openSource(source) : undefined),
     e: () => titleRef.current?.focus(),
   };
@@ -373,10 +304,11 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
     fn();
   };
   // The page has nothing else focused: the same keys work from anywhere on it.
-  useKeyBinding('d', () => (page ? keyMap.d!() : false), { enabled: page, description: 'Mark done', group: 'Item' });
-  useKeyBinding('shift+d', () => (page ? keyMap.D!() : false), { enabled: page, description: 'Resolve…', group: 'Item' });
-  useKeyBinding('s', () => (page ? keyMap.s!() : false), { enabled: page, description: 'Snooze…', group: 'Item' });
-  useKeyBinding('n', () => (page ? keyMap.n!() : false), { enabled: page, description: 'Not now…', group: 'Item' });
+  useKeyBinding('d', () => (page ? keyMap.d!() : false), { enabled: page, description: 'Done by me', group: 'Item' });
+  useKeyBinding('shift+d', () => (page ? keyMap.D!() : false), { enabled: page, description: 'Done ▾ (more ways it ended)', group: 'Item' });
+  useKeyBinding('l', () => (page ? keyMap.l!() : false), { enabled: page, description: 'Later ▾', group: 'Item' });
+  useKeyBinding('s', () => (page ? keyMap.s!() : false), { enabled: page, description: 'Later ▾ (old key)', group: 'Item' });
+  useKeyBinding('n', () => (page ? keyMap.n!() : false), { enabled: page, description: 'Later ▾ (old key)', group: 'Item' });
   useKeyBinding('o', () => (page && source ? keyMap.o!() : false), { enabled: page, description: 'Open source', group: 'Item' });
   useKeyBinding('e', () => (page ? keyMap.e!() : false), { enabled: page, description: 'Edit title', group: 'Item' });
   useKeyBinding('mod+enter', () => (page ? firePrimary() : false), { enabled: page, description: 'Next best action', group: 'Item' });
@@ -384,10 +316,15 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
   useFocusedCommands({ label: item.title, kind: 'work_item' }, [
     ...(!closed
       ? [
-          { id: 'item.done', title: 'Mark done', shortcut: 'd', run: done },
-          { id: 'item.resolve', title: 'Resolve… (handed off, done by someone else, duplicate…)', shortcut: 'shift+d', keywords: ['handed off', 'hand off', 'close'], run: () => setResolveOpen(true) },
-          { id: 'item.snooze', title: 'Snooze…', shortcut: 's', run: () => setSnoozeOpen(true) },
-          ...NOT_NOW_REASONS.map((r) => ({ id: `item.not-now.${r.reason}`, title: `Not now: ${r.label.toLowerCase()}`, keywords: ['not now', 'dismiss', 'skip'], run: () => notNow(r.reason) })),
+          { id: 'item.done', title: 'Done by me', shortcut: 'd', keywords: ['mark done', 'finish'], run: () => menus.onDone('by_me') },
+          { id: 'item.done.someone_else', title: 'Done by someone else', keywords: ['resolve', 'close'], run: () => menus.onDone('someone_else') },
+          { id: 'item.done.not_mine', title: 'Not mine', keywords: ['dismiss', 'not now'], run: () => menus.onDone('not_mine') },
+          { id: 'item.done.not_needed', title: 'Not needed', keywords: ['resolve', 'close', 'moment passed'], run: () => menus.onDone('not_needed') },
+          { id: 'item.resolve', title: 'More ways it ended… (handed off, duplicate, superseded)', keywords: ['resolve', 'handed off', 'hand off', 'duplicate', 'close'], run: () => setResolveOpen(true) },
+          { id: 'item.later.tomorrow', title: 'Later: tomorrow', keywords: ['snooze'], run: () => menus.onLater('tomorrow') },
+          { id: 'item.later.next_week', title: 'Later: next week', keywords: ['snooze'], run: () => menus.onLater('next_week') },
+          { id: 'item.later.not_now', title: 'Not now (until the next working day)', keywords: ['later', 'snooze', 'skip'], run: () => menus.onLater('not_now') },
+          { id: 'item.not-now.wrong_account', title: 'Wrong account: unlink it and keep the item', keywords: ['not now', 'account'], run: () => notNow('wrong_account') },
         ]
       : [{ id: 'item.reopen', title: 'Reopen', run: () => act('reopen') }]),
     ...(item.state === 'suggested' ? [{ id: 'item.accept', title: 'Accept suggestion', shortcut: 'a', run: () => act('accept') }] : []),
@@ -436,35 +373,24 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
     />
   ) : null;
 
-  const actions = (opts: { size: 'xs' | 'sm' | 'md'; exclude?: ItemActionKey[]; placement?: 'bottom-end' | 'top-start'; className?: string; hideOpenSource?: boolean; hints?: boolean }) => (
-    <ItemActions
-      item={item}
-      now={now}
-      tz={tz}
-      people={people}
-      threadPeople={threadPeople}
-      relatedItems={detail.siblings.map((s) => ({ id: s.id, title: s.title }))}
+  const relatedItems = detail.siblings.map((x) => ({ id: x.id, title: x.title }));
+  const resolveProps = { item, people, threadPeople, relatedItems, onResolve: resolve, open: resolveOpen, onOpenChange: setResolveOpen };
+  const verbs = (cls: string) => (
+    <ItemVerbs
+      {...resolveProps}
+      menus={menus}
       source={source}
+      doneOpen={doneOpen}
+      onDoneOpenChange={setDoneOpen}
+      laterOpen={laterOpen}
+      onLaterOpenChange={setLaterOpen}
       resolveOpen={resolveOpen}
       onResolveOpenChange={setResolveOpen}
-      snoozeOpen={snoozeOpen}
-      onSnoozeOpenChange={setSnoozeOpen}
-      notNowOpen={notNowOpen}
-      onNotNowOpenChange={setNotNowOpen}
-      onDone={done}
-      onResolve={resolve}
-      onSnooze={snooze}
-      onNotNow={notNow}
       onReopen={() => act('reopen')}
       onAccept={() => act('accept')}
       onConfirmDone={() => act('confirm-done')}
       onOpenSource={openSource}
-      size={opts.size}
-      exclude={opts.exclude}
-      placement={opts.placement}
-      hideOpenSource={opts.hideOpenSource}
-      hints={opts.hints}
-      className={opts.className}
+      className={cls}
     />
   );
 
@@ -480,7 +406,7 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
       sectionLine={line}
       saveField={(f, v, b) => saveField(f, v, b)}
       saveEffort={(v, b) => saveField('effort', v, b)}
-      actions={panel ? undefined : actions({ size: 'sm', hints: false, className: page ? 'flex flex-wrap items-center justify-end gap-1' : 'flex flex-wrap items-center gap-1' })}
+      actions={panel ? undefined : verbs(page ? 'flex flex-wrap items-center justify-end gap-1' : 'flex flex-wrap items-center gap-1')}
       onUndoStatus={statusUndo ? () => undo.mutate({ params: { id: statusUndo.id }, body: {} }) : undefined}
       onShowEvidence={() => showTab('evidence')}
       onOpenPage={panel ? openPage : undefined}
@@ -601,6 +527,8 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
     const collapsed: Array<{ key: string; title: string; meta?: ReactNode; node: (open: boolean) => ReactNode } | null> = [
       // AUDIT: the provenance chain (source → scan run → triage verdict → model cost); loads only while open.
       { key: 'why-here', title: 'Why is this here?', meta: 'source · scan · verdict', node: (open) => (open ? <WhyHere itemId={id} now={now} tz={tz} /> : null) },
+      // H-7: the resolution check's last decision (closure_checks); loads only while open
+      { key: 'why-open', title: closed ? 'Why was this closed?' : 'Why is this still open?', meta: 'last check', node: (open) => (open ? <WhyOpen itemId={id} now={now} tz={tz} /> : null) },
       { key: 'evidence', title: 'Evidence timeline', meta: evidenceNew ? <span className="font-bold text-link">{evidenceNew} new</span> : detail.evidenceCount || undefined, node: (open) => tabContent('evidence', open) },
       { key: 'history', title: 'History', meta: 'Undo any change', node: () => tabContent('history', true) },
       { key: 'context', title: 'Context and notes', meta: [detail.account?.name, detail.opp ? 'opportunity' : null].filter(Boolean).join(' · ') || undefined, node: () => tabContent('context', true) },
@@ -608,22 +536,33 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
       item.deliverable ? { key: 'drive', title: 'Drive file', meta: item.deliverable.fileName, node: () => <DrivePanel item={item} now={now} tz={tz} /> } : null,
       item.enrichment && item.enrichment.status !== 'idle' ? { key: 'enrichment', title: 'Related work found', meta: enrichPending ? <span className="font-bold text-ai-700">✦ to review</span> : undefined, node: () => <Enrichment item={item} onFill={fill} /> } : null,
     ];
-    const fallback: PrimarySpec & { key: ItemActionKey } = { key: 'done', label: 'Done', icon: 'check', kbd: 'd', run: done };
-    const forcedPrimary: (PrimarySpec & { key: ItemActionKey }) | null = closed
-      ? { key: 'reopen', label: 'Reopen', icon: 'undo', run: () => act('reopen') }
+    const fallback: OwnPrimary = { action: 'done', label: 'Done', icon: 'check', kbd: 'd', run: () => menus.onDone('by_me') };
+    const forcedPrimary: OwnPrimary | null = closed
+      ? { action: 'reopen', label: 'Reopen', icon: 'undo', run: () => act('reopen') }
       : item.state === 'suggested'
-        ? { key: 'accept', label: 'Accept', icon: 'check', kbd: 'a', run: () => act('accept') }
+        ? { action: 'accept', label: 'Accept', icon: 'check', kbd: 'a', run: () => act('accept') }
         : item.state === 'likely_done'
-          ? { key: 'confirm', label: 'Confirm done', icon: 'check', run: () => act('confirm-done') }
+          ? { action: 'confirm', label: 'Confirm done', icon: 'check', run: () => act('confirm-done') }
           : null;
     return (
       <FieldRegistryContext.Provider value={registry}>
         <PrimarySlotProvider>
-          {/* tabIndex -1: a click anywhere in the panel puts focus inside, so its keys (d, s, n, ⌘↵…) work. */}
+          {/* tabIndex -1: a click anywhere in the panel puts focus inside, so its keys (d, l, ⌘↵…) work. */}
           <div ref={rootRef} tabIndex={-1} data-item-detail="panel" data-item-id={id} onKeyDown={onKeyDown} className={cn('@container/panel flex h-full min-h-0 flex-col bg-surface focus:outline-none', className)}>
-            {header}
-            <div className="cc-scroll relative min-h-0 flex-1 overflow-y-auto" data-panel-scroll>
-              <div className="flex flex-col gap-6 px-6 pt-5 pb-6">
+            <DetailPanel
+              entity={{ kind: 'work_item', id, label: item.title }}
+              header={header}
+              menus={closed ? null : menus}
+              doneExtra={[moreWaysEntry(() => setResolveOpen(true))]}
+              laterKeys={['l', 's', 'n']}
+              bodyClassName="px-6 pt-5 pb-6"
+              primaryNode={
+                <PanelPrimary fallback={fallback} forced={forcedPrimary}>
+                  {closed ? null : <ResolvePopover {...resolveProps} placement="top-end" />}
+                </PanelPrimary>
+              }
+            >
+              <div className="flex flex-col gap-6">
                 {banners}
                 {readIn}
                 {proposals}
@@ -641,12 +580,7 @@ function Loaded({ detail, variant, now, tz, meName, onOpenItem, onOpenDraft, bre
                   )}
                 </div>
               </div>
-            </div>
-            <PanelFooter
-              fallback={fallback}
-              forced={forcedPrimary}
-              actions={(exclude) => actions({ size: 'xs', exclude, placement: 'top-start', hideOpenSource: true, hints: false, className: 'flex flex-wrap items-center gap-0.5' })}
-            />
+            </DetailPanel>
           </div>
         </PrimarySlotProvider>
       </FieldRegistryContext.Provider>

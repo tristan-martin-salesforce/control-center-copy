@@ -136,15 +136,16 @@ describe('AE: no VDP surface until activated', () => {
     const names = (p?: ReturnType<typeof personaOf>) => chatToolsFor(p).map((t) => t.name);
     expect(names(SE)).toEqual(CHAT_TOOLS.map((t) => t.name));
     expect(names(undefined)).toEqual(CHAT_TOOLS.map((t) => t.name));
-    expect(names(AE)).not.toContain('chat_vdp_update');
-    expect(names(AE)).not.toContain('chat_vdp_find_assets');
-    expect(names(AE_VDP)).toContain('chat_vdp_update');
+    // Assistant v2: the same eleven tools for everyone; the VDP views and pages follow the persona's gates
+    expect(names(AE)).toEqual(names(SE));
+    const query = (p: ReturnType<typeof personaOf>) => chatToolsFor(p).find((t) => t.name === 'query')!.description;
+    expect(query(AE)).not.toMatch(/vdp_records/);
+    expect(query(AE_VDP)).toMatch(/vdp_records/);
     expect(chatReadPagesFor(AE)).not.toContain('vdp');
     expect(chatReadPagesFor(AE)).not.toContain('missed_opps');
     expect(chatReadPagesFor(SE)).toContain('vdp');
-    const aeRead = chatToolsFor(AE).find((t) => t.name === 'chat_app_read')!;
-    expect(aeRead.description).toContain(chatPageCatalog(AE));
-    expect(aeRead.description).not.toMatch(/^vdp:/m);
+    expect(chatPageCatalog(AE)).not.toMatch(/^vdp:/m);
+    const aeRead = chatToolsFor(AE).find((t) => t.name === 'read')!;
     expect(aeRead.description).not.toMatch(/vdp_detail/);
     expect(JSON.stringify(chatToolsFor(AE).map((t) => [t.name, t.description]))).toBe(JSON.stringify(chatToolsFor(personaOf({ persona: { id: 'ae' } })).map((t) => [t.name, t.description])));
   });
@@ -227,7 +228,7 @@ describe('AE logging: Sales Events, no task type, no hour caps', () => {
 
   it('the work order names Sales Events and asks for no task type', () => {
     const row = eventRow({ id: 'act-1', subject: 'ACCOUNT_1 | Discovery', start: '2026-11-04T16:00:00-07:00', end: '2026-11-04T17:00:00-07:00', durationH: 1, taskType: '', whatOrg62Id: '006XX0000000OPPAAA', origin: 'calendar' });
-    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: '2026-11-10T20:00:00.000Z', events: [row], updates: [], sourceLabel: 'Control Center', logging: { recordTypeName: 'Sales Events', taskTypeRequired: false } });
+    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: '2026-11-10T20:00:00.000Z', events: [row], updates: [], sourceLabel: 'Command Center', logging: { recordTypeName: 'Sales Events', taskTypeRequired: false } });
     expect(md).toContain('RecordTypeId `012XX0000000RTYAAA` (Sales Events)');
     expect(md).not.toContain('(Solutions Event)');
     expect(md).toContain('Leave SE_Task_Type__c empty.');

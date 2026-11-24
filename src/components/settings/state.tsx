@@ -14,14 +14,14 @@ import { api, ApiError, queryKey } from '@/client/api';
 import { useApi } from '@/client/hooks';
 import { useOptimisticMutation } from '@/client/optimistic/useOptimisticMutation';
 import { toast } from '@/client/toast';
-import { usePrefs } from '@/components/shell';
+import { usePrefs } from '@/components/shell/prefs';
 import { canPreview, DEFAULT_THRESHOLDS, parseThresholds, policyChanges, same, THRESHOLDS_KEY, type Thresholds } from './derive';
 import { useReportDirty, useSectionForm } from './form';
 import { personaOf } from '@/personas';
 import { carriedTaskRules, carryTaskRules, PERSONA_KEYS, withoutCarried } from './role';
 
 const PROFILE_KEYS = ['name', 'role', 'timezone', 'workingHours', 'managerName'] as const;
-const SENDING_KEYS = ['defaultMode', 'channels', 'dryRun', 'verifyReadback', 'undoWindowSec'] as const;
+const SENDING_KEYS = ['defaultMode', 'channels', 'dryRun', 'verifyReadback', 'undoWindowSec', 'autopilotAssetHosts'] as const;
 const BUDGET_KEYS = ['softUsd', 'hardUsd', 'alertPct', 'today'] as const;
 /** Settings ▸ Budgets ▸ Assistant: the chat's own limits (settings.chat), one explicit Save. */
 const ASSISTANT_LIMIT_KEYS = ['dailyUsd', 'messageUsd', 'maxSteps', 'researchUsd'] as const;
@@ -298,7 +298,7 @@ function usePersonaModel() {
             await api('undoAudit', { params: { id: personaAudit! }, body: {} });
           };
           const undo = personaAudit && abAudit ? { run: both } : personaAudit ? { auditId: personaAudit } : undefined;
-          toast({ key: 'persona-save', title: 'Role & rules saved', body: `${n === 1 ? '1 rule' : `${n} rules`} from Agent behavior now live${n === 1 ? 's' : ''} here.`, undo });
+          toast({ key: 'persona-save', title: 'Role & rules saved', body: `${n === 1 ? '1 rule' : `${n} rules`} from Autonomy now live${n === 1 ? 's' : ''} here.`, undo });
         })
         .catch(() => undefined);
     },
@@ -412,7 +412,7 @@ function useDisplayModel() {
 // ── The model ──────────────────────────────────────────────────────────────────────────────
 
 function useModel() {
-  const profile = useSectionForm('profile', PROFILE_KEYS, 'Profile & role', 'profile');
+  const profile = useSectionForm('profile', PROFILE_KEYS, 'Profile & hours', 'profile');
   const role = usePersonaModel();
   const sending = useSectionForm('sending', SENDING_KEYS, 'Sending', 'sending');
   const budgets = useSectionForm('budgets', BUDGET_KEYS, 'Budgets', 'budgets');

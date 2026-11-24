@@ -7,7 +7,8 @@
  *   3. candidates deterministic rules per item (candidates.ts); items with none are checked at no cost
  *   4. model      one cheap, tool-less call per batch of items (skills/check-completion.md)
  *   5. gate       done → `completion` (Sure only when the cited message is mine and strongly tied to the item,
- *                 at high confidence; otherwise Likely), partial → `progress`, not done → nothing
+ *                 at high confidence, and the item may auto-close (R1); otherwise Likely), partial → `progress`,
+ *                 not done → nothing
  *   6. write      through the scanner's writer (`linkEvidence`, `cc_link_evidence` semantics) inside a
  *                 zero-length run on `<connector>:completion:check` (like reconcile's relink runs), reason
  *                 prefix `done_check:`. The W2 bump enqueues `reevaluate`; the closure machine decides.
@@ -18,6 +19,7 @@
  */
 import { redact } from '@/connectors/redact';
 import { SCANNER_MODEL } from '@/llm/models';
+import type { SpendGate } from '@/llm/spend';
 import { loadSkill } from '@/llm/skill-loader';
 import { ledgerHash } from '@/db/ledger';
 
@@ -106,14 +108,29 @@ export interface CompletionPassInput {
   reevaluate?: ReevaluateEnqueuer;
   /** D0: what started this pass (`scan`, `catch_up`, `interval`), booked on each call. */
   trigger?: string;
+  /**
+   * H-7 / R8 (settings.closing.resolutionEngine): `live` retires this pass's own model call: the items with candidates
+   * are handed to the resolution check (`delegate`, one `resolution.check` per item) and the pass writes nothing.
+   * `shadow` and `legacy` (and absent): the pass runs as before.
+   */
+  resolutionEngine?: 'legacy' | 'shadow' | 'live';
+  delegate?: (workItemIds: string[]) => Promise<void>;
   log?: (msg: string, detail?: Record<string, unknown>) => void;
+  /**
+   * F-4 (caps audit 26): the job's spend hold (src/llm/spend/job-spend.ts). Each call reports the pass's spend; past
+   * the hold, with items still to judge, the pass raises a hand and stops (they stay pending for the continuation).
+   * The per-call budget is then the runaway guard (`ceilingUsd`), not `maxCallUsd`.
+   */
+  spend?: SpendGate | null;
 }
 
 export interface CompletionPassResult {
-  status: 'ok' | 'nothing_new' | 'deferred_budget' | 'partial';
+  status: 'ok' | 'nothing_new' | 'deferred_budget' | 'partial' | 'delegated';
   watermark: CompletionWatermark;
   /** Items are still pending because of the per-pass caps: run another pass soon. */
   more: boolean;
+  /** The pass passed its spend hold and asked to allow more; the rest waits for the answer (not `more`). */
+  pausedForSpend?: boolean;
   items: number;
   withCandidates: number;
   checked: number;
@@ -242,7 +259,8 @@ export async function runCompletionPass(input: CompletionPassInput): Promise<Com
   }
 
   // ---- 1–3: items, their windows, sources, candidates (deterministic, no model)
-  const items = await store.completionItems({ asOf: new Date(through).toISOString(), limit: 400 });
+  // every live item (the model work is paged by maxItemsPerPass below; this read is deterministic)
+  const items = await store.completionItems({ asOf: new Date(through).toISOString() });
   res.items = items.length;
   const since = new Map<string, number>();
   const factsOf = new Map(items.map((it) => [it.workItemId, itemFacts(it)]));
@@ -273,6 +291,15 @@ export async function runCompletionPass(input: CompletionPassInput): Promise<Com
     return res;
   }
 
+  if (input.resolutionEngine === 'live') {
+    // the resolution check judges them (its own triggers usually queued them already; the per-item dedupe absorbs repeats)
+    if (!input.dryRun) await input.delegate?.(entries.map((e) => e.item.workItemId));
+    res.status = 'delegated';
+    res.checked += entries.length;
+    log('completion: delegated to the resolution check', { items: entries.length });
+    return res;
+  }
+
   // Most recently active first; the per-pass cap leaves the rest pending.
   const latest = (e: BatchEntry) => Math.max(...e.candidates.map((c) => toMs(c.source.occurredAt) ?? 0));
   entries.sort((a, b) => latest(b) - latest(a));
@@ -297,11 +324,21 @@ export async function runCompletionPass(input: CompletionPassInput): Promise<Com
 
   const touched = new Map<ConnectorId, Set<string>>();
   const collected: Array<ItemVerdict & { candidate?: Candidate }> = [];
+  let askNext = false;
   try {
     const groups = batches(todo, L, nowIso);
     for (let gi = 0; gi < groups.length; gi++) {
       const batch = groups[gi]!;
       const rest = () => groups.slice(gi).flat();
+      if (askNext && input.spend) {
+        // H-5: past the hold with items still to judge: raise a hand at this safe point; they wait for the answer
+        await input.spend.ask({ pctDone: Math.round((gi / groups.length) * 100) }).catch(() => undefined);
+        keepPending(rest());
+        res.pausedForSpend = true;
+        res.status = 'partial';
+        log('completion: paused at the spend estimate; asked to allow more', { pending: rest().length, spentUsd: Number(res.costUsd.toFixed(5)) });
+        break;
+      }
       if (input.signal?.aborted) {
         keepPending(rest());
         res.status = 'partial';
@@ -322,9 +359,12 @@ export async function runCompletionPass(input: CompletionPassInput): Promise<Com
         break;
       }
       const { user, ids } = renderBatch(batch, { now: nowIso, meName: input.meName ?? 'me' });
-      const out = await input.model({ system: skill.body, user, model, effort, maxBudgetUsd: L.maxCallUsd, signal: input.signal });
+      // with a hold, one call's budget is the runaway guard only (F-4): the hold asks before a second call passes it
+      const maxBudgetUsd = input.spend ? Math.max(L.maxCallUsd, input.spend.ceilingUsd()) : L.maxCallUsd;
+      const out = await input.model({ system: skill.body, user, model, effort, maxBudgetUsd, signal: input.signal });
       res.calls += 1;
       res.costUsd += out.costUsd;
+      if (input.spend?.observe(res.costUsd) === 'ask') askNext = true;
       res.inputTokens += out.inputTokens;
       res.outputTokens += out.outputTokens;
       const candidates = batch.reduce((a, e) => a + e.candidates.length, 0);
@@ -386,12 +426,18 @@ export async function runCompletionPass(input: CompletionPassInput): Promise<Com
     // one DM) is ambiguous: none of those can auto-close, each at most asks to confirm.
     const doneCites = new Map<string, number>();
     for (const v of collected) if (v.verdict === 'done' && v.sourceItemId) doneCites.set(v.sourceItemId, (doneCites.get(v.sourceItemId) ?? 0) + 1);
+    const itemById = new Map(items.map((it) => [it.workItemId, it]));
     for (const v of collected) {
       const sig = gateVerdict(v, L);
       if (!sig) continue;
       if (sig.confidence === 'sure' && (doneCites.get(sig.sourceItemId) ?? 0) > 1) {
         sig.confidence = 'likely';
         sig.gate = 'shared_citation';
+      }
+      // R1: the user reopened, kept or marked it Not done (or it is on an ask-first list): never closed for them, asked.
+      if (sig.confidence === 'sure' && itemById.get(sig.workItemId)?.mayAutoClose === false) {
+        sig.confidence = 'likely';
+        sig.gate = 'user_corrected';
       }
       res.signals.push(sig);
       if (input.dryRun) continue;

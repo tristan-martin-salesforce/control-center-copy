@@ -1,0 +1,23 @@
+[
+  {
+    "kind": "record_snapshot",
+    "externalId": "Deal_Contribution__c:a3yXX0000000001AAA@2026-11-05T15:42:05.000+0000",
+    "occurredAt": "2026-11-05T15:42:05.000+0000",
+    "title": "DC on INITECH – Data Cloud Phase 2",
+    "excerpt": "role=AI + Data Architect; split=100; opp_stage=02 - Determining Problem, Impact, Ideal; close=2027-01-29; se=005XX000000ME01AAA",
+    "oppHints": [
+      "006XX0000000002AAA"
+    ],
+    "accountHints": [],
+    "payload": {
+      "Id": "a3yXX0000000001AAA",
+      "Opportunity__c": "006XX0000000002AAA",
+      "SE_Name__c": "005XX000000ME01AAA",
+      "Opportunity_Role__c": "AI + Data Architect",
+      "Split_Percentage__c": 100,
+      "IsClosed": null,
+      "IsWon": null,
+      "rec": "auto"
+    }
+  }
+]

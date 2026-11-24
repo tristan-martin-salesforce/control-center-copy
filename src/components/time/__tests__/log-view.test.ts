@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /**
- * Time ▸ Ledger (<TimePage> with ?view=log) against the real mock DataSource with a quarter of history
+ * Activity ▸ History (<TimePage> with ?view=history) against the real mock DataSource with a quarter of history
  * (tests/fixtures/activity-history.ts, placeholder data), fetch bridged in-process to the route handlers (the
  * panel.test.ts harness). Covers: the current quarter by default (tracking against the target, the states by the one
  * count map, waiting on you, earlier hours), where the hours went (an account and its opportunities, internal work)
  * and each line's rows one click deeper (a second click clears), a week's rows from the chart and its table view; a
- * past quarter (its logged vs target, compact read-only rows: an Org62 row reads "From Org62", never "Unconfirmed";
+ * past quarter (its logged vs target, compact read-only rows: an Org62 row reads as read from Org62, never "Unconfirmed", and has no Undo;
  * an excluded row says why; day headers linking to History; a status filter; the "That's everything" end); every
  * quarter side by side.
  */
@@ -20,7 +20,7 @@ import { $, $$, cleanup, click, render, waitFor } from '../../composer/__tests__
 import { mondayOf } from '../path-derive';
 import { withActivityHistory, type ActivityHistory } from '../../../../tests/fixtures/activity-history';
 
-let search = 'view=log';
+let search = 'view=history';
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => '/activity',
@@ -65,7 +65,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
-  search = 'view=log';
+  search = 'view=history';
   resetDataSourceForTests();
   ds = createMockDataSource({ seed: H.seed, autoplay: false, delays: { enrichMs: 1e8, reevalMs: 1e8, stepMs: 1e8, verifyMs: 1e8 } });
   ds.clock.freeze(new Date(H.seed.meta.asOf));
@@ -94,12 +94,12 @@ const row = (id: string, root: ParentNode = document) => $(`[data-row-id="${id}"
 const byText = (sel: string, text: string, root: ParentNode = document) => $$(sel, root).find((el) => el.textContent?.startsWith(text)) ?? null;
 const quarterRadio = (label: string, root: ParentNode) => $$('[role="radiogroup"][aria-label="Quarter"] [role="radio"]', root).find((b) => b.textContent?.includes(label)) ?? null;
 
-describe('Time ▸ Ledger', () => {
+describe('Activity ▸ History', () => {
   it('opens on the current quarter: tracking against the target, where the hours went, and the rows behind a line one click deeper', async () => {
     const { container } = await mount();
     const pane = await waitFor(() => $('[data-testid="activity-log"]', container));
     await waitFor(() => row('ac_tue_globex', pane));
-    expect($('[aria-label="Org62 views"] [role="tab"][aria-selected="true"]', container)?.textContent).toBe('Ledger');
+    expect($('[aria-label="Activity views"] [role="tab"][aria-selected="true"]', container)?.textContent).toBe('History');
 
     // the current quarter is the default; the past one is a choice, then every quarter
     expect(quarterRadio(H.cur.label, container)?.getAttribute('aria-checked')).toBe('true');
@@ -108,13 +108,32 @@ describe('Time ▸ Ledger', () => {
     // a past quarter's rows are not in the current quarter's list
     expect(row(H.ids.org62A, pane)).toBeNull();
 
-    // tracking: in Org62 against the target, then the states by the one count map, and what waits on you
-    const track = $('[data-testid="ledger-tracking"]', container)!;
-    expect($('[data-testid="ledger-logged"]', track)?.textContent).toMatch(/\d+(\.\d+)? h\s*in Org62 of \d+ h/);
-    expect($$('[data-testid="ledger-states"] [data-state]', track).map((li) => li.dataset.state)).toEqual(expect.arrayContaining(['org62', 'way', 'suggested', 'needs']));
-    expect($('[data-testid="ledger-projected"]', track)?.textContent).toMatch(/^\d+(\.\d+)? h of \d+ h if everything on its way, suggested and needing input lands$/);
-    await waitFor(() => $('[data-testid="ledger-waiting"] [data-part]', track));
-    expect($('[data-testid="ledger-earlier"]', track)?.textContent).toContain(`${H.seed.meta.quarter.loggedH} h logged before the app's rows`);
+    // C8: the quarter tracking card lives on History (the card To log used to carry): logged against the target, the meter
+    const card = await waitFor(() => $('[data-testid="q4-log"]', container));
+    expect($('[data-testid="q4-logged"]', card)?.textContent).toMatch(/\d+(\.\d+)? h\s*logged in Org62 of \d+ h/);
+    expect($('[role="meter"]', card)).not.toBeNull();
+    expect($('[data-testid="ledger-tracking"]', container)).toBeNull(); // one card, not two
+    // F4 (R2-4): the card tells no batch's life: no "to apply" / "to send", no per-batch lines; one quiet link to Sending
+    expect(card.textContent).not.toMatch(/to apply|to send|Slackbot|on its way to Org62 ·/);
+    expect($('[data-testid="q4-spill"]', card)).toBeNull();
+    const flight = $('[data-testid="q4-in-flight"]', card);
+    if (flight) {
+      expect(flight.textContent).toMatch(/^\d+ batch(es)? in flight ▸ Sending$/);
+      expect($('a', flight)?.getAttribute('href')).toContain('#time-runs');
+    }
+    // nothing still waiting on the user is History's: no in-flight batch here (Sending has it), no editable rows
+    expect($('[data-testid="sending-batch"]', container)).toBeNull();
+    expect($('[role="grid"] input, [role="grid"] select', pane)).toBeNull();
+    expect($$('[data-row-id]', pane).every((r) => r.dataset.density === 'compact')).toBe(true);
+    const waiting = $('[data-row-id] [data-testid="history-waiting"]', pane);
+    if (waiting) expect(waiting.getAttribute('href')).toContain('#time-needs');
+    // finished batches, newest first (the chip finds a batch's rows); a row on a batch still in flight says so once
+    // F4: one name (batchLabel, the time when two share a day) and one row count, the same as Sending's
+    for (const b of $$('[data-testid="history-batch"]', container)) expect(b.textContent).toMatch(/^✓Batch \d+ \w{3}( \d\d:\d\d( \(\d+\))?)? · \d+ rows? · .* h/);
+    for (const a of $$('[data-testid="history-in-batch"]', pane)) {
+      expect(a.textContent).toMatch(/^(in batch \d+ \w{3}( \d\d:\d\d( \(\d+\))?)?|on its way · Sending)/);
+      expect(a.getAttribute('href')).toContain('#time-runs');
+    }
 
     // where the hours went: an account and its opportunities, internal work on its own line
     const where = $('[data-testid="ledger-breakdowns"]', container)!;
@@ -165,11 +184,12 @@ describe('Time ▸ Ledger', () => {
     expect($('[data-testid="ledger-logged"]', track)?.textContent).toMatch(new RegExp(`^${H.prevLoggedH} h\\s*in Org62 of \\d+ h`));
     expect($('[data-testid="ledger-pace"]', track)).toBeNull(); // no pace for a quarter that is over
 
-    // an Org62 row: compact, read-only, "From Org62", never unconfirmed
+    // an Org62 row: compact, read-only, read from Org62, never unconfirmed; no Undo (the app never sent it)
     const native = row(H.ids.org62A, pane)!;
     expect(native.hasAttribute('data-compact')).toBe(true);
     expect($('input,select', native)).toBeNull();
-    expect(native.textContent).toContain('From Org62');
+    expect(native.textContent).toContain('Logged in Org62 (read from there)');
+    expect($('[data-testid="history-undo"]', native)).toBeNull();
     expect(native.textContent).not.toContain('Unconfirmed');
     // an excluded row says why; the overview counts it apart
     expect($('[data-testid="excluded-reason"]', row(H.ids.excluded, pane)!)?.textContent).toContain('Overlaps another row');
@@ -199,8 +219,14 @@ describe('Time ▸ Ledger', () => {
     expect(lines.textContent).toContain(H.prev.label);
     expect(lines.textContent).toContain(H.cur.label);
     expect($('#ledger-chart-h', container)?.textContent).toBe('By quarter');
-    await waitFor(() => row(H.ids.org62A, pane) && row('ac_tue_globex', pane));
-    expect($('[data-testid="log-end"]', pane)?.textContent).toContain(`That's everything · ${H.seed.activity.length} rows`);
+    await waitFor(() => $('[data-testid="log-end"]', pane)?.textContent?.includes(`That's everything · ${H.seed.activity.length} rows`) && row('ac_tue_globex', pane));
+    // scale (C8): at most four weeks open; an older week is its header until opened
+    const weeks = $$('[data-week]', pane);
+    expect(weeks.filter((w) => w.dataset.open === 'true').length).toBeLessThanOrEqual(4);
+    const old = mondayOf(H.seed.activity.find((e) => e.id === H.ids.org62A)!.date);
+    if ($(`[data-week="${old}"]`, pane)?.dataset.open === 'false') await click($(`[data-week="${old}"] [data-testid="log-week-toggle"]`, pane));
+    await waitFor(() => row(H.ids.org62A, pane));
+    expect($$('[data-week]', pane).filter((w) => w.dataset.open === 'true').length).toBeLessThanOrEqual(5);
     // a quarter's line opens it
     await click(byText('[data-testid="ledger-quarter-lines"] button', H.prev.label, container));
     await waitFor(() => quarterRadio(H.prev.label, container)?.getAttribute('aria-checked') === 'true');

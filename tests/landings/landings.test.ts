@@ -10,6 +10,7 @@ import type { ActivityEntry, DcRequest, Draft } from '@/contract';
 import { renderWorkOrder, type WorkOrderEvent } from '@/engines/activity/slackbot';
 import { NO_UC_HOLDS, planUseCases, type Org62UseCase, type UcOpp, type UcVdp, type UseCaseLink, type UseCasePlanInput } from '@/engines/activity/use-cases';
 import { canvasActionFor, canvasInputOf } from '@/lib/canvas/payload';
+import { upsertTable } from '@/lib/canvas/tables';
 import { applyChanges, EMPTY_STORE, type LandingStore } from '@/lib/landings/model';
 import { syncLandings, type LandingWorld } from '@/lib/landings/sync';
 import { eventUpdatesForBatch, eventUpdatesView, patchEventUpdate, proposeEventUpdates } from '@/lib/landings/updates';
@@ -130,9 +131,9 @@ describe('backfill: what predates landings', () => {
 
   it('DC requests: on a canvas a staged write; confirmed in Org62 a verified landing', () => {
     const dc: DcRequest = { id: 'dcr1', kind: 'add', oppId: 'opp_1', oppName: 'CUSTOMER_1 – Opp', accountId: null, accountName: null, org62OpportunityId: OPP, role: 'Solution Engineer', splitPercent: 100, fromSplit: null, comment: 'Ran discovery', status: 'approved', stage: 'in_canvas', outcome: null, note: null, canvasDraftId: 'd1', canvasUrl: null, dc: null, lockedReason: null, createdAt: NOW, updatedAt: NOW };
-    const md = renderWorkOrder({ ...BASE, events: [ev('a1')], updates: [] }).replace('|---|---|---|---|---|---|---|---|---|---|\n', `|---|---|---|---|---|---|---|---|---|---|\n|9|Deal_Contribution__c|CUSTOMER_1 – Opp|||Solution Engineer|100|${OPP}||Ran discovery|\n`);
+    const md = upsertTable(renderWorkOrder({ ...BASE, events: [ev('a1')], updates: [] }), 'dcs_create', 'DC rule', [['', 'Deal_Contribution__c', 'CUSTOMER_1 – Opp', '', '', 'Solution Engineer', '100', OPP, '', 'Ran discovery']]);
     const d = { ...canvas('d1', 'ready', [{ e: ev('a1') }]), destination: { ...canvas('d1', 'ready', [{ e: ev('a1') }]).destination, input: { ...(canvas('d1', 'ready', [{ e: ev('a1') }]).destination as { input: Record<string, unknown> }).input, markdown: md } } } as Draft;
-    expect(canvasInputOf(d.destination as never).markdown).toContain('Deal_Contribution__c');
+    expect(canvasInputOf(d.destination as never).markdown).toContain('## DEAL CONTRIBUTIONS TO CREATE (1 row)');
     let s = run(EMPTY_STORE, world({ drafts: [d], dcRequests: [dc] })).store;
     expect(s.writes.find((w) => w.rowKey.startsWith('dc:'))).toMatchObject({ op: 'create', state: 'staged', after: { Split_Percentage__c: '100', Opportunity_Role__c: 'Solution Engineer' } });
     expect(s.landings.find((l) => l.recordKind === 'deal_contribution')!.recordId).toBe('dcr1');

@@ -7,6 +7,7 @@
  */
 import { AppLink } from '@/components/shell/AppLink';
 import { useQueries } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { ChatResource, WorkItem } from '@/contract';
 import { api, queryKey } from '@/client/api';
 import { undoStateOf, type ChatMessageView } from '@/client/chat';
@@ -14,10 +15,12 @@ import { useApi } from '@/client/hooks';
 import { Button } from '@/ui';
 import { destinationShort } from '@/components/composer/destination';
 import { useAssistantSurface } from './assistant-context';
+import { needsReview, OPEN_IN_CLAUDE_LABEL, REVIEW_PROMPT_LABEL, useLaunchReview } from '@/components/agents/LaunchReview';
 import { openDeepLink } from './ChatActionCards';
 import { fieldLabel, fmtTime } from './format';
 import { fmtMin, threadTouched, touchedCount, withPersistedUndo, type TouchedChange } from './thread-model';
 import { useChatUi } from './ui-context';
+import { useReveal } from './card-parts';
 import s from './assistant.module.css';
 
 const SOURCE_WORD: Partial<Record<string, string>> = { calendar_event: 'Calendar', brief: 'Brief', policy: 'Policy', asset: 'File', file: 'File', url: 'Link', account: 'Account', opportunity: 'Opportunity', person: 'Person', initiative: 'Initiative' };
@@ -83,9 +86,11 @@ function DraftRow({ resource }: { resource: ChatResource }) {
   );
 }
 
-function SessionRow({ resource }: { resource: ChatResource }) {
+export function SessionRow({ resource }: { resource: ChatResource }) {
   const agents = useApi('getAgents', undefined, { staleTime: 10_000 });
   const run = agents.data?.runs.find((r) => r.id === resource.id);
+  // SEC-10: a prepared session (claude://code/new) shows Review prompt first, as the thread's session card does (exported for its test)
+  const { review, dialog } = useLaunchReview(openDeepLink);
   const since = run?.startedAt ? Math.max(0, Math.round((Date.now() - Date.parse(run.startedAt)) / 60_000)) : null;
   const line = !run
     ? agents.isPending
@@ -109,14 +114,15 @@ function SessionRow({ resource }: { resource: ChatResource }) {
         <span>{line}</span>
       </span>
       {run?.deepLink ? (
-        <Button variant="ghost" size="sm" onClick={() => openDeepLink(run.deepLink!)} data-open-claude>
-          Open in Claude
+        <Button variant="ghost" size="sm" onClick={() => review(run.deepLink!, run.title)} data-open-claude={needsReview(run.deepLink) ? 'review' : 'open'}>
+          {needsReview(run.deepLink) ? REVIEW_PROMPT_LABEL : OPEN_IN_CLAUDE_LABEL}
         </Button>
       ) : (
         <AppLink href={resource.href} className={s.more}>
           Open
         </AppLink>
       )}
+      {dialog}
     </li>
   );
 }
@@ -126,7 +132,11 @@ export function ThreadContextPane({ messages, className = '' }: { messages: Chat
   const surface = useAssistantSurface();
   const t = threadTouched(messages, ui.actions);
   const total = touchedCount(t);
-  const itemIds = t.itemIds.slice(0, 6);
+  // caps audit F-13: six items, three agent lines and six sources first; Show more reaches every one
+  const itemReveal = useReveal(t.itemIds.length, 6);
+  const sourceReveal = useReveal(t.sources.length, 6);
+  const [allAgents, setAllAgents] = useState(false);
+  const itemIds = t.itemIds.slice(0, itemReveal.shown);
   const items = useQueries({
     queries: itemIds.map((x) => ({
       queryKey: queryKey('getItem', { params: { id: x.id } }),
@@ -139,10 +149,11 @@ export function ThreadContextPane({ messages, className = '' }: { messages: Chat
 
   const loaded = items.map((q) => q.data?.item).filter((x): x is WorkItem => !!x);
   const youMin = loaded.filter((i) => i.state !== 'done').reduce((n, i) => n + i.effort.youMin, 0);
-  const agentLines = [
+  const agentAll = [
     ...loaded.filter((i) => i.effort.agentMin > 0 && i.state !== 'done').map((i) => `${i.title} ~${fmtMin(i.effort.agentMin)}`),
     ...t.sessions.map((r) => agents.data?.runs.find((x) => x.id === r.id)).filter((r) => r && (r.state === 'running' || r.state === 'queued')).map((r) => `${r!.title}, running`),
-  ].slice(0, 3);
+  ];
+  const agentLines = allAgents ? agentAll : agentAll.slice(0, 3);
   // CAPACITY: today-scoped hands-on minutes, what's still open, and agent time running in parallel.
   const cap = today.data?.header.capacity;
 
@@ -209,6 +220,7 @@ export function ThreadContextPane({ messages, className = '' }: { messages: Chat
               <ItemRow key={x.id} id={x.id} label={x.label} item={items[i]?.data?.item} loading={items[i]?.isPending} />
             ))}
           </ul>
+          {itemReveal.control}
         </section>
       ) : null}
 
@@ -260,7 +272,7 @@ export function ThreadContextPane({ messages, className = '' }: { messages: Chat
         <section className={s.cxGroup}>
           <h3>Sources cited</h3>
           <ul className={s.cxList}>
-            {t.sources.slice(0, 6).map((r) => {
+            {t.sources.slice(0, sourceReveal.shown).map((r) => {
               const ext = /^https?:\/\//i.test(r.href);
               return (
                 <li key={`${r.kind}:${r.id}`} className={s.cxIt}>
@@ -279,6 +291,7 @@ export function ThreadContextPane({ messages, className = '' }: { messages: Chat
               );
             })}
           </ul>
+          {sourceReveal.control}
         </section>
       ) : null}
 
@@ -294,9 +307,16 @@ export function ThreadContextPane({ messages, className = '' }: { messages: Chat
           </span>
         ) : null}
         <span className={s.bg}>
-          {agentLines.length
-            ? `✦ Agent time, in the background: ${agentLines.join(' · ')}`
-            : cap?.agentRunsBackground
+          {agentLines.length ? (
+            <>
+              {`✦ Agent time, in the background: ${agentLines.join(' · ')}`}
+              {agentAll.length > 3 ? (
+                <button type="button" className={s.more} onClick={() => setAllAgents((v) => !v)} data-agents-more>
+                  {allAgents ? 'Show fewer' : `Show all ${agentAll.length}`}
+                </button>
+              ) : null}
+            </>
+          ) : cap?.agentRunsBackground
               ? `✦ Agent: ${cap.agentRunsBackground} run${cap.agentRunsBackground === 1 ? '' : 's'} in the background (~${fmtMin(cap.agentMinBackground)})`
               : '✦ Agent time runs in the background and never counts against your day.'}
         </span>

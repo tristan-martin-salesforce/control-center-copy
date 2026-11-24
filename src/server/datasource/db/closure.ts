@@ -18,138 +18,33 @@
  */
 import { sql } from 'drizzle-orm';
 
-import type { WorkItemRecord, WorkState } from '@/contract';
+import type { WorkItemRecord } from '@/contract';
 import { actors, engineUpdate, withChangeSet } from '@/db/changeset';
 import type { Db, Tx } from '@/db/client';
 import { enqueueJob } from '@/db/queue';
 import { reopenDecisions, workItemEvidence, workItemRelations, workItems } from '@/db/schema';
-import { closureSettingsFrom, signalFromEvidence, type ClosureDecision, type ClosureField, type EvidenceLink, type FieldChange } from '@/engines/closure';
-import { reevalDedupeKey, runReevalPass, shouldCommit, type ReevalPass } from '@/engines/reeval';
-import type { ClosureItem, ClosureKind, PersonLite, Resolution, ResolutionDetail, SignalSource, WorkItemStatus } from '@/engines/types';
-import { CLOSURE_SETTING_KEYS } from '@/engines/types';
-
+import { closureSettingsFrom, signalFromEvidence, type EvidenceLink } from '@/engines/closure/signals';
+import type { ClosureDecision, ClosureField, FieldChange } from '@/engines/closure/types';
+import { autoCloseBlock } from '@/engines/closure/correction';
+import { loadCorrectionFacts } from '@/engines/closure/correction-db';
+import { loadClosingSettings } from '@/engines/settle/select-db';
+import { reevalDedupeKey, shouldCommit } from '@/engines/reeval/generation';
+import { runReevalPass, type ReevalPass } from '@/engines/reeval/pass';
+import {
+  type ClosureItem, type ClosureKind, type PersonLite, type Resolution, type ResolutionDetail, type SignalSource,
+  type WorkItemStatus, CLOSURE_SETTING_KEYS,
+} from '@/engines/types';
 import { numToConf } from './enums';
 import { loadKv } from './ext';
 import { ensureExtractor } from './seed';
 import { writeExt, type ReadCtx, type WriteCtx } from './store/common';
 import { loadPeople, loadPersonRefs } from './store/entities';
 import { readMeta } from './store/settings';
-import { insertWorkItem, loadWorkItems, logTransition, updateWorkItem, workItemColumns, type WorkLinkTargets } from './store/work';
-
-const TO_ENGINE: Record<WorkState, WorkItemStatus> = {
-  suggested: 'suggested',
-  open: 'open',
-  in_progress: 'in_progress',
-  waiting_on_me: 'waiting_on_me',
-  waiting_on_others: 'waiting_on_others',
-  likely_done: 'likely_done',
-  done: 'done',
-  reopened: 'open',
-  snoozed: 'snoozed',
-  dismissed: 'dismissed',
-};
-
-/** Engine status → contract state. The contract has no `merged` (a merged item reads as dismissed). */
-export function stateFromEngine(s: WorkItemStatus): WorkState {
-  return s === 'merged' ? 'dismissed' : s;
-}
-
-const LOCK_ALIAS: Record<string, string> = { state: 'status' };
-
-export function closureItemOf(w: WorkItemRecord, me: { id: string; name: string }): ClosureItem {
-  const owner: PersonLite | null = w.owner ? { id: w.owner.id, name: w.owner.name, isMe: w.owner.id === me.id } : null;
-  return {
-    id: w.id,
-    version: w.version,
-    kind: w.kind,
-    status: TO_ENGINE[w.state],
-    statusChangedAt: w.updatedAt,
-    title: w.title,
-    initiativeId: w.initiativeId,
-    resolution: w.resolution,
-    resolutionDetail: w.resolutionDetail,
-    involvement: w.involvement,
-    owner,
-    doneAt: w.doneAt,
-    doneBy: w.doneBy,
-    dismissedAt: w.dismissed?.at ?? null,
-    deliverableRefs: w.deliverable?.assetId ? [w.deliverable.assetId] : [],
-    snoozedUntil: w.snoozedUntil,
-    snoozedFromStatus: w.snoozedFrom ? TO_ENGINE[w.snoozedFrom] : null,
-    waitingReason: w.waiting?.reason ?? null,
-    waitingSince: w.waiting?.since ?? null,
-    likelyDone: w.likelyDone,
-    loopedBackIn: w.loopedBackIn,
-    linkedSessionIds: w.runIds,
-    // the machine checks `status` (and W0's `state`) plus the side fields a target state needs
-    userLockedFields: w.userLockedFields.flatMap((f) => (LOCK_ALIAS[f] ? [f, LOCK_ALIAS[f]!] : [f])),
-  };
-}
-
-/**
- * The record after a transition / update decision. Status moves keep the contract's invariants: leaving
- * done clears the resolution; a done/dismissed item that opens again is `reopened`; waiting fields follow
- * the waiting states.
- */
-export function recordAfterDecision(cur: WorkItemRecord, d: ClosureDecision, at: string, me?: { id: string; name: string }): WorkItemRecord {
-  const next: WorkItemRecord = { ...cur };
-  const f = new Map(d.fieldChanges.map((c) => [c.field, c.after]));
-  const to = d.transition ? d.transition.to : TO_ENGINE[cur.state];
-  const closedBefore = cur.state === 'done' || cur.state === 'dismissed';
-  let state = stateFromEngine(to);
-  if (d.transition && state === 'open' && (closedBefore || d.labels.some((l) => l.kind === 'reopened' || l.kind === 'looped_back_in'))) state = 'reopened';
-  next.state = state;
-
-  if (f.has('involvement')) next.involvement = f.get('involvement') as WorkItemRecord['involvement'];
-  if (f.has('owner')) {
-    const o = f.get('owner') as PersonLite | null;
-    next.owner = o ? { id: o.id ?? cur.owner?.id ?? o.name, name: o.name } : cur.owner;
-  } else if (me && next.involvement === 'owner' && cur.involvement !== 'owner' && cur.owner && cur.owner.id !== me.id) {
-    // Looped back in (R-UI-22): I own it again, so the teammate a hand-off made owner stops being it.
-    next.owner = { id: me.id, name: me.name };
-  }
-  if (f.has('loopedBackIn')) next.loopedBackIn = (f.get('loopedBackIn') as WorkItemRecord['loopedBackIn']) ?? null;
-  if (f.has('snoozedUntil')) next.snoozedUntil = (f.get('snoozedUntil') as string | null) ?? null;
-  if (f.has('snoozedFromStatus')) {
-    const s = f.get('snoozedFromStatus') as WorkItemStatus | null;
-    next.snoozedFrom = s ? stateFromEngine(s) : null;
-  }
-  if (f.has('likelyDone')) next.likelyDone = (f.get('likelyDone') as WorkItemRecord['likelyDone']) ?? null;
-  const waitingReason = f.has('waitingReason') ? (f.get('waitingReason') as string | null) : (cur.waiting?.reason ?? null);
-  const waitingSince = f.has('waitingSince') ? (f.get('waitingSince') as string | null) : (cur.waiting?.since ?? null);
-
-  if (state === 'done') {
-    next.doneAt = (f.get('doneAt') as string | undefined) ?? cur.doneAt ?? at;
-    next.doneBy = 'engine';
-    next.closedReason = d.reason;
-    next.likelyDone = null;
-    next.waiting = null;
-    next.snoozedUntil = null;
-    if (d.resolution) {
-      next.resolution = d.resolution.resolution;
-      next.resolutionDetail = { ...d.resolution.detail, inferred: d.resolution.detail.inferred ?? true };
-    }
-  } else {
-    if (d.transition && cur.state === 'done') {
-      next.doneAt = null;
-      next.doneBy = null;
-      next.closedReason = null;
-      next.resolution = null;
-      next.resolutionDetail = null;
-    }
-    if (state === 'waiting_on_me' || state === 'waiting_on_others') {
-      next.waiting = waitingReason ? { ...(cur.waiting ?? {}), on: state === 'waiting_on_me' ? 'me' : 'others', reason: waitingReason, since: waitingSince ?? at } : cur.waiting;
-    } else if (d.transition) next.waiting = null;
-    if (state !== 'snoozed' && d.transition && cur.state === 'snoozed') next.snoozedUntil = null;
-    if (state === 'likely_done' && !next.likelyDone) next.likelyDone = { reason: d.reason, evidenceId: d.transition?.evidenceId ?? null };
-    if (state !== 'likely_done' && d.transition) next.likelyDone = null;
-  }
-  if (state === 'reopened') {
-    next.reopened = { reason: d.labels.find((l) => l.kind === 'reopened' || l.kind === 'looped_back_in')?.text ?? d.reason, at };
-    next.dismissed = null;
-  }
-  return next;
-}
+import {
+  insertWorkItem, loadWorkItems, logTransition, updateWorkItem, workItemColumns, type WorkLinkTargets,
+} from './store/work';
+import { closureItemOf, recordAfterDecision } from './closure.record';
+export { stateFromEngine, closureItemOf, recordAfterDecision, reopenedFromDone } from './closure.record';
 
 // ===========================================================================
 // Re-evaluation writer (BE-REEVAL): the `reevaluate` job (src/jobs/handlers/reevaluate.ts)
@@ -401,8 +296,13 @@ async function passContext(tx: Tx, o: ReevaluateOptions, now: Date): Promise<Pas
   const seen = wm ? new Set(wm.evidenceIds) : null;
   const statusChangedAt = Date.parse(iso(row.status_changed_at));
   const fresh = evidence.filter((e) => (seen ? !seen.has(e.id) : Date.parse(e.linkedAt) > statusChangedAt));
+  // R1: the correction rule Settle uses too (reopened, kept, Not done, ask-first lists), computed by the same query.
+  const facts = (await loadCorrectionFacts(tx, o.userId, [o.workItemId])).get(o.workItemId);
+  const block = facts ? autoCloseBlock(facts, await loadClosingSettings(tx, o.userId)) : null;
   const item: ClosureItem = {
     ...closureItemOf(rec, rc.me),
+    mayAutoClose: block === null,
+    autoCloseBlock: block,
     statusChangedAt: iso(row.status_changed_at),
     closureKind: row.closure_kind,
     closureTarget: row.closure_target,

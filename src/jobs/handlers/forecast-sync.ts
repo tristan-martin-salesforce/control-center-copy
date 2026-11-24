@@ -19,7 +19,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@/llm/provider';
 import { sql } from 'drizzle-orm';
 
 import { budgetsForDay } from '@/contract';
@@ -177,7 +177,12 @@ export async function runForecastSyncJob(ctx: JobContext, d: ForecastJobDeps = d
       complete = true;
       break;
     }
-    after = page[page.length - 1]!.org62Id;
+    const next = page[page.length - 1]!.org62Id;
+    if (next === after) {
+      partial = 'no_progress'; // safety: a page that does not move the cursor would loop
+      break;
+    }
+    after = next;
   }
   if (!complete && !partial) partial = 'too_many';
 
@@ -245,7 +250,8 @@ export async function runForecastDraftJob(ctx: JobContext, d: ForecastJobDeps = 
           select coalesce(title, 'Meeting') as title, starts_at as start from calendar_events
            where owner_user_id = ${ctx.userId} and account_id = ${rec.accountId} and deleted_upstream_at is null
              and starts_at >= ${since}::timestamptz and starts_at <= ${now.toISOString()}::timestamptz
-           order by starts_at desc limit 12`)
+           order by starts_at desc -- every meeting since the notes changed (caps audit 2026-11-21: was 12)
+        `)
       ).rows.map((m) => ({ title: m.title, start: new Date(m.start).toISOString() }))
     : [];
   const input = { record: rec, template: t.template, personaBlock: renderPersonaBlock(persona), meetingsSince: meetings, names: [rec.accountName, rec.opportunityName].filter((x): x is string => !!x), now, timezone: tz };
@@ -287,8 +293,8 @@ export async function runForecastDraftJob(ctx: JobContext, d: ForecastJobDeps = 
 
 export function forecastJobDefs(): JobHandlerDef[] {
   return [
-    { kind: FORECAST_SYNC_JOB, queue: FORECAST_QUEUE, wired: true, description: 'Specialist Forecast read: my records this and next quarter + note history (fixed SOQL, read-only) → specialist_forecasts', handler: (ctx) => runForecastSyncJob(ctx) },
-    { kind: FORECAST_DRAFT_JOB, queue: FORECAST_QUEUE, wired: true, description: "Draft one Specialist Forecast's weekly note: a read-only research run, $0.25 cap", handler: (ctx) => runForecastDraftJob(ctx) },
+    { kind: FORECAST_SYNC_JOB, queue: FORECAST_QUEUE, wired: true, spends: true, description: 'Specialist Forecast read: my records this and next quarter + note history (fixed SOQL, read-only) → specialist_forecasts', handler: (ctx) => runForecastSyncJob(ctx) },
+    { kind: FORECAST_DRAFT_JOB, queue: FORECAST_QUEUE, wired: true, spends: true, description: "Draft one Specialist Forecast's weekly note: a read-only research run, $0.25 cap", handler: (ctx) => runForecastDraftJob(ctx) },
   ];
 }
 

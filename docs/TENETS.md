@@ -1,4 +1,4 @@
-# Control Center — Tenets
+# Command Center — Tenets
 
 - **North stars** are ordered priorities. Use them to break ties; the higher one wins.
 - **Design tenets** are invariants. Nobody, human or agent, violates one without an explicit conversation with Tristan.

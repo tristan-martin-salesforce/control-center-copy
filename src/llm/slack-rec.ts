@@ -6,12 +6,13 @@
  * misses were never recorded). The runner now parses each search page / thread read / channel read the agent
  * gets back and records every message in it (dedupe by channel + ts), before the model sees the result. The
  * agent cites them as `<channelId>:<ts>`; its own `cc_record_source_items` for the same message returns the same
- * id. No extra model cost. Redaction and the 1000-character excerpt cap apply as for agent records (normalizeItem).
+ * id. No extra model cost. Redaction and the 4000-character excerpt cap (R6) apply as for agent records (normalizeItem).
  */
 import type { NormalizedSourceItem, ScanContext, ScannerStore } from '../scanner/types';
 import { parseSlackChannel, parseSlackSearch, parseSlackThread, slackFilesOf, slackHints, type ParsedSlackMessage, type SlackChannelType } from '../connectors/slack/parse';
 import { normalizeItem, type CcRunState } from './cc-tools';
 import { trace } from '../scanner/trace';
+import { isParseDrift } from '../errors/drift';
 
 /** Bare tool names whose results are recorded. */
 export const SLACK_REC_TOOLS = new Set(['slack_search_public_and_private', 'slack_search_public', 'slack_read_thread', 'slack_read_channel']);
@@ -50,6 +51,8 @@ export interface SlackRecStats {
 
 export class SlackAutoRecorder {
   readonly stats: SlackRecStats = { calls: 0, parsed: 0, recorded: 0, dup: 0, errors: 0 };
+  /** CONN-9: the parser saw Slack's own markers and read nothing (a format change); the runner fails the run on it. */
+  drift: string | null = null;
   /** channelId → what search results said about it (thread reads carry no channel line). */
   private readonly channels = new Map<string, { type?: SlackChannelType; name?: string }>();
   private readonly handled = new Set<string>();
@@ -132,6 +135,7 @@ export class SlackAutoRecorder {
       return res.length;
     } catch (err) {
       this.stats.errors += 1;
+      if (isParseDrift(err)) this.drift ??= (err as Error).message.slice(0, 160);
       trace(this.state.runId, 'rec', { tool, error: (err as Error)?.name ?? 'error' });
       return 0;
     }

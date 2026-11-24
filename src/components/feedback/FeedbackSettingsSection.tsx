@@ -3,7 +3,7 @@
  * Settings ▸ Feedback (D-56): where "Report a bug / idea" posts. Explicit save, like the other sections.
  *
  *   Channel id     C… / G… (empty: the team default in config/team.json)
- *   Channel name   "#control-center-feedback" (shown in the panel)
+ *   Channel name   "#command-center-feedback" (shown in the panel)
  *   Post live      on: Send posts (still behind Settings ▸ Sending dry run); off: Send shows the payload and copies it
  */
 import { useApi } from '@/client/hooks';
@@ -42,7 +42,7 @@ export function FeedbackSection() {
             <TextInput id="fb-channel" width="sm" value={d.channelId ?? ''} placeholder="C0123ABCD" onChange={(e) => f.set('channelId', e.target.value.trim().toUpperCase())} aria-invalid={!!idErr} data-testid="fb-channel" />
           </Row>
           <Row label="Channel name" htmlFor="fb-channel-name" help="How the panel names it." edited={f.changed('channelName')}>
-            <TextInput id="fb-channel-name" width="md" value={d.channelName ?? ''} placeholder="#control-center-feedback" onChange={(e) => f.set('channelName', e.target.value)} data-testid="fb-channel-name" />
+            <TextInput id="fb-channel-name" width="md" value={d.channelName ?? ''} placeholder="#command-center-feedback" onChange={(e) => f.set('channelName', e.target.value)} data-testid="fb-channel-name" />
           </Row>
           <Row
             label="Post live"

@@ -12,11 +12,13 @@
  */
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
+import { inStateDir } from '@/lib/state-folder';
 import type { ConnectorHealthProbe, CoverageObject, Cursor, DeterministicFetcher, FetchResult, NormalizedSourceItem, TimeWindow } from '@/scanner/types';
 import { redact, redactExcerpt } from '../redact';
+import { localFilesPort, localFilesRuntime, type LocalFilesPort } from '../runtime/local-files';
 import { decodeCursor, encodeCursor, h16, systemClock, throwIfAborted, type Clock } from '../util';
 import { deriveStatus, FRESH_MS, type DesktopMeta, type Derived, type RegistryEntry } from './status';
 import { applyChunk, emptyTranscriptState, findCcTag, TURNS_V, type TranscriptState } from './transcript';
@@ -39,7 +41,7 @@ export class MemorySessionStateStore implements SessionStateStore {
   }
 }
 
-export const defaultSessionStateDir = () => join(homedir(), 'Library', 'Application Support', 'control-center', 'claude-session-state');
+export const defaultSessionStateDir = () => inStateDir('claude-session-state');
 
 export class FileSessionStateStore implements SessionStateStore {
   constructor(private dir = defaultSessionStateDir()) {}
@@ -95,6 +97,11 @@ export interface ClaudeSessionsOptions {
    * (`humanTurns`, the time engine's prompts) and recorded without the model. Default 60.
    */
   turnsBackfillDays?: number;
+  /**
+   * The files the fetcher reads (the sessions registry, transcripts, the desktop index): a `local_files` connector
+   * runtime's port. Default: one confined to this fetcher's three folders (src/connectors/runtime/local-files.ts).
+   */
+  files?: LocalFilesPort;
 }
 
 export interface FileCursor {
@@ -113,8 +120,10 @@ export interface FileCursor {
 /** Statuses that need the model's eyes (blocked on me, finished, failed). busy and idle are live state only. */
 export const ATTENTION_STATUSES: ReadonlySet<string> = new Set(['waiting', 'done', 'errored']);
 export const MODEL_MIN_INTERVAL_MS = 5 * 60_000;
+/** R15 (SCN-12): an idle, unlinked session whose content changed reaches the model once it has been quiet this long. */
+export const IDLE_QUIET_MS = 30 * 60_000;
 
-export type SessionModelReason = 'new_session' | 'status_attention' | 'linked_content';
+export type SessionModelReason = 'new_session' | 'status_attention' | 'linked_content' | 'idle_quiet';
 export type SessionSkipReason = 'status_only' | 'unlinked_content' | 'min_interval' | 'turns_backfill';
 
 /**
@@ -124,9 +133,12 @@ export type SessionSkipReason = 'status_only' | 'unlinked_content' | 'min_interv
  *  - what the model reads changed (status bucket, title, summary, branch, tag): yes when the session is now waiting,
  *    done or errored and it was not before (status_attention), or when it is linked to an open item (linked_content);
  *    otherwise it is recorded without the model (unlinked_content);
+ *  - R15: an idle session (a live session that ended its turn: "PR is ready, please review") that is not linked is held
+ *    as a pending change while it is busy-quiet, and goes to the model once it has been quiet `IDLE_QUIET_MS` (idle_quiet);
+ *    before, it was recorded without the model and never looked at until the terminal closed;
  *  - a yes within `minIntervalMs` of the model's last look waits (min_interval), and is looked at once the interval passed.
  */
-export function sessionModelDecision(i: { prev?: FileCursor; contentHash: string; meaning: string; status: string; linked: boolean; nowMs: number; minIntervalMs: number }): {
+export function sessionModelDecision(i: { prev?: FileCursor; contentHash: string; meaning: string; status: string; linked: boolean; nowMs: number; minIntervalMs: number; quietMs?: number }): {
   to: 'model' | 'quiet' | 'none';
   reason?: SessionModelReason | SessionSkipReason;
   next: Omit<FileCursor, 'o' | 'i'>;
@@ -139,7 +151,10 @@ export function sessionModelDecision(i: { prev?: FileCursor; contentHash: string
   if (p.mh === undefined && !changed) return { to: 'none', next: { eh: i.contentHash, mh: i.meaning, ms: i.status, ...(p.m ? { m: p.m } : {}) } };
   const meaningChanged = p.mh === undefined || p.mh !== i.meaning;
   if (!meaningChanged && !p.p) return { to: changed ? 'quiet' : 'none', ...(changed ? { reason: 'status_only' as const } : {}), next: { eh: i.contentHash, ...accounted } };
-  const qualifies: SessionModelReason | null = ATTENTION_STATUSES.has(i.status) && p.ms !== i.status ? 'status_attention' : i.linked ? 'linked_content' : null;
+  const idleQuiet = i.status === 'idle' && !i.linked && (i.quietMs ?? 0) >= IDLE_QUIET_MS;
+  const qualifies: SessionModelReason | null = ATTENTION_STATUSES.has(i.status) && p.ms !== i.status ? 'status_attention' : i.linked ? 'linked_content' : idleQuiet ? 'idle_quiet' : null;
+  // R15: an idle unlinked change not quiet long enough yet stays pending (its meaning not accounted), so a later poll sends it.
+  if (!qualifies && i.status === 'idle' && !i.linked) return { to: changed ? 'quiet' : 'none', ...(changed ? { reason: 'unlinked_content' as const } : {}), next: { eh: i.contentHash, ...accounted, p: 1 } };
   if (!qualifies) return { to: changed ? 'quiet' : 'none', ...(changed ? { reason: 'unlinked_content' as const } : {}), next: { eh: i.contentHash, mh: i.meaning, ms: i.status, ...(p.m ? { m: p.m } : {}) } };
   if (p.m && i.nowMs - p.m < i.minIntervalMs) return { to: changed ? 'quiet' : 'none', ...(changed ? { reason: 'min_interval' as const } : {}), next: { eh: i.contentHash, ...accounted, p: 1 } };
   return { to: 'model', reason: qualifies, next: { eh: i.contentHash, mh: i.meaning, ms: i.status, m: i.nowMs } };
@@ -182,8 +197,10 @@ export function repoOfCwd(cwd: string | undefined): string | undefined {
 
 export class ClaudeSessionsFetcher implements DeterministicFetcher {
   readonly connector = 'claude_sessions' as const;
-  private readonly o: Required<Omit<ClaudeSessionsOptions, 'resolveBranch' | 'desktopDir' | 'stateStore' | 'clock'>> & { resolveBranch?: ClaudeSessionsOptions['resolveBranch']; desktopDir: string | null; stateStore: SessionStateStore; clock: Clock };
+  private readonly o: Required<Omit<ClaudeSessionsOptions, 'resolveBranch' | 'desktopDir' | 'stateStore' | 'clock' | 'files'>> & { resolveBranch?: ClaudeSessionsOptions['resolveBranch']; desktopDir: string | null; stateStore: SessionStateStore; clock: Clock };
   private desktopCache = new Map<string, { mtime: number; size: number; meta: DesktopMeta | null }>();
+  /** Injected read transport (local_files runtime). */
+  private readonly files: LocalFilesPort;
 
   constructor(opts: ClaudeSessionsOptions = {}) {
     const home = homedir();
@@ -203,6 +220,7 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
       modelMinIntervalMs: opts.modelMinIntervalMs ?? MODEL_MIN_INTERVAL_MS,
       turnsBackfillDays: opts.turnsBackfillDays ?? 60,
     };
+    this.files = opts.files ?? localFilesPort(localFilesRuntime({ connector: 'claude_sessions', roots: [this.o.sessionsDir, this.o.projectsDir, this.o.desktopDir] }));
   }
 
   async scopes(): Promise<string[]> {
@@ -212,7 +230,7 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
   async health(): Promise<ConnectorHealthProbe> {
     const checkedAt = this.o.clock().toISOString();
     try {
-      await stat(this.o.projectsDir);
+      await this.files.stat(this.o.projectsDir);
       return { state: 'ok', checkedAt };
     } catch (e) {
       return { state: 'degraded', errorClass: 'config', detail: `cannot read ${basename(this.o.projectsDir)}: ${(e as NodeJS.ErrnoException).code ?? 'error'}`, checkedAt };
@@ -224,14 +242,14 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
   async readRegistry(procs: Map<number, string>): Promise<RegistryEntry[]> {
     let names: string[];
     try {
-      names = (await readdir(this.o.sessionsDir)).filter((n) => /^\d+\.json$/.test(n)); // never the *.key files
+      names = (await this.files.readdir(this.o.sessionsDir)).filter((n) => /^\d+\.json$/.test(n)); // never the *.key files
     } catch {
       return [];
     }
     const out: RegistryEntry[] = [];
     for (const n of names) {
       try {
-        const j = JSON.parse(await readFile(join(this.o.sessionsDir, n), 'utf8')) as Record<string, unknown>;
+        const j = JSON.parse(await this.files.readText(join(this.o.sessionsDir, n))) as Record<string, unknown>;
         const pid = Number(j.pid);
         if (!pid || typeof j.sessionId !== 'string') continue;
         const procStart = typeof j.procStart === 'string' ? norm(j.procStart) : undefined;
@@ -266,14 +284,14 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
     const out: Array<{ path: string; sessionId: string; mtimeMs: number; size: number; ino: number }> = [];
     let dirs: string[];
     try {
-      dirs = await readdir(this.o.projectsDir);
+      dirs = await this.files.readdir(this.o.projectsDir);
     } catch {
       return out;
     }
     for (const d of dirs) {
       let files: string[];
       try {
-        files = await readdir(join(this.o.projectsDir, d));
+        files = await this.files.readdir(join(this.o.projectsDir, d));
       } catch {
         continue;
       }
@@ -281,7 +299,7 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
         if (!f.endsWith('.jsonl')) continue;
         try {
           const p = join(this.o.projectsDir, d, f);
-          const st = await stat(p);
+          const st = await this.files.stat(p);
           out.push({ path: p, sessionId: f.slice(0, -'.jsonl'.length), mtimeMs: st.mtimeMs, size: st.size, ino: st.ino });
         } catch {
           /* vanished */
@@ -298,7 +316,7 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
     if (!root) return map;
     let accts: string[];
     try {
-      accts = await readdir(root);
+      accts = await this.files.readdir(root);
     } catch {
       return map;
     }
@@ -306,7 +324,7 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
     for (const a of accts) {
       let orgs: string[];
       try {
-        orgs = await readdir(join(root, a));
+        orgs = await this.files.readdir(join(root, a));
       } catch {
         continue;
       }
@@ -314,12 +332,12 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
         const dir = join(root, a, org);
         let files: string[];
         try {
-          files = await readdir(dir);
+          files = await this.files.readdir(dir);
         } catch {
           continue;
         }
         try {
-          const idx = JSON.parse(await readFile(join(dir, 'archived-sessions.idx'), 'utf8')) as { archived?: string[] };
+          const idx = JSON.parse(await this.files.readText(join(dir, 'archived-sessions.idx'))) as { archived?: string[] };
           for (const id of idx.archived ?? []) archived.add(id);
         } catch {
           /* optional */
@@ -328,12 +346,12 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
           if (!/^local_.*\.json$/.test(f)) continue;
           const p = join(dir, f);
           try {
-            const st = await stat(p);
+            const st = await this.files.stat(p);
             const c = this.desktopCache.get(p);
             let meta: DesktopMeta | null;
             if (c && c.mtime === st.mtimeMs && c.size === st.size) meta = c.meta;
             else {
-              const j = JSON.parse(await readFile(p, 'utf8')) as Record<string, unknown>;
+              const j = JSON.parse(await this.files.readText(p)) as Record<string, unknown>;
               meta = {
                 sessionId: typeof j.sessionId === 'string' ? j.sessionId : undefined,
                 cliSessionId: typeof j.cliSessionId === 'string' ? j.cliSessionId : undefined,
@@ -366,7 +384,7 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
     const dir = transcriptPath.slice(0, -'.jsonl'.length) + '/subagents';
     let files: string[];
     try {
-      files = await readdir(dir);
+      files = await this.files.readdir(dir);
     } catch {
       return { count: 0, labels: [] };
     }
@@ -375,11 +393,11 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
     for (const f of files) {
       if (!f.endsWith('.jsonl')) continue;
       try {
-        const st = await stat(join(dir, f));
+        const st = await this.files.stat(join(dir, f));
         if (nowMs - st.mtimeMs <= FRESH_MS) {
           count++;
           try {
-            const meta = JSON.parse(await readFile(join(dir, f.replace(/\.jsonl$/, '.meta.json')), 'utf8')) as { description?: string };
+            const meta = JSON.parse(await this.files.readText(join(dir, f.replace(/\.jsonl$/, '.meta.json')))) as { description?: string };
             if (meta.description && labels.length < 5) labels.push(redact(meta.description).text.slice(0, 120));
           } catch {
             /* no meta */
@@ -401,15 +419,8 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
     if (!offsetOk) state = emptyTranscriptState(); // re-derive from 0: idempotent
     const s = state!;
     if (st.size > s.offset) {
-      const fh = await open(path, 'r');
-      try {
-        const len = Math.min(st.size - s.offset, this.o.maxBytesPerFile);
-        const buf = Buffer.alloc(len);
-        await fh.read(buf, 0, len, s.offset);
-        applyChunk(s, buf);
-      } finally {
-        await fh.close();
-      }
+      const len = Math.min(st.size - s.offset, this.o.maxBytesPerFile);
+      applyChunk(s, await this.files.readRange(path, s.offset, len));
     }
     return { s, fromZero: !offsetOk };
   }
@@ -498,7 +509,7 @@ export class ClaudeSessionsFetcher implements DeterministicFetcher {
       const onlyBackfill = !!fc && fc.tv !== TURNS_V && fc.mh === undefined && !reg?.alive;
       const v: ReturnType<typeof sessionModelDecision> = onlyBackfill
         ? { to: 'quiet', reason: 'turns_backfill', next: { eh: item.contentHash, mh: meaning, ms: d.status, ...(fc.m ? { m: fc.m } : {}) } }
-        : sessionModelDecision({ prev: fc, contentHash: item.contentHash, meaning, status: d.status, linked: linked.has(t.sessionId), nowMs, minIntervalMs: this.o.modelMinIntervalMs });
+        : sessionModelDecision({ prev: fc, contentHash: item.contentHash, meaning, status: d.status, linked: linked.has(t.sessionId), nowMs, minIntervalMs: this.o.modelMinIntervalMs, quietMs: nowMs - t.mtimeMs });
       next.files[t.path] = { o: s.offset, i: t.ino, ...v.next, tv: TURNS_V };
       if (v.to === 'model') items.push(item);
       else if (v.to === 'quiet') {

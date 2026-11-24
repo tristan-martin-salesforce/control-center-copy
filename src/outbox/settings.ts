@@ -2,14 +2,14 @@
  * Settings → Sending helpers shared by the mock and db DataSources. Stored rows may predate `channels`,
  * so every read goes through `sendingOf()`; it never turns dry-run off (a missing flag reads as ON).
  */
-import { DEFAULT_SENDING_CHANNELS, DEFAULT_VDP_AUTOPILOT_CAP, type Destination, type DispatchMode, type Draft, type SendingSettings, type SendingSettingsPatch } from '@/contract';
+import { AutopilotAssetHost, DEFAULT_AUTOPILOT_ASSET_HOSTS, DEFAULT_SENDING_CHANNELS, DEFAULT_VDP_AUTOPILOT_CAP, type Destination, type DispatchMode, type Draft, type SendingSettings, type SendingSettingsPatch } from '@/contract';
 
 import { actionFamily, type ActionFamily } from '@/lib/actions';
 
 import type { OutboxChannel } from './types';
 
 /** A structured action's channel, by its family (the action's prefix). */
-const ACTION_CHANNEL: Record<ActionFamily, OutboxChannel> = { vdp: 'vdp', slack_canvas: 'slack_canvas', feedback: 'feedback' };
+const ACTION_CHANNEL: Record<ActionFamily, OutboxChannel> = { vdp: 'vdp', slack_canvas: 'slack_canvas', feedback: 'feedback', release: 'release' };
 
 /** The delivery channel of a destination. Exhaustive: nothing falls through to Gmail (it used to, for any non-Slack). */
 export function channelOf(dest: Destination): OutboxChannel {
@@ -25,6 +25,16 @@ export function channelOf(dest: Destination): OutboxChannel {
 
 /** VDP autopilot's daily write cap: a whole number from 1 to 500, else the default (40). */
 const capOf = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 500 ? v : DEFAULT_VDP_AUTOPILOT_CAP);
+
+/**
+ * VDP autopilot's trusted asset sites (SEC-6): a stored list as is (valid names only, deduped; an empty list trusts
+ * nothing), a missing or odd one reads as the default list.
+ */
+const assetHostsOf = (v: unknown): string[] => {
+  if (!Array.isArray(v)) return [...DEFAULT_AUTOPILOT_ASSET_HOSTS];
+  const ok = v.map((h) => AutopilotAssetHost.safeParse(h)).flatMap((r) => (r.success ? [r.data] : []));
+  return [...new Set(ok)];
+};
 
 /** The sending section with defaults filled (channels → draft; dryRun anything but `false` → true). */
 export function sendingOf(raw: Partial<SendingSettings> | null | undefined): SendingSettings {
@@ -44,6 +54,7 @@ export function sendingOf(raw: Partial<SendingSettings> | null | undefined): Sen
       // A logging canvas is private and has no draft: Apply creates it.
       slack_canvas: { mode: 'send' },
     },
+    autopilotAssetHosts: assetHostsOf(s.autopilotAssetHosts),
   };
 }
 
@@ -63,6 +74,7 @@ export function mergeSendingPatch(cur: Partial<SendingSettings>, patch: SendingS
       vdp: channels?.vdp ? { mode: 'send', autopilot: channels.vdp.autopilot ?? base.channels.vdp.autopilot, dailyCap: capOf(channels.vdp.dailyCap ?? base.channels.vdp.dailyCap) } : base.channels.vdp,
       slack_canvas: base.channels.slack_canvas,
     },
+    autopilotAssetHosts: assetHostsOf(defined.autopilotAssetHosts ?? base.autopilotAssetHosts),
   };
 }
 
@@ -86,6 +98,7 @@ export function defaultModeFor(d: Pick<Draft, 'destination' | 'mode' | 'userLock
   if (d.userLockedFields.includes('mode')) return d.mode;
   const ch = channelOf(d.destination);
   // A feedback report has no Slack draft and no Settings → Sending row: Send posts it (D-56).
-  if (ch === 'feedback') return 'send';
+  // Nor does a release item (D-90): the announcement posts on Send, the upload hand-off is marked on Apply.
+  if (ch === 'feedback' || ch === 'release') return 'send';
   return sendingOf(sending).channels[ch].mode;
 }

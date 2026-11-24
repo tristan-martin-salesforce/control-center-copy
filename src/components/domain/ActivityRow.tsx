@@ -1,25 +1,25 @@
 'use client';
 /**
- * ActivityRow (Time, UI-SPEC §12, R-UI-6): one editable activity-log row.
- * when (date · start–end) · hours · description · opportunity (WhatId) · SE task type · CF/CR · status (with the
- * row's warning, its sources and the autosave state as quiet lines). Autosave per row (§8): the row calls onChange
- * with a patch on change/blur and the parent debounces, saves optimistically and renders <InlineStatus> into
- * `statusSlot`. Times are shown and edited in the profile timezone.
- *
- * Layout (docs/ui/time-redesign.md): the grid follows the width of the list it sits in (`ACTIVITY_ROWS`, a
- * container): one line when wide, two or three when narrow; descriptions and opportunity names wrap to two lines
- * with the full text as the tooltip. Nothing is cut off and nothing scrolls sideways. Calm fields; colour only where
- * the row needs you (a missing opportunity is amber, a failed verify red, a proposal violet).
+ * ActivityRow (Activity ▸ To log ▸ Week, History's editable rows; R-UI-6): one editable activity-log row, a
+ * configuration of the kit ActionRow (docs/UX.md "Component kit"): the start and end as the lead, the description as
+ * the title, the state and what is off as the why line, its sources and the autosave state as chips; opportunity
+ * (WhatId), task type, hours and customer-facing or prep as the trailing controls; the day and the description's
+ * editor as the expansion (Space or the chevron). Autosave per row (§8): the row calls onChange with a patch on
+ * change/blur and the parent debounces, saves optimistically and renders <InlineStatus> into `statusSlot`. Times are
+ * shown and edited in the profile timezone. Colour only where the row needs you (a missing opportunity is amber, a
+ * failed check red, a suggestion violet). `ActivityRowHeader` and the grid exports stay for the kit gallery.
  */
 import type { ActivityEntry, SourceRef } from '@/contract';
 import { isOverlapInfo } from '@/engines/activity/overlap-flags';
-import { plainIssue, plainIssues } from '@/lib/time-issues';
+import { plainIssue, plainIssues } from '@/components/time/plain';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { ActionRow } from '@/components/kit/ActionRow';
 import { cn, Combobox, Icon } from '@/ui';
 import { SourceChip, StatusBadge, TONE_TO_BADGE, useClock } from './lib';
 import { clock, zonedIso } from './lib/time';
 import { ACTIVITY_META } from './vocab';
 import g from './activity-row.module.css';
+import { hasTarget } from '@/lib/time-internal';
 
 export type ActivityPatch = Partial<Pick<ActivityEntry, 'date' | 'start' | 'end' | 'durationH' | 'taskType' | 'oppId' | 'meetingType' | 'description' | 'internal'>>;
 
@@ -52,6 +52,12 @@ export interface ActivityRowProps {
   className?: string;
   onChange?: (patch: ActivityPatch, entry: ActivityEntry) => void;
   onOpenSource?: (s: SourceRef, entry: ActivityEntry) => void;
+  /** Selected (the row open in the details panel). */
+  selected?: boolean;
+  /** Lit for a moment ("show it" from elsewhere). */
+  highlight?: boolean;
+  /** A click outside the fields, or Enter: open it in the details panel. */
+  onOpen?: (entry: ActivityEntry) => void;
 }
 
 /** A field's look without a width (cn only joins classes, so a width added after `w-full` would lose to it). */
@@ -78,13 +84,23 @@ export function ActivityRowHeader({ className }: { className?: string }) {
   );
 }
 
+/** Activity's status words, in plain words (D-87): where the row is on its way to Org62, never the pipeline's names. */
+const PLAIN_STATUS: Partial<Record<ActivityEntry['status'], string>> = {
+  proposed: 'Suggested',
+  synced_to_canvas: 'On its way to Org62',
+  verified: 'Checked in Org62',
+  verify_failed: 'Not in Org62',
+};
+
+export const activityStatusLabel = (s: ActivityEntry['status']): string => PLAIN_STATUS[s] ?? ACTIVITY_META[s].label;
+
 /**
  * The one status column: a word, coloured only when the row needs you (amber needs input, red failed) or the app
  * proposed it (violet, no box); done rows are a muted word with a green check; the rest plain text.
  */
 export function ActivityStatusWord({ status, label }: { status: ActivityEntry['status']; label?: string }) {
   const meta = ACTIVITY_META[status];
-  const text = label ?? meta.label;
+  const text = label ?? activityStatusLabel(status);
   if (meta.tone === 'warn' || meta.tone === 'risk')
     return (
       <StatusBadge tone={TONE_TO_BADGE[meta.tone]} icon="warning">
@@ -138,10 +154,11 @@ function LocalOppField({ entry, opps, className, disabled, onPick }: { entry: Ac
   );
 }
 
-export function ActivityRow({ entry, taskTypes = [], taskTypeRequired = true, opps = [], oppField, statusSlot, readOnly, className, onChange, onOpenSource }: ActivityRowProps) {
+export function ActivityRow({ entry, taskTypes = [], taskTypeRequired = true, opps = [], oppField, statusSlot, readOnly, className, onChange, onOpenSource, selected, highlight, onOpen }: ActivityRowProps) {
   const { tz } = useClock();
   const [base, setBase] = useState(`${entry.id}@${entry.version}`);
   const [d, setD] = useState(() => fromEntry(entry, tz));
+  const [open, setOpen] = useState(false);
   if (base !== `${entry.id}@${entry.version}`) {
     setBase(`${entry.id}@${entry.version}`);
     setD(fromEntry(entry, tz));
@@ -154,10 +171,11 @@ export function ActivityRow({ entry, taskTypes = [], taskTypeRequired = true, op
   const oppList = entry.oppId && !opps.some((o) => o.id === entry.oppId) ? [{ id: entry.oppId, label: entry.oppName ?? entry.oppId }, ...opps] : opps;
   const emit = (p: ActivityPatch) => onChange?.(p, entry);
   // D-64: internal-only work has no opportunity by design
-  const needsOpp = !entry.oppId && !entry.internal;
+  const needsOpp = !hasTarget(entry);
   const disabled = !!readOnly || entry.status === 'logged' || entry.status === 'verified';
   // the opportunity wraps to two lines (OppPicker), so its field grows with it
   const oppClass = cn(FIELD, 'h-auto min-h-9 py-1', needsOpp ? 'border-dashed border-warning-500 text-warning-700' : CALM);
+  const meta = ACTIVITY_META[entry.status];
 
   const commitTimes = () => {
     if (!HHMM.test(d.start) || !HHMM.test(d.end) || !d.date) {
@@ -173,87 +191,126 @@ export function ActivityRow({ entry, taskTypes = [], taskTypeRequired = true, op
     }
   };
 
+  // ActionRow (the kit's one row): the when as the lead, the description as the title, the state and what is off as
+  // the why line, sources and the save state as chips; opportunity, task type, hours and customer-facing or
+  // customer-related as the trailing controls; the day and the description's editor as the expansion (Space).
   return (
-    <div role="row" data-row className={cn(ACTIVITY_COLS, 'min-h-12 border-b border-line px-4 py-1.5 last:border-b-0 hover:bg-surface-muted', className)}>
-      <span className={cn(g.when, 'flex min-w-0 items-center')}>
-        <input type="date" aria-label="Date" disabled={disabled} value={d.date} onChange={(e) => setD({ ...d, date: e.target.value })} onBlur={commitTimes} className={cn(FIELD_BOX, CALM, NO_PICKER, 'w-[6.75rem] shrink-0 text-muted tabular-nums')} />
-        <input inputMode="numeric" aria-label="Start (24 h)" placeholder="hh:mm" disabled={disabled} value={d.start} onChange={(e) => setD({ ...d, start: e.target.value })} onBlur={commitTimes} className={cn(FIELD_BOX, CALM, 'w-[3.75rem] shrink-0 px-1 text-center tabular-nums')} />
-        <span className="text-faint">–</span>
-        <input inputMode="numeric" aria-label="End (24 h)" placeholder="hh:mm" disabled={disabled} value={d.end} onChange={(e) => setD({ ...d, end: e.target.value })} onBlur={commitTimes} className={cn(FIELD_BOX, CALM, 'w-[3.75rem] shrink-0 px-1 text-center tabular-nums')} />
-      </span>
-      <input
-        type="number"
-        aria-label="Hours"
-        step={0.25}
-        min={0}
-        disabled={disabled}
-        value={d.durationH}
-        onChange={(e) => setD({ ...d, durationH: e.target.value })}
-        onBlur={() => {
-          const v = Math.round(Number(d.durationH) * 4) / 4;
-          if (Number.isFinite(v) && v !== entry.durationH) emit({ durationH: v });
-        }}
-        className={cn(g.hours, FIELD, CALM, 'text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none', locked.has('durationH') && 'font-bold')}
-      />
-      <span className={cn(g.desc, 'min-w-0')}>
-        <DescriptionField value={d.description} disabled={disabled} onChange={(v) => setD({ ...d, description: v })} onCommit={() => d.description !== entry.description && emit({ description: d.description })} />
-      </span>
-      <span className={cn(g.opp, 'min-w-0')}>
-        {oppField ? oppField({ className: oppClass, disabled }) : <LocalOppField entry={entry} opps={oppList} className={oppClass} disabled={disabled} onPick={(id) => emit({ oppId: id })} />}
-      </span>
-      <select
-        aria-label="Task type"
-        disabled={disabled}
-        value={entry.taskType ?? ''}
-        onChange={(e) => emit({ taskType: e.target.value || null })}
-        title={taskTypeRequired ? (entry.taskType ?? undefined) : 'Your role logs Events with no task type'}
-        className={cn(g.type, FIELD, 'max-w-[16rem]', entry.taskType ? CALM : taskTypeRequired ? 'border-transparent text-warning-700' : 'border-transparent text-faint')}
-      >
-        <option value="">{taskTypeRequired ? 'Choose type…' : 'Not needed'}</option>
-        {types.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </select>
-      {/* two quiet words; only the chosen one is filled (no box around the pair) */}
-      <span className={cn(g.cfcr, 'inline-flex h-8 items-center gap-0.5')} role="radiogroup" aria-label="Customer-facing or customer-related">
-        {(['CF', 'CR'] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            role="radio"
-            aria-checked={entry.meetingType === m}
-            disabled={disabled}
-            title={m === 'CF' ? 'Customer-facing' : 'Customer-related (internal prep)'}
-            onClick={() => emit({ meetingType: m })}
-            className={cn('h-7 rounded-sm px-2 text-caption font-bold focus-visible:outline-none focus-visible:shadow-focus', entry.meetingType === m ? 'border border-line-strong bg-selected text-fg-heading' : 'text-muted hover:bg-surface-muted hover:text-fg')}
-          >
-            {m}
-          </button>
-        ))}
-      </span>
-      <span className={cn(g.status, 'flex min-w-0 flex-col items-start gap-0.5 py-0.5')}>
-        <ActivityStatusWord status={entry.status} />
-        {warnings.length ? (
-          <span className="flex min-w-0 max-w-full items-start gap-1 self-stretch text-caption text-warning-700" title={plainIssues(entry).join(' · ')}>
-            <Icon name="warning" size="xs" className="mt-0.5 shrink-0" />
-            <span className="line-clamp-2 min-w-0 break-words [overflow-wrap:anywhere]">{plainIssue(warnings[0]!, entry) ?? warnings[0]}</span>
-          </span>
-        ) : notes.length ? (
-          <span className="line-clamp-2 max-w-full self-stretch text-caption break-words text-muted" title={notes.join(' · ')} data-testid="activity-overlap-note">
-            {notes[0]}
-          </span>
-        ) : null}
-        {/* quiet metadata: where it came from, and the save state */}
-        <span className="flex min-w-0 items-center gap-1 text-caption text-muted">
+    <ActionRow
+      id={entry.id}
+      title={entry.description || 'Activity row'}
+      className={cn(highlight && 'shadow-[inset_0_0_0_1px_var(--color-accent)]', className)}
+      edge={entry.status === 'verify_failed' ? 'danger' : needsOpp || meta.tone === 'warn' ? 'warning' : meta.tone === 'ai' ? 'ai' : 'none'}
+      dashed={entry.status === 'proposed'}
+      lead={
+        <span className="flex items-center gap-0.5 pt-0.5">
+          <input inputMode="numeric" aria-label="Start (24 h)" placeholder="hh:mm" disabled={disabled} value={d.start} onChange={(e) => setD({ ...d, start: e.target.value })} onBlur={commitTimes} className={cn(FIELD_BOX, CALM, 'w-[3.75rem] shrink-0 px-1 text-center tabular-nums')} />
+          <span className="text-faint">–</span>
+          <input inputMode="numeric" aria-label="End (24 h)" placeholder="hh:mm" disabled={disabled} value={d.end} onChange={(e) => setD({ ...d, end: e.target.value })} onBlur={commitTimes} className={cn(FIELD_BOX, CALM, 'w-[3.75rem] shrink-0 px-1 text-center tabular-nums')} />
+        </span>
+      }
+      why={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <ActivityStatusWord status={entry.status} />
+          {warnings.length ? (
+            <span className="inline-flex min-w-0 items-center gap-1 text-caption text-warning-700" title={plainIssues(entry).join(' · ')}>
+              <Icon name="warning" size="xs" className="shrink-0" />
+              <span className="truncate">{plainIssue(warnings[0]!, entry) ?? warnings[0]}</span>
+            </span>
+          ) : notes.length ? (
+            <span className="truncate text-caption text-muted" title={notes.join(' · ')} data-testid="activity-overlap-note">
+              {notes[0]}
+            </span>
+          ) : null}
+        </span>
+      }
+      whyTitle={[activityStatusLabel(entry.status), ...plainIssues(entry)].join(' · ')}
+      chips={
+        <>
           {entry.sources.slice(0, 2).map((s, i) => (
             <SourceChip key={`${s.kind}:${i}`} source={s} compact onOpen={onOpenSource ? (src) => onOpenSource(src, entry) : undefined} />
           ))}
-          <span className="min-w-0 truncate">{statusSlot}</span>
+          {statusSlot ? <span className="min-w-0 truncate text-caption text-muted">{statusSlot}</span> : null}
+        </>
+      }
+      extra={
+        <span className="flex min-w-0 flex-wrap items-center gap-2 pt-1" data-no-open>
+          <span className="w-64 max-w-full min-w-0">{oppField ? oppField({ className: oppClass, disabled }) : <LocalOppField entry={entry} opps={oppList} className={oppClass} disabled={disabled} onPick={(id) => emit({ oppId: id })} />}</span>
+          <select
+            aria-label="Task type"
+            disabled={disabled}
+            value={entry.taskType ?? ''}
+            onChange={(e) => emit({ taskType: e.target.value || null })}
+            title={taskTypeRequired ? (entry.taskType ?? undefined) : 'Your role logs Events with no task type'}
+            className={cn(FIELD_BOX, 'w-44', entry.taskType ? CALM : taskTypeRequired ? 'border-transparent text-warning-700' : 'border-transparent text-faint')}
+          >
+            <option value="">{taskTypeRequired ? 'Choose type…' : 'Not needed'}</option>
+            {types.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            aria-label="Hours"
+            step={0.25}
+            min={0}
+            disabled={disabled}
+            value={d.durationH}
+            onChange={(e) => setD({ ...d, durationH: e.target.value })}
+            onBlur={() => {
+              const v = Math.round(Number(d.durationH) * 4) / 4;
+              if (Number.isFinite(v) && v !== entry.durationH) emit({ durationH: v });
+            }}
+            className={cn(FIELD_BOX, CALM, 'w-16 text-right tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none', locked.has('durationH') && 'font-bold')}
+          />
+          {/* two quiet words; only the chosen one is filled (no box around the pair) */}
+          <span className="inline-flex h-8 items-center gap-0.5" role="radiogroup" aria-label="Customer-facing or customer-related">
+            {(['CF', 'CR'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={entry.meetingType === m}
+                disabled={disabled}
+                title={m === 'CF' ? 'Customer-facing' : 'Customer-related (internal prep)'}
+                onClick={() => emit({ meetingType: m })}
+                className={cn('h-7 rounded-sm px-2 text-caption font-bold focus-visible:outline-none focus-visible:shadow-focus', entry.meetingType === m ? 'border border-line-strong bg-selected text-fg-heading' : 'text-muted hover:bg-surface-muted hover:text-fg')}
+              >
+                {m === 'CF' ? 'Customer' : 'Prep'}
+              </button>
+            ))}
+          </span>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label={open ? 'Hide the day and description' : 'Edit the day and description'}
+            title={open ? 'Hide' : 'The day and the description'}
+            onClick={() => setOpen((v) => !v)}
+            className="grid size-8 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-muted hover:text-fg focus-visible:shadow-focus focus-visible:outline-none"
+            data-testid="activity-expand"
+          >
+            <Icon name={open ? 'chevrondown' : 'chevronright'} size="xs" />
+          </button>
         </span>
-      </span>
-    </div>
+      }
+      expanded={open}
+      onExpandedChange={setOpen}
+      expansion={
+        <div className="grid min-w-0 gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
+          <label className="flex flex-col gap-1 text-caption text-muted">
+            Day
+            <input type="date" aria-label="Date" disabled={disabled} value={d.date} onChange={(e) => setD({ ...d, date: e.target.value })} onBlur={commitTimes} className={cn(FIELD_BOX, 'border-line-input bg-surface-input', NO_PICKER, 'w-[9rem] tabular-nums')} />
+          </label>
+          <label className="flex min-w-0 flex-col gap-1 text-caption text-muted">
+            Description (the Event’s Subject)
+            <DescriptionField value={d.description} disabled={disabled} onChange={(v) => setD({ ...d, description: v })} onCommit={() => d.description !== entry.description && emit({ description: d.description })} />
+          </label>
+        </div>
+      }
+      selected={selected}
+      onOpen={onOpen ? () => onOpen(entry) : undefined}
+    />
   );
 }
 

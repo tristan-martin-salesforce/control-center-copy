@@ -6,18 +6,18 @@
  * (unconfirmed / missing in Org62) is derived and shown in the status cell.
  *
  * Design v2: a click outside the fields (or Enter on the row) selects the row and opens it in the docked panel
- * (kind 'activity_entry'); j/k move the selection. Rows wrap to the list's width (docs/ui/time-redesign.md): no
+ * (kind 'activity_entry'); j/k move the selection. Rows wrap to the list's width (docs/archive/2026-build/time-redesign.md): no
  * sideways scroll, no cut-off column.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { ActivityEntry } from '@/contract';
-import { ACTIVITY_ROWS, ActivityRow, ActivityRowHeader, type ActivityPatch } from '@/components/domain';
+import { ActivityRow, type ActivityPatch } from '@/components/domain';
 import { dayLabel } from '@/components/domain/lib/time';
 import { usePromptWording } from '@/components/domain/ResultLinks';
 import { useOptimisticMutation } from '@/client/optimistic/useOptimisticMutation';
 import { useAutosave } from '@/client/save';
-import { cn, InlineStatus } from '@/ui';
+import { InlineStatus } from '@/ui';
 import { overlapCaption, READBACK_LABEL, readbackState } from './derive';
 import { OppPicker } from './OppPicker';
 
@@ -27,7 +27,6 @@ interface Edit {
   patch: ActivityPatch;
 }
 const EDIT_EQ = (a: Edit, b: Edit) => a.seq === b.seq;
-const FIELD = 'input,select,textarea,button,a,[role="combobox"],[role="listbox"]';
 
 /** A day's hours; where accepted meetings or an onsite day overlap (both log, D-18 amended), by how much. */
 function DayTotal({ rows }: { rows: ActivityEntry[] }) {
@@ -97,26 +96,13 @@ export function AutosaveRow({ entry, now, highlight, selected, onSelect }: { ent
   const status = m.status === 'conflict' ? { ...autosave.status, state: 'conflict' as const } : autosave.status;
 
   return (
-    <div
-      data-activity-id={entry.id}
-      data-row-id={entry.id}
-      data-selected={selected ? '' : undefined}
-      tabIndex={selected ? 0 : -1}
-      aria-label={`${entry.date} ${entry.description || 'Activity row'}`}
-      onBlurCapture={() => void autosave.flush()}
-      onClick={(ev) => {
-        if ((ev.target as HTMLElement).closest(FIELD)) return;
-        onSelect(entry);
-      }}
-      className={cn(
-        'relative outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--color-focus)]',
-        selected || highlight ? 'bg-selected' : 'hover:bg-surface-muted',
-        highlight && 'shadow-[inset_0_0_0_1px_var(--color-accent)]',
-      )}
-    >
+    <div data-activity-id={entry.id} data-row-id={entry.id} data-selected={selected ? '' : undefined} onBlurCapture={() => void autosave.flush()} className="min-w-0">
       <ActivityRow
         key={`${entry.id}:${resetKey}`}
         entry={shown}
+        selected={selected}
+        highlight={highlight}
+        onOpen={() => onSelect(entry)}
         // the persona's task types (the SE's: the SE Task Type taxonomy); the row keeps its own value too
         taskTypes={wording.taskTypes}
         taskTypeRequired={wording.taskType}
@@ -175,9 +161,8 @@ export function ActivityTable({ entries, now, highlightId, selectedId, onSelect,
         if (id) onFocusEntry?.(entries.find((e) => e.id === id) ?? null);
       }}
     >
-      {/* the rows follow this list's width (wrapping, never a sideways scroll): ACTIVITY_ROWS is their container */}
-      <div role="table" aria-label="Activity log" className={cn(ACTIVITY_ROWS, 'min-w-0')}>
-        <ActivityRowHeader className="sticky top-0 z-[2]" />
+      {/* each row is a kit ActionRow (the fields as its trailing controls, the day and description as its expansion) */}
+      <div role="grid" aria-label="Activity log" className="min-w-0 px-1">
         {groups.map((g) => (
           <div key={g.date} role="rowgroup" aria-label={dayLabel(`${g.date}T12:00:00Z`, 'UTC')}>
             {/* a light day line: the day, its rows and hours; no box */}

@@ -111,7 +111,6 @@ export function SectionSkeleton({ title, id, strip }: { title: string; id?: stri
 }
 
 const SECTIONS: Array<[id: string, title: string]> = [
-  ['reply', 'Reply & approve'],
   ['ahead', 'Think ahead'],
   ['fix', 'Log & fix'],
   ['chase', 'Chase'],

@@ -1,8 +1,8 @@
 /**
  * Builds the PRIVATE mock seed from the raw fixtures. Run: `npm run seed:real`.
  *
- *   in : ~/Library/Application Support/control-center/fixtures/raw/*.json  (+ overlay.mjs, voice/profile.json)
- *   out: ~/Library/Application Support/control-center/fixtures/seed.json   (chmod 600, NEVER committed)
+ *   in : ~/Library/Application Support/command-center/fixtures/raw/*.json  (+ overlay.mjs, voice/profile.json)
+ *   out: ~/Library/Application Support/command-center/fixtures/seed.json   (chmod 600, NEVER committed)
  *
  * This file contains no data. Generic raw→seed mapping lives in ./mappers.ts; the curated narrative lives
  * in the private overlay (see ./overlay-contract.ts and ./README.md). The result is validated against the

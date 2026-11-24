@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { org62Spec } from '../../src/scanner/runtime/connectors';
 import { scanJob } from '../../src/scanner/runtime/jobs';
 import { isKnownScope, isKnownScopeId, normalizeScanScope, placeholderScopeId, repairScopeId, validScopes } from '../../src/scanner/scope-catalog';
-import { makeWorld } from '../be2a/helpers/world';
+import { makeWorld } from '../scanner/runtime/helpers/world';
 
 describe('normalizeScanScope: what a Rescan may ask for', () => {
   it('drops an optional <connector>: prefix once; a bare scope stays', () => {

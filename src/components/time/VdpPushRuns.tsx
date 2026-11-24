@@ -12,7 +12,8 @@ import type { VdpPushNode, VdpPushRun } from '@/contract';
 import { Pane, SectionHead } from '@/components/deals/context-frame';
 import { StatusBadge } from '@/components/domain';
 import { clock, dayLabel } from '@/components/domain/lib/time';
-import { Button, cn, Icon } from '@/ui';
+import { ActionRow } from '@/components/kit';
+import { Icon } from '@/ui';
 import { byCompany, pushNodeState, pushOpLabel, pushRunView } from './vdp-push-derive';
 
 export function VdpPushRuns({ runs, tz, onDraft }: { runs: readonly VdpPushRun[]; tz?: string; onDraft: (id: string) => void }) {
@@ -75,11 +76,11 @@ function Problems({ nodes, onDraft }: { nodes: VdpPushNode[]; onDraft: (id: stri
   const shown = all ? nodes : nodes.slice(0, SHOWN_PROBLEMS);
   return (
     <div className="min-w-0 rounded-md border border-line bg-surface-muted" data-testid="push-run-problems">
-      <ul className="divide-y divide-line">
+      <div role="grid" aria-label="Items that need you" className="px-1">
         {shown.map((n) => (
           <NodeRow key={n.key} n={n} onDraft={onDraft} />
         ))}
-      </ul>
+      </div>
       {nodes.length > SHOWN_PROBLEMS ? (
         <button type="button" onClick={() => setAll((x) => !x)} className="px-3 py-2 text-caption font-bold text-link hover:underline">
           {all ? 'Show fewer' : `Show all ${nodes.length} that need you`}
@@ -96,34 +97,38 @@ function Items({ nodes, onDraft }: { nodes: readonly VdpPushNode[]; onDraft: (id
       {byCompany(nodes).map((g) => (
         <div key={g.company} className="min-w-0 rounded-md border border-line">
           <p className="border-b border-line px-3 py-1.5 text-caption font-bold text-fg-heading">{g.company}</p>
-          <ul className="divide-y divide-line">
+          <div role="grid" aria-label={`Items at ${g.company}`} className="px-1">
             {g.nodes.map((n) => (
               <NodeRow key={n.key} n={n} onDraft={onDraft} />
             ))}
-          </ul>
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
+/** One pushed item, an ActionRow: what it did, how it ended (the badge), why (failed in the danger colour), its Outbox item. */
 function NodeRow({ n, onDraft }: { n: VdpPushNode; onDraft: (id: string) => void }) {
   const s = pushNodeState(n);
   return (
-    <li className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1 px-3 py-2" data-push-node={n.key} data-state={n.state}>
-      <span className="min-w-0 flex-1">
-        <span className="block text-body break-words text-fg">
+    <ActionRow
+      id={n.key}
+      data-push-node={n.key}
+      data-state={n.state}
+      title={n.title}
+      titleNode={
+        <span className="font-normal text-fg">
           <span className="text-muted">{pushOpLabel(n.op)} · </span>
           {n.title}
         </span>
-        {n.detail ? <span className={cn('block text-caption break-words', n.state === 'failed' ? 'text-danger-700' : 'text-muted')}>{n.detail}</span> : null}
-      </span>
-      <StatusBadge tone={s.tone}>{s.text}</StatusBadge>
-      {n.draftId ? (
-        <Button size="xs" variant="quiet" onClick={() => onDraft(n.draftId!)}>
-          Details
-        </Button>
-      ) : null}
-    </li>
+      }
+      edge={n.state === 'failed' ? 'danger' : 'none'}
+      badge={<StatusBadge tone={s.tone}>{s.text}</StatusBadge>}
+      why={n.detail ? <span className={n.state === 'failed' ? 'text-danger-700' : undefined}>{n.detail}</span> : undefined}
+      whyTitle={n.detail ?? undefined}
+      verb={n.draftId ? { label: 'Details', onClick: () => onDraft(n.draftId!) } : null}
+      onOpen={n.draftId ? () => onDraft(n.draftId!) : undefined}
+    />
   );
 }

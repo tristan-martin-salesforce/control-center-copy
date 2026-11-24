@@ -29,7 +29,8 @@ import { planSteps, planSummary } from '../lib/panel-derive';
 import { usePublishPrimary } from '../lib/primary';
 import { DetailSection } from '../panel/bits';
 import { PlanSteps } from '../panel/sections';
-import { ClaudeLaunchPanel } from './ClaudeLaunchPanel';
+import { ClaudeLaunchPanel, openDeepLink } from './ClaudeLaunchPanel';
+import { useLaunchReview } from '@/components/agents/LaunchReview';
 import { ToolRunForm } from './ToolRunForm';
 import { navigate } from '@/components/shell/router';
 
@@ -141,10 +142,11 @@ function AnswerPanel({ run }: { run: AgentRun }) {
   const choices = run.waiting?.choices ?? [];
   const submit = () => answer.trim() && send.mutate({ params: { id: run.id }, body: { answer: answer.trim() } });
   const session = run.kind === 'claude_session';
+  const { review, dialog } = useLaunchReview(openDeepLink); // P25-4: a claude://code/new link is reviewed first; a resume opens at once
   const external = usePublishPrimary(
     session
       ? run.deepLink
-        ? { label: 'Open in Claude', icon: 'new_window', kbd: 'mod+enter', run: () => (window.location.href = run.deepLink!) }
+        ? { label: 'Open in Claude', icon: 'new_window', kbd: 'mod+enter', run: () => review(run.deepLink!, run.title) }
         : null
       : { label: 'Answer', disabled: !answer.trim(), loading: send.isPending, kbd: 'mod+enter', run: () => void submit() },
   );
@@ -156,10 +158,11 @@ function AnswerPanel({ run }: { run: AgentRun }) {
           <span className="font-bold">Session asked:</span> {run.waiting?.question ?? run.waiting?.reason ?? 'Input needed'}
         </p>
         {run.deepLink && !external ? (
-          <Button variant="primary" size="sm" className="mt-2" icon="new_window" onClick={() => (window.location.href = run.deepLink!)} data-nba-primary>
+          <Button variant="primary" size="sm" className="mt-2" icon="new_window" onClick={() => review(run.deepLink!, run.title)} data-nba-primary>
             Open in Claude
           </Button>
         ) : null}
+        {dialog}
       </div>
     );
   }

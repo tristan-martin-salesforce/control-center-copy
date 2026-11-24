@@ -11,7 +11,7 @@ import { oppsInBook, projectOrg62 } from '@/projections/org62';
 import { projectClaudeSession } from '@/projections/sessions';
 import { excerptFields, org62Ref, sfDate } from '@/projections/util';
 import { fiscalQuarterStart } from '@/projections/run';
-import { DEFAULT_EVIDENCE_CONFIG } from '@/engines/activity';
+import { DEFAULT_EVIDENCE_CONFIG } from '@/engines/activity/types';
 
 import { ACCT_ACME, ACCT_GLOBEX, calItem, cancelItem, driveItem, geminiItem, ME, OPP_ACME, OPP_ACME_2, OPP_GLOBEX, org62Item, RULES, sessionItem, TZ } from './fixtures';
 

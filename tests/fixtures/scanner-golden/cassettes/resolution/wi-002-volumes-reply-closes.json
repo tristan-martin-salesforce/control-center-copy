@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\") for the resolution check (skills/resolve-item.md), keyed by ledgerHash(model, skill, system, user). Re-key offline after a prompt or skill change: npx tsx tests/evals/scanner/record-resolution.ts.",
+  "entries": [
+    {
+      "hash": "7c0433784b430c44b3ec1bc4b056afab",
+      "label": "claude-haiku-5-5 | 2026-10-21 17:12Z | Send PERSON_G the expected volumes for the Saltmere consumption model",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"basis\": \"delivered\", \"cite\": \"c1\", \"confidence\": 0.88, \"needs\": null}]}"
+    }
+  ]
+}

@@ -3,7 +3,15 @@
 //
 //   npm run shot -- <route> [--widths 1280,1440,1920,2560] [--height 900] [--port 4327]
 //                           [--scenario <seconds>] [--wait <selector>] [--out .shots]
-//                           [--full] [--delay <ms>]
+//                           [--full] [--delay <ms>] [--scale <n>] [--open-panel]
+//
+// `--open-panel` opens the right panel (presses `]`, the shell's panel toggle, and waits for #cc-main[data-panel="open"])
+// so pages that switch on the panel (Activity's LanePage: two columns closed, one column open) can be seen both ways;
+// the file is named <slug>-panel-<width>.png.
+// `--scale N` is for a mock server started at that scale (C9, src/mock/scale.ts):
+//   CC_SEED_SCALE=N CC_DATA=mock PORT=4372 npm run dev:web   then   npm run shot -- /activity --port 4372 --scale N
+// shot starts nothing, so the flag only names the files <slug>-x<N>-<width>.png and the start hint; the seed's scale
+// is the server's.
 //
 // Writes <out>/<slug>-<width>.png and prints each path. `--scenario N` fast-forwards the mock
 // scenario clock to N seconds (POST /api/v1/dev/scenario {action:"seek"}) before shooting.
@@ -44,6 +52,8 @@ function parseArgs(argv) {
     else if (a === '--out') opts.out = next();
     else if (a === '--delay') opts.delay = Number(next());
     else if (a === '--full') opts.full = true;
+    else if (a === '--scale') opts.scale = Number(next());
+    else if (a === '--open-panel') opts.openPanel = true;
     else if (a === '--help' || a === '-h') opts.help = true;
     else rest.push(a);
   }
@@ -59,7 +69,7 @@ function slugFor(route) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
-    console.log('usage: npm run shot -- <route> [--widths 1280,1440] [--height 900] [--port 4327] [--scenario s] [--wait sel] [--out .shots] [--full] [--delay ms]');
+    console.log('usage: npm run shot -- <route> [--widths 1280,1440] [--height 900] [--port 4327] [--scenario s] [--wait sel] [--out .shots] [--full] [--delay ms] [--scale n] [--open-panel]');
     return;
   }
   const base = `http://localhost:${opts.port}`;
@@ -67,8 +77,10 @@ async function main() {
   try {
     const res = await fetch(`${base}/api/v1/health`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // ON-24: a fresh install answers /health with no user yet; every page then shows Getting started
+    if ((await res.json().catch(() => null))?.reason === 'no_user') console.log('[shot] no user in this database yet: pages show Getting started (/onboarding)');
   } catch (err) {
-    console.error(`[shot] no dev server answering at ${base} (${err.message}). Start one with: PORT=${opts.port} npm run dev:web`);
+    console.error(`[shot] no dev server answering at ${base} (${err.message}). Start one with: ${opts.scale ? `CC_SEED_SCALE=${opts.scale} CC_DATA=mock ` : ''}PORT=${opts.port} npm run dev:web`);
     process.exit(2);
   }
   const mockMode = await fetch(`${base}/api/v1/dev/scenario`).then((r) => r.ok, () => false);
@@ -92,7 +104,7 @@ async function main() {
 
   const outDir = resolve(opts.out);
   mkdirSync(outDir, { recursive: true });
-  const slug = slugFor(opts.route);
+  const slug = `${slugFor(opts.route)}${opts.scale > 1 ? `-x${opts.scale}` : ''}${opts.openPanel ? '-panel' : ''}`;
   const browser = await launchBrowser();
   const consoleErrors = [];
   try {
@@ -107,6 +119,14 @@ async function main() {
         await page.goto(`${base}${opts.route}`, { waitUntil: 'load', timeout: 60_000 });
       });
       if (opts.wait) await page.waitForSelector(opts.wait, { timeout: 20_000 });
+      if (opts.openPanel) {
+        await page.waitForSelector('#cc-main[data-panel]', { timeout: 20_000 });
+        if ((await page.getAttribute('#cc-main', 'data-panel')) !== 'open') {
+          await page.locator('body').click({ position: { x: 1, y: 1 } }).catch(() => {});
+          await page.keyboard.press(']');
+        }
+        await page.waitForSelector('#cc-main[data-panel="open"]', { timeout: 10_000 });
+      }
       await page.waitForTimeout(opts.delay);
       const file = join(outDir, `${slug}-${width}.png`);
       await page.screenshot({ path: file, fullPage: Boolean(opts.full) });

@@ -19,29 +19,45 @@ import { fileURLToPath } from 'node:url';
 
 import { pg17Bin } from './lib/brew.mjs';
 import { readEnvFile } from './lib/envfile.mjs';
+import { ensureStateMigrated } from './lib/migrate-state-real.mjs';
+import { STATE_FOLDER_NAME } from './lib/paths.mjs';
 
 const PG17 = pg17Bin();
-const DB = 'control_center';
+const DB = 'command_center';
 export const ROLE_PACKS = ['se_ic', 'se_manager'];
 /** D-55 personas (src/personas): Solutions Engineer, Specialist AE. */
 export const PERSONAS = ['se', 'ae'];
 
 export function dirs(env = process.env, home = homedir()) {
-  const state = env.CC_STATE_DIR ?? join(home, 'Library', 'Application Support', 'control-center');
-  const logs = env.CC_LOG_DIR ?? join(home, 'Library', 'Logs', 'control-center');
+  const state = env.CC_STATE_DIR ?? join(home, 'Library', 'Application Support', STATE_FOLDER_NAME);
+  const logs = env.CC_LOG_DIR ?? join(home, 'Library', 'Logs', STATE_FOLDER_NAME);
   return { state, logs, backups: join(state, 'backups'), envFile: join(state, 'env'), profile: join(state, 'profile.json') };
 }
 
-export const ENV_TEMPLATE = `# Control Center environment. Read by the LaunchAgents (chmod 600; never commit or paste this file).
+/** ON-23: the PORT a new env file starts with: the shell's when it is a valid port (1-65535), else 4327. */
+export function templatePort(env = process.env) {
+  const p = String(env.PORT ?? '').trim();
+  return /^\d{1,5}$/.test(p) && Number(p) >= 1 && Number(p) <= 65535 ? Number(p) : 4327;
+}
+
+/**
+ * The env file a new install starts from. `port`: templatePort (the shell's PORT, else 4327); from then on the file
+ * wins over the shell (ON-14). `databaseUrl`: Homebrew's for a source checkout's `npm run setup` (as 1.x),
+ * the bundled cluster's socket URL for the installer (D-98, scripts/ops/lib/ensure-db.mjs).
+ */
+export function envTemplate(databaseUrl = `postgresql://localhost:5432/${DB}`, extra = '', port = templatePort()) {
+  return `# Command Center environment. Read by the LaunchAgents (chmod 600; never commit or paste this file).
 # Add only what the app needs. Do NOT put Slack/Google/Org62 credentials here: those live in Claude Code / devbar.
-DATABASE_URL=postgresql://localhost:5432/${DB}
-PORT=4327
+DATABASE_URL=${databaseUrl}
+${extra}PORT=${port}
 # The web serves your Postgres data (mock is for development only)
 CC_DATA=db
 `;
+}
+export const ENV_TEMPLATE = envTemplate();
 
 /** Create state dirs (700) and the env template (600) without overwriting anything. Returns what it created. */
-export function ensureState(d) {
+export function ensureState(d, template = envTemplate()) {
   const created = [];
   for (const p of [d.state, d.backups, d.logs]) {
     if (!existsSync(p)) {
@@ -51,7 +67,7 @@ export function ensureState(d) {
     chmodSync(p, 0o700);
   }
   if (!existsSync(d.envFile)) {
-    writeFileSync(d.envFile, ENV_TEMPLATE, { mode: 0o600 });
+    writeFileSync(d.envFile, template, { mode: 0o600 });
     created.push(d.envFile);
   }
   chmodSync(d.envFile, 0o600);
@@ -106,9 +122,9 @@ const tool = (cmd, args) => {
   return r.error || r.status !== 0 ? null : r.stdout.trim();
 };
 
-/** Where the browser onboarding lives: the env file's PORT (or the shell's), else 4327. */
+/** Where the browser onboarding lives: the env file's PORT over the shell's, as the services run (ON-14, P34-1), else 4327. */
 export function onboardingUrl(fileEnv = {}, env = process.env) {
-  const port = Number(env.PORT ?? fileEnv.PORT) || 4327;
+  const port = Number({ ...env, ...(fileEnv ?? {}) }.PORT) || 4327;
   return `http://localhost:${port}/onboarding`;
 }
 
@@ -139,13 +155,14 @@ async function main() {
   const headless = flag('--headless');
   const interactive = process.stdin.isTTY && !flag('--non-interactive');
   const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  await ensureStateMigrated(); // D-101: a 1.x state folder moves before anything creates the new one
   const d = dirs();
   const rl = interactive ? createInterface({ input: process.stdin, output: process.stdout }) : null;
   const ask = async (q, def = '') => (rl ? (await rl.question(`${q}${def ? ` [${def}]` : ''}: `)).trim() || def : def);
   const askYes = async (q) => yes || (rl ? /^y(es)?$/i.test((await rl.question(`${q} [y/N] `)).trim()) : false);
   const todo = [];
 
-  console.log(`Control Center setup${headless ? ' (headless: profile and bootstrap here, no browser onboarding)' : ''}\n`);
+  console.log(`Command Center setup${headless ? ' (headless: profile and bootstrap here, no browser onboarding)' : ''}\n`);
 
   // 1. Prerequisites (D-42)
   console.log('1. Prerequisites');
@@ -166,9 +183,9 @@ async function main() {
   const created = ensureState(d);
   console.log(created.length ? created.map((c) => `   created ${c}`).join('\n') : '   already in place');
 
-  // 3. Database (DATABASE_URL's database when set, so a scratch install can be rehearsed; control_center otherwise)
+  // 3. Database (DATABASE_URL's database when set, so a scratch install can be rehearsed; command_center otherwise)
   console.log('\n3. Database');
-  const DBNAME = dbName(process.env.DATABASE_URL) ?? DB;
+  const DBNAME = dbName(process.env.DATABASE_URL ?? readEnvFile(d.envFile)?.DATABASE_URL) ?? DB; // a database the rename could not move keeps its 1.x name in the env file
   let dbReady = false;
   if (existsSync(join(PG17, 'psql'))) {
     const ready = tool(join(PG17, 'pg_isready'), ['-h', 'localhost']);

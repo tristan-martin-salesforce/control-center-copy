@@ -31,7 +31,7 @@
   "progress": { "protocol": "sse", "path": "/api/orgs/{{orgId15}}/run" },
   "estimatedDuration": { "minSec": 30, "maxSec": 600 },
   "privacy": {
-    "note": "The run queries the Pulse Superset host using the Superset session cookie the tool reads from the local Chrome store (first run may show a macOS Keychain prompt). Control Center never sees or passes the cookie. Results stay in the tool's output folder and contain customer data.",
+    "note": "The run queries the Pulse Superset host using the Superset session cookie the tool reads from the local Chrome store (first run may show a macOS Keychain prompt). Command Center never sees or passes the cookie. Results stay in the tool's output folder and contain customer data.",
     "dataClass": "customer",
     "network": "localhost-only",
     "writes": ["~/Projects/greg-playground/bin/pulse-reproduction/pulse-reproduction-output", "~/Projects/greg-playground/exports"],

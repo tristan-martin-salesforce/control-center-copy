@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { VdpGap } from '../../src/contract';
-import { assetKeyOf, assetKindOf, inVdp, matchAssetItems, mergeDraft, sameAsset, type AccountResolver, type AssetItem, type AssetTarget } from '../../src/engines/vdp/assets';
+import { assetKeyOf, assetKindOf, inVdp, linksInText, matchAssetItems, mergeDraft, sameAsset, type AccountResolver, type AssetItem, type AssetTarget } from '../../src/engines/vdp/assets';
 import { vdpSteps } from '../../src/engines/vdp/steps';
 import { draftsFromOutput } from '../../src/llm/research/vdp-assets';
 import { assetCopyText, candidateView, effectiveSlug, slugByAccount } from '../../src/server/vdp/detail';
@@ -106,6 +106,17 @@ describe('the matcher (no model call)', () => {
     // the stronger sighting came untitled: the merge keeps the weaker one's real title, so the asset isn't screened out
     const merged = matchAssetItems([item({ sourceItemId: 'm3', mapped: { accountId: 'acc-1', confidence: 0.85, via: 'mapped' }, links: [{ url: DECK, title: null, mime: null }] }), item({ sourceItemId: 'm4', text: 'acme', links: [{ url: DECK, title: 'ACME readout', mime: null }] })], targets, resolve);
     expect(merged).toMatchObject([{ title: 'ACME readout', confidence: 0.85 }]);
+  });
+
+  it('caps audit: a merge keeps every source and source item; every link of a text is read', () => {
+    const [a] = matchAssetItems([item({ sourceItemId: 'm1', text: 'acme', links: [{ url: DECK, title: 'ACME readout', mime: null }] })], targets, resolve);
+    const many = { ...a!, sources: Array.from({ length: 12 }, (_, i) => ({ ...a!.sources[0]!, label: `sighting ${i}` })), sourceItemIds: Array.from({ length: 30 }, (_, i) => `s${i}`) };
+    const m = mergeDraft(a!, many);
+    expect(m.sources.length).toBe(13);
+    expect(m.sourceItemIds.length).toBe(31);
+    const text = Array.from({ length: 25 }, (_, i) => `https://example.com/doc/${i}`).join(' and ');
+    expect(linksInText(text)).toHaveLength(25);
+    expect(linksInText(text, 3)).toHaveLength(3);
   });
 });
 

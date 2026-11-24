@@ -18,12 +18,32 @@ import type {
 } from '@/engines/types';
 import type { Calibration, EffortActual, EstimateKind, EstimateSource, HandsOnDefaults } from './estimate';
 import type { FeatureValues, PriorityPolicy } from './policy';
+import type { LateState, WhyParts } from './why';
+import type { AdminBatch } from './v2/admin';
+import type { MakeRoom } from './v2/capacity';
+import type { PriorityConfig } from './v2/config';
+import type { Chase, V2Facts } from './v2/rank';
 
-export const PRIORITY_ENGINE_VERSION = 'priority@1';
+/** priority@1.1: overdue decay, likely-done out of the ranking, deal tiers, the two-part why (lane 07 R1, R2, R7). */
+export const PRIORITY_ENGINE_VERSION = 'priority@1.1';
+
+/**
+ * What priority@2 reads beyond `PriorityItem` (all optional: priority@1.1 ignores them, and an item without them
+ * defaults: no admin class, awaiting none, no size class). `size` and `awaiting` are the extractor's / the resolution
+ * check's when they exist (lane 07 §4.3); `counterpartyId` names who the item is with.
+ */
+export interface PriorityItemV2 extends PriorityItem {
+  adminClass?: string | null;
+  awaiting?: 'me' | 'them' | 'none' | null;
+  /** When it started waiting on them (the expected reply is planned from here). */
+  awaitingSince?: string | null;
+  size?: 'xs' | 's' | 'm' | 'l' | 'xl' | null;
+  counterpartyId?: string | null;
+}
 
 export interface PriorityInputs {
   now: string;
-  items: PriorityItem[];
+  items: PriorityItemV2[];
   /** Today + the next 3 days. */
   meetings: Meeting[];
   policy: PriorityPolicy;
@@ -38,6 +58,12 @@ export interface PriorityInputs {
   runningAgents?: RunningAgent[];
   /** Hands-on estimate defaults and recent actuals for calibration (estimate.ts). */
   estimates?: { defaults?: Partial<HandsOnDefaults>; actuals?: EffortActual[] };
+  /** priority@2: the persona's priority block (with accepted learning nudges applied). priority@1.1 ignores it. */
+  priorityConfig?: PriorityConfig;
+  /** priority@2: meetings over the backward plan's horizon (10 working days); defaults to `meetings`. */
+  horizonMeetings?: Meeting[];
+  /** priority@2: items waiting on others (not ranked), for the chase list. */
+  waitingItems?: PriorityItemV2[];
 }
 
 /** A hands-on chore that is not a work item. `kind` picks the default estimate. */
@@ -156,6 +182,10 @@ export interface ScoredItem {
   reasons: RankReason[];
   /** One line for the card's why ("ACME demo 14:00 · kick off now: agent ~3h"). */
   explanation: string;
+  /** R7: the card's why from the same terms: why it matters (who, deal, kind) and why now (late, deadline, start-by). */
+  why: WhyParts;
+  /** R1: set once the deadline passed: the grace day, late ("Late: do now or re-date") or re-date ("Re-date or drop"). */
+  late: LateState | null;
   lane: PriorityLane;
   /** 1-based final rank among ranked items; null in background/hidden. */
   rank: number | null;
@@ -179,6 +209,8 @@ export interface ScoredItem {
   /** Set when kick-off-first sequencing moved this item above others (R-UI-4). */
   sequencing: { movedAbove: string[]; reason: string } | null;
   inputsHash: string;
+  /** priority@2 only: value, urgency, the terms and the planned start-by behind `total`. */
+  v2?: V2Facts;
 }
 
 export interface BackgroundEntry {
@@ -290,4 +322,10 @@ export interface RankingResult {
   excluded: Array<{ workItemId: string; reason: string }>;
   /** All scored items by id (ranked + background + rule-hidden). */
   scores: Record<string, ScoredItem>;
+  /** priority@2: the quiet admin batch (one row, never individually in the Top N). */
+  adminBatch?: AdminBatch | null;
+  /** priority@2: what to move when today is overbooked (lowest value × latest deadline first). */
+  makeRoom?: MakeRoom | null;
+  /** priority@2: chases planned at the expected reply time of items waiting on others. */
+  chases?: Chase[];
 }

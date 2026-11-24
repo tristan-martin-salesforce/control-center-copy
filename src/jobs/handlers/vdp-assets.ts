@@ -7,10 +7,16 @@
  * what is left on the assistant's day line and under the global hard cap; spend is recorded in `llm_calls` on the
  * assistant's line (purpose `chat`, skill `vdp-assets`), like chat_research. A run with no budget left succeeds as
  * `{skipped: 'budget'}`. jobs.result holds counts and codes only.
+ *
+ * Spend (caps audit 26 F-4): the run is under one hold on the governor: the worker's start gate's (`vdp.assets.find:<id>`,
+ * priced as skill `vdp-assets`, found by `startJobSpend`), or its own when no gate ran. Its user budgets stay lines (the research
+ * budget per run, the assistant's day line, the hard cap, and a `cap_usd` the Assistant's approved plan set); the
+ * $0.50 default is no longer where it stops: past the hold it raises a hand (Health ▸ Spend) and the continuation,
+ * carrying the hold, runs the search again on Allow.
  */
 import { randomUUID } from 'node:crypto';
 
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@/llm/provider';
 import { sql } from 'drizzle-orm';
 import { insertLlmCall, ledgerHash } from '@/db/ledger';
 
@@ -31,12 +37,18 @@ import { assistantDayLeft, loadCandidates, upsertCandidates, VDP_ASSETS_JOB, VDP
 import { effectiveSlug, slugByAccount } from '@/server/vdp/detail';
 import { MIN_RUN_USD, targetForKey } from '@/server/vdp/find';
 
+import { finishJobSpend, gateOf, PAUSED_FOR_SPEND, startJobSpend, type SpendGovernor } from '@/llm/spend';
+import { dbSpendGovernor } from '@/server/datasource/db/spend';
+
+import { spendPauseResult, spendStartResult } from '../spend-pause';
 import { JobError, type JobContext, type JobHandlerDef } from '../types';
 
 export interface VdpAssetsHandlerDeps {
   agent?: ResearchAgent;
   google?: () => GoogleTools | null;
   external?: () => { servers: Record<string, McpServerConfig>; tools: string[]; unavailable: string[] };
+  /** The spend governor (default: the database one; null: no hold, the $0.50 default stops a run as before). */
+  spend?: SpendGovernor | null;
 }
 
 let deps: VdpAssetsHandlerDeps = {};
@@ -103,7 +115,8 @@ export async function runVdpAssetsJob(ctx: JobContext, d: VdpAssetsHandlerDeps =
   // once it is inactive: no model call, no spend.
   const persona = await loadPersona(ctx.db, ctx.userId);
   if (!featureActive(persona, 'vdp')) return { skipped: 'vdp_inactive' };
-  const perRunCap = typeof ctx.job.payload.cap_usd === 'number' ? ctx.job.payload.cap_usd : 0.5;
+  const planCap = typeof ctx.job.payload.cap_usd === 'number' ? ctx.job.payload.cap_usd : null;
+  const perRunCap = planCap ?? 0.5;
   const sections = await loadSettingsSections({ db: ctx.db, userId: ctx.userId });
   const tz = sections.profile?.timezone ?? 'America/Denver';
   const now = ctx.clock();
@@ -121,6 +134,14 @@ export async function runVdpAssetsJob(ctx: JobContext, d: VdpAssetsHandlerDeps =
   if (!target) return { skipped: 'gone', note: accountOfVdpKey(key) ? 'The account is no longer engaged' : 'The VDP is no longer in the mirror' };
   const byAccount = slugByAccount(st.cov.vdps);
   const known = (await loadCandidates(ctx.db, ctx.userId)).filter((c) => c.targetKey === target.key || effectiveSlug(c, byAccount) === target.vdpSlug).map((c) => ({ url: c.url, title: c.title }));
+  const gov = d.spend === undefined ? dbSpendGovernor({ db: ctx.db, userId: ctx.userId, clock: ctx.clock }) : d.spend;
+  const envelope = await startJobSpend(gov, ctx.job, { scope: 'research', skill: 'vdp-assets' });
+  const early = await spendStartResult(ctx, envelope);
+  if (early) return early;
+  if (envelope.kind === 'day_budget') return { skipped: 'budget', note: "Today's spend cap has no room for this search; raise it in Settings ▸ Budgets or allow more today" };
+  const gate = gateOf(envelope);
+  // the user budgets left: the plan's cap, the research budget per run, the assistant's day line, the hard cap
+  const userLineUsd = Math.min(planCap ?? Number.POSITIVE_INFINITY, line.perRunUsd, line.dayLeftUsd, hardLeft);
   const google = d.google ? d.google() : await defaultGoogleClient();
   const run = await runVdpAssetResearch(
     { key: target.key, vdpSlug: target.vdpSlug, accountId: target.accountId, companyName: target.companyName, names: searchNamesFor(target.names), known: [...target.inVdp, ...known], inVdp: target.inVdp },
@@ -135,10 +156,19 @@ export async function runVdpAssetsJob(ctx: JobContext, d: VdpAssetsHandlerDeps =
       ...(d.agent ? { agent: d.agent } : {}),
       onTool: () => void ctx.heartbeat().catch(() => undefined),
       persona: renderPersonaBlock(persona),
+      ...(gate ? { spend: gate, userLineUsd } : {}),
     },
-  );
+  ).catch(async (err: unknown) => {
+    await finishJobSpend(gov, envelope);
+    throw err;
+  });
+  if (gate) gate.observe(run.costUsd);
+  await finishJobSpend(gov, envelope);
   await recordSpend(ctx, day, { model: run.model, skill: run.skill, costUsd: run.costUsd, inputTokens: run.inputTokens, outputTokens: run.outputTokens, cacheReadTokens: run.cacheReadTokens ?? 0, cacheWriteTokens: run.cacheWriteTokens ?? 0, contentHash: ledgerHash(run.model, run.skill, target.key, target.vdpSlug, ...[...target.inVdp, ...known].map((k) => (typeof k === 'string' ? k : k.url))), ok: !!run.output, ...(run.error ? { errorCode: run.error.code } : {}), latencyMs: run.latencyMs }).catch(() => undefined);
   if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error('aborted');
+  if (!run.output && run.error?.code === PAUSED_FOR_SPEND) {
+    return { skipped: PAUSED_FOR_SPEND, note: 'Paused at its spend estimate: allow more in Health ▸ Spend to finish the search', costUsd: run.costUsd, ...(await spendPauseResult(ctx, envelope)) };
+  }
   if (!run.output) {
     const code = run.error?.code ?? 'no_answer';
     if (code === 'disallowed_tool') throw new JobError('vdp assets research tried a tool outside the read-only allowlist', 'bug', { code });
@@ -149,5 +179,5 @@ export async function runVdpAssetsJob(ctx: JobContext, d: VdpAssetsHandlerDeps =
 }
 
 export function vdpAssetsJobDef(): JobHandlerDef {
-  return { kind: VDP_ASSETS_JOB, queue: VDP_ASSETS_QUEUE, wired: true, description: 'VDP "Find assets": read-only research over one account history → asset candidates', handler: (ctx) => runVdpAssetsJob(ctx) };
+  return { kind: VDP_ASSETS_JOB, queue: VDP_ASSETS_QUEUE, wired: true, spends: true, description: 'VDP "Find assets": read-only research over one account history → asset candidates', handler: (ctx) => runVdpAssetsJob(ctx) };
 }

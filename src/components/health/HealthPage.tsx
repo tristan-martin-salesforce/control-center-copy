@@ -3,7 +3,7 @@
  * Health (UI-SPEC §12, DESIGN-V2 principle 10): calm when everything is fine, loud only when something is broken.
  *
  *   Health   7/8 sources live · dry run                       worker running · $0.64 of $5 today
- *   [loud, only when broken: VDP needs re-auth · what's affected · the command + Copy · Run refresh]
+ *   [loud, only when broken: VDP needs re-auth · what's affected · the command + Copy · Re-auth VDP (the reauth's own label)]
  *   Sources | Scan ledger · Jobs · Errors · Spend              (≥ 56 rem of main)
  *   Sources | Scan ledger · Jobs · Errors | Spend               (≥ 100 rem)
  *   Sources | Scan ledger | Jobs · Errors | Spend               (≥ 140 rem)
@@ -13,6 +13,9 @@
  * in the panel (`openDetails({kind:'connector'})`); j/k move the selection; Esc closes the panel.
  * Uses the same GET /health as the header dot, so the dot, this page and the panel agree.
  */
+import { PriorityLine } from './PriorityLine';
+import { AppLink } from '@/components/shell/AppLink';
+import { RESOLUTION_SETTINGS_HREF } from './settings-links';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { Connector } from '@/contract';
@@ -34,15 +37,20 @@ import { LedgerTab } from './LedgerTab';
 import { NeedsYou } from './NeedsYou';
 import { FirstScanCard } from './FirstScan';
 import { SpendTab } from './SpendTab';
+import { SetupTab } from './SetupTab';
+import { HealthDown } from './HealthDown';
+import { UpdateBanner } from './UpdateBanner';
+import { healthPlain } from './plain';
+import { setupBadgeCount } from '@/client/health-setup';
 import { navigate } from '@/components/shell/router';
 
-type TabId = 'ledger' | 'jobs' | 'errors' | 'spend';
-const TAB_IDS: TabId[] = ['ledger', 'jobs', 'errors', 'spend'];
-const TAB_LABEL: Record<TabId, string> = { ledger: 'Scan ledger', jobs: 'Jobs', errors: 'Errors', spend: 'Spend' };
+type TabId = 'setup' | 'ledger' | 'jobs' | 'errors' | 'spend';
+const TAB_IDS: TabId[] = ['setup', 'ledger', 'jobs', 'errors', 'spend'];
+const TAB_LABEL: Record<TabId, string> = { setup: 'Setup', ledger: 'Scan ledger', jobs: 'Jobs', errors: 'Errors', spend: 'Spend' };
 const SCOPE = 'list:health';
 
-/** Which tabs share the tabbed pane at each width (the rest are panes of their own). */
-const TABBED: Record<HealthTier, TabId[]> = { stack: TAB_IDS, two: TAB_IDS, three: ['ledger', 'jobs', 'errors'], four: ['jobs', 'errors'] };
+/** Which tabs share the tabbed pane at each width (the rest are panes of their own). Setup is always the first tab. */
+const TABBED: Record<HealthTier, TabId[]> = { stack: TAB_IDS, two: TAB_IDS, three: ['setup', 'ledger', 'jobs', 'errors'], four: ['setup', 'jobs', 'errors'] };
 
 /** The page's width (it fills #cc-main), measured so the panes and the tabs agree. */
 function useWidth<T extends HTMLElement>(ref: RefObject<T | null>): number {
@@ -166,10 +174,15 @@ export function HealthPage() {
   const calm = h ? calmLine(h) : null;
   const dead = jobs.data?.counts.dead ?? 0;
   const unack = events.data?.unacknowledged ?? 0;
-  const tabCount = (t: TabId) => (t === 'jobs' ? dead || undefined : t === 'errors' ? unack || undefined : undefined);
+  const setupNeeds = setupBadgeCount(h);
+  const tabCount = (t: TabId) => (t === 'setup' ? setupNeeds || undefined : t === 'jobs' ? dead || undefined : t === 'errors' ? unack || undefined : undefined);
 
   const tabPanel = (t: TabId) =>
-    t === 'ledger' ? (
+    t === 'setup' ? (
+      <div className="cc-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-3 [scrollbar-gutter:stable]">
+        <SetupTab h={h} connectors={connectors} actions={actions} />
+      </div>
+    ) : t === 'ledger' ? (
       <LedgerTab connectors={connectors} filterId={ledgerFilter} onFilter={(id) => setParams({ connector: id === 'all' ? null : id })} onOpenConnector={openById} />
     ) : t === 'jobs' ? (
       <JobsTab />
@@ -209,8 +222,19 @@ export function HealthPage() {
           ) : null}
         </header>
 
+        <UpdateBanner />
+        {!h && q.error ? <HealthDown fallback={null} onRetry={() => void q.refetch()} /> : null}
         {h ? <NeedsYou h={h} now={now} tz={tz} actions={actions} onOpen={openConnector} panelId={panelId} /> : null}
         {h ? <FirstScanCard fs={h.firstScan} now={now} /> : null}
+        {h?.resolutionShadow ? (
+          <p className="text-caption text-muted" data-health-resolution-shadow>
+            {healthPlain(h.resolutionShadow.line)}{' '}
+            <AppLink href={RESOLUTION_SETTINGS_HREF} className="font-bold text-link hover:underline" data-settings-link="closing-engine">
+              Change in Settings
+            </AppLink>
+          </p>
+        ) : null}
+        {h?.priority ? <PriorityLine p={h.priority} /> : null}
 
         <PanelBoundary name="health">
           <div

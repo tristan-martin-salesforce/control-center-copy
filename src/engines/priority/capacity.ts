@@ -3,15 +3,17 @@
  *
  * - **Load is today-scoped, hands-on work only.** An item is today's load when it is explicitly pinned or
  *   planned for today, when its deadline falls today (user's timezone; a deadline earlier today that has
- *   just passed still counts), or when its start-by is today or earlier for work due after tomorrow.
- *   Work due tomorrow is tomorrow's load, and work overdue from an earlier day is no longer scheduled
- *   load: both show first in "pull forward" instead. Likely-done items need no more hands-on time.
+ *   just passed still counts), or when its start-by is at or before the end of today, whenever it is due
+ *   (PRIO-3: the 150-minute demo build due tomorrow 09:30 has to start today, so it is today's load; the old
+ *   "tomorrow's work is tomorrow's" rule said "fits, 35 min open" on the day it had to be built). Work overdue
+ *   from an earlier day is no longer scheduled load: it shows first in "pull forward" (or is re-dated, R1).
+ *   Likely-done items need no more hands-on time.
  * - Small hands-on chores that wait on you today (approving Outbox drafts, re-authenticating a connector)
  *   count too, unless the draft belongs to an item that is already today's load.
  * - **Agent and Claude-session minutes never count.** They are reported as a parallel background lane
  *   (`agentMinBackground`, `agentRunsBackground`).
  * - Free time = working hours minus busy meetings, from now on (the plan's gaps).
- * - "Overbooked" only when today's hands-on minutes exceed the free minutes.
+ * - "Overbooked" when today's hands-on minutes exceed the free minutes, and then never "fits".
  * - **After hours, the next working day (MIN-22).** Once today's working hours are over (or today has none), the
  *   same rules count the next working day instead: its load (due that day, start-by that day, pinned) and the
  *   chores still waiting, against that day's free time. Today's unfinished due-today work is then overdue from an
@@ -47,8 +49,8 @@ export function todayScope(p: Prepared, day: DayBounds, pinned: ReadonlySet<stri
   if (pinned.has(p.item.id)) return 'pinned';
   const d = p.deadlineMs;
   if (d !== null && d >= day.startMs && d < day.endMs) return 'due_today';
-  // Start-by today (or already past) only pulls in work due after tomorrow; tomorrow's work is tomorrow's.
-  if (d !== null && d >= day.endMs + DAY_MS && p.startByMs !== null && p.startByMs < day.endMs) return 'start_by_today';
+  // PRIO-3: a start-by at or before the end of today makes it today's work, even when it is due tomorrow.
+  if (d !== null && d >= day.endMs && p.startByMs !== null && p.startByMs < day.endMs) return 'start_by_today';
   return null;
 }
 

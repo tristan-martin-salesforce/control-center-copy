@@ -7,7 +7,7 @@
 import { act, createElement as h, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KeyboardProvider, useKeyBinding } from '@/client/keyboard/KeyboardProvider';
-import { $, $$, cleanup, click, render, waitFor } from '@/components/composer/__tests__/dom';
+import { $, $$, advance, cleanup, click, render, waitFor } from '@/components/composer/__tests__/dom';
 import { personaOf } from '@/personas';
 import type { TourMove } from '@/guide/tour';
 
@@ -74,8 +74,15 @@ function Harness({ onMove, onJ }: { onMove: (m: TourMove) => void; onJ: () => vo
   );
 }
 
+// Fake timers for every test (the tour's settle, poll and auto-advance delays, rAF focus): `waitFor` advances the fake
+// clock per poll and `advance(ms)` stands in for a pause, so the file never waits on the wall clock.
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(async () => {
   await cleanup();
+  vi.useRealTimers();
   markSeen.mockReset();
   health.firstScan = null;
   guideState.seen = {};
@@ -84,26 +91,19 @@ afterEach(async () => {
 
 describe('SpotlightTour whose element cannot be placed', () => {
   it('never holds the page: no scrim, clicks and keys pass through, and the step moves on', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    try {
-      // a zero-sized target (a collapsed table in a narrow pane): findAnchor rejects it, so nothing is placed
-      anchor('<section id="one">One</section>', { top: 120, left: 200, width: 0, height: 586 });
-      const moves: TourMove[] = [];
-      const onJ = vi.fn();
-      await render(h(Harness, { onMove: (m) => moves.push(m), onJ }));
-      const root = $('[data-testid="coach-tour"]')!;
-      expect(root.className).toContain('pointer-events-none');
-      expect($('[data-testid="coach-scrim"]')).toBeNull();
-      // page shortcuts still work and focus is not pulled into an invisible card
-      key('j', {}, document.body);
-      expect(onJ).toHaveBeenCalledTimes(1);
-      await act(async () => {
-        vi.advanceTimersByTime(2600);
-      });
-      expect(moves).toContain('next');
-    } finally {
-      vi.useRealTimers();
-    }
+    // a zero-sized target (a collapsed table in a narrow pane): findAnchor rejects it, so nothing is placed
+    anchor('<section id="one">One</section>', { top: 120, left: 200, width: 0, height: 586 });
+    const moves: TourMove[] = [];
+    const onJ = vi.fn();
+    await render(h(Harness, { onMove: (m) => moves.push(m), onJ }));
+    const root = $('[data-testid="coach-tour"]')!;
+    expect(root.className).toContain('pointer-events-none');
+    expect($('[data-testid="coach-scrim"]')).toBeNull();
+    // page shortcuts still work and focus is not pulled into an invisible card
+    key('j', {}, document.body);
+    expect(onJ).toHaveBeenCalledTimes(1);
+    await advance(2600);
+    expect(moves).toContain('next');
   });
 });
 
@@ -196,22 +196,20 @@ describe('the first-visit tour (CoachMarks)', () => {
     expect([...markSeen.mock.lastCall![0]].sort()).toEqual(['home.dayline', 'home.donow', 'home.masthead', 'home.pagehelp']);
     await waitFor(() => !$('[data-testid="coach-tour"]'));
     await waitFor(() => document.activeElement === before);
-  }, 10_000);
+  });
 
   it('waits while the first scan fills in; "Show this page’s tips again" replays it anyway, from step 1', async () => {
     const se = personaOf({ profile: { role: 'se_ic' } });
     health.firstScan = { status: 'active', lookbackDays: 7, startedAt: new Date().toISOString(), floorAt: new Date().toISOString(), budgetUsd: 10, spentUsd: 1, doneAt: null, scopes: [{ connector: 'slack', status: 'active', coveredPct: 20 }] };
     anchor('<section class="hm-mast">Masthead</section>');
     await render(h(KeyboardProvider, null, h(CoachMarks, { routeKey: 'home', persona: se })));
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 2200));
-    });
+    await advance(2200);
     expect($('[data-testid="coach-tour"]')).toBeNull();
     act(() => replayCoachMarks('home'));
     const card = await waitFor(() => $('[data-testid="coach-mark"]'));
     expect(card.getAttribute('data-mark')).toBe('home.masthead');
     expect($('[data-testid="coach-step"]')!.textContent).toBe('Tip');
-  }, 10_000);
+  });
 });
 
 describe('Getting started guidance (a request)', () => {
@@ -224,9 +222,7 @@ describe('Getting started guidance (a request)', () => {
     anchor('<section class="hm-day">Day</section>', { top: 260, left: 200, width: 600, height: 80 });
     await render(h(KeyboardProvider, null, h(CoachMarks, { routeKey: 'home', persona: se })));
     // seen before: no first-visit tour
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 1600));
-    });
+    await advance(1600);
     expect($('[data-testid="coach-tour"]')).toBeNull();
     act(() => requestGuide({ page: 'home', item: null }));
     const card = await waitFor(() => $('[data-testid="coach-mark"]'));
@@ -240,7 +236,7 @@ describe('Getting started guidance (a request)', () => {
     await waitFor(() => !$('[data-testid="coach-tour"]'));
     act(() => requestGuide({ page: 'home', item: null }));
     await waitFor(() => $('[data-mark="home.masthead"]'));
-  }, 10_000);
+  });
 
   it('"Show me" plays an item’s tip where you are (Feedback names no page), and Done ticks that item', async () => {
     guideState.seen = { ...ALL_HOME };
@@ -256,7 +252,7 @@ describe('Getting started guidance (a request)', () => {
     // Done on the tip ticks its Getting started item at once, nothing else
     expect(markSeen).toHaveBeenCalledTimes(1);
     expect(markSeen).toHaveBeenLastCalledWith(['checklist.feedback']);
-  }, 10_000);
+  });
 
   it('a request for another page waits for the navigation, then spotlights the element (a fallback when the first is missing)', async () => {
     guideState.seen = { ...ALL_HOME, 'outbox.dryrun': 't', 'outbox.row': 't' };
@@ -265,15 +261,13 @@ describe('Getting started guidance (a request)', () => {
     const tree = (routeKey: 'home' | 'outbox') => h(KeyboardProvider, null, h(CoachMarks, { routeKey, persona: se }));
     const r = await render(tree('home'));
     act(() => requestGuide({ page: 'outbox', item: 'draft' }));
-    await act(async () => {
-      await new Promise((res) => setTimeout(res, 700));
-    });
+    await advance(700);
     expect($('[data-testid="coach-tour"]')).toBeNull();
     await act(async () => r.root.render(tree('outbox')));
     const card = await waitFor(() => $('[data-testid="coach-mark"]'));
     expect(card.getAttribute('data-mark')).toBe('guide.draft');
     expect(card.textContent).toContain('Your first draft');
-  }, 10_000);
+  });
 
   it('the role tip’s "Looks right" confirms the role and ends the tip', async () => {
     guideState.seen = { 'settings.find': 't', 'settings.effect': 't' };
@@ -285,5 +279,5 @@ describe('Getting started guidance (a request)', () => {
     await click($('[data-testid="coach-confirm"]'));
     expect(markSeen).toHaveBeenLastCalledWith([PERSONA_REVIEWED_KEY]);
     await waitFor(() => !$('[data-testid="coach-tour"]'));
-  }, 10_000);
+  });
 });

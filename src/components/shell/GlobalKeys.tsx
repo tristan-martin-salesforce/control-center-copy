@@ -91,7 +91,7 @@ export function GlobalKeys() {
     },
     { id: 'view:sources', title: 'Sources and sending', group: 'View', icon: { set: 'utility', name: 'sync' }, keywords: ['catch up', 'connectors', 'dry run', 'live send', 'health'], run: () => shell.setUtility('catchup') },
     { id: 'view:since', title: 'Since you left', group: 'View', icon: { set: 'utility', name: 'recent' }, keywords: ['away', 'digest', 'changed'], run: () => shell.setUtility('since') },
-    { id: 'view:spend', title: 'LLM spend today', group: 'View', icon: { set: 'utility', name: 'money' }, keywords: ['budget', 'cost'], run: () => shell.setUtility('spend') },
+    { id: 'view:spend', title: 'AI spend today', group: 'View', icon: { set: 'utility', name: 'money' }, keywords: ['budget', 'cost'], run: () => shell.setUtility('spend') },
     ...(['dark', 'light', 'system'] as const)
       .filter((s) => s !== prefs.scheme)
       .map((s) => ({ id: `view:scheme:${s}`, title: SCHEME_LABEL[s], group: 'View', icon: { set: 'utility' as const, name: 'color_swatch' }, keywords: ['theme', 'dark mode', 'light mode', 'appearance'], run: () => prefs.set({ scheme: s }) })),
@@ -107,7 +107,7 @@ export function GlobalKeys() {
       run: () => prefs.set({ density: prefs.density === 'compact' ? 'comfortable' : 'compact' }),
     },
     { id: 'help:shortcuts', title: 'Keyboard shortcuts', group: 'Help', shortcut: '?', icon: { set: 'utility', name: 'shortcuts' }, keywords: ['keys', 'cheat sheet', 'help'], run: () => shell.setCheatOpen(true) },
-    { id: 'help:about', title: 'About Control Center (version, changelog)', group: 'Help', icon: { set: 'utility', name: 'info' }, keywords: ['version', 'about', 'changelog', 'update', 'sha', 'build'], run: () => navigate('/settings?section=about') },
+    { id: 'help:about', title: 'About Command Center (version, changelog)', group: 'Help', icon: { set: 'utility', name: 'info' }, keywords: ['version', 'about', 'changelog', 'update', 'sha', 'build'], run: () => navigate('/settings?section=about') },
     { id: 'help:feedback', title: 'Report a bug / idea', group: 'Help', icon: { set: 'utility', name: 'bug' }, keywords: ['feedback', 'bug', 'idea', 'enhancement', 'report', 'issue', 'problem'], run: () => openFeedback() },
     { id: 'help:readme', title: 'Read the README', group: 'Help', icon: { set: 'utility', name: 'knowledge_base' }, keywords: ['readme', 'setup', 'install', 'docs', 'help', 'update'], run: () => openReadme() },
     { id: 'help:getting-started', title: guide.guide?.checklistDismissed ? 'Show the Getting started checklist' : 'Getting started checklist', group: 'Help', icon: { set: 'utility', name: 'task' }, keywords: ['onboarding', 'checklist', 'tips', 'guide', 'tour'], run: () => (guide.guide?.checklistDismissed ? guide.dismissChecklist(false) : document.querySelector<HTMLElement>('[data-testid="getting-started"]')?.click()) },

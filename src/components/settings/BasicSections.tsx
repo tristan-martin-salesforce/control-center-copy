@@ -6,12 +6,19 @@ import { fmtUsd } from '@/ui/format';
 import { COMMON_TIMEZONES, DEFAULT_THRESHOLDS, hoursPerDay, same, validateBudgets, validateHours, type Thresholds } from './derive';
 import { Check, DaysPicker, Glyph, NumberInput, RangeField, Select, Switch, TextInput } from './controls';
 import { Block, Instant, Row, SaveActions, SaveFeedback, Section } from './form';
+import { ListEditor } from './ClosingSection';
 import { useSettingsModel } from './state';
-import { usePersona } from '@/client/persona';
+import { PersonaGate, usePersona } from '@/client/persona';
+import { roleTitle } from '@/personas';
+import { DEFAULT_AUTOPILOT_ASSET_HOSTS, DEFAULT_CHAT_SETTINGS } from '@/contract';
+import { normaliseAssetHost } from '@/engines/vdp/asset-hosts';
 import { useApi } from '@/client/hooks';
 import { RaiseCapButton, RaiseHistory } from '@/components/health/RaiseCap';
 import { AppLink } from '@/components/shell/AppLink';
 import s from './settings.module.css';
+
+/** Steps per message: a runaway guard the user sets (cost is the per-message budget). Any positive number, no ceiling. */
+const STEPS_DEFAULT = DEFAULT_CHAT_SETTINGS.maxSteps;
 
 const Loading = () => <Skeleton variant="block" className="mt-6 h-48 w-full" />;
 
@@ -27,7 +34,7 @@ export function ProfileSection() {
   return (
     <Section
       id="profile"
-      title="Profile & role"
+      title="Profile & hours"
       meta="Who you are and when you work. The role pack sets your starter policy; hours and time zone shape the day spine."
       actions={<SaveActions dirty={f.dirty} onSave={() => void f.save()} onDiscard={f.discard} mutation={f.mutation} savedAt={f.savedAt} saveDisabled={!!hoursErr} testId="save-profile" />}
       feedback={<SaveFeedback mutation={f.mutation} />}
@@ -45,7 +52,7 @@ export function ProfileSection() {
           </Row>
           <Row label="Role" labelId="l-role" help="Your role and level set the starter priorities, the scanners' rules and what each page shows. Change them in Role & rules.">
             <div className={s.ctrl}>
-              <span>{persona ? `${persona.levelLabel} (${persona.label})` : '…'}</span>
+              <span>{persona ? roleTitle(persona) : '…'}</span>
               <AppLink className="cc-link" href="/settings?section=role">
                 Change in Role &amp; rules
               </AppLink>
@@ -153,8 +160,8 @@ export function ThresholdsSection() {
             <option value="likely">Likely or better</option>
           </Select>
         </Row>
-        <Row label="Reopen window" htmlFor="t-reopen" help="A done item reopens on a new requirement only if it closed this recently. Default 14." edited={d.reopenWindowDays !== t.saved.reopenWindowDays}>
-          <NumberInput id="t-reopen" min={1} max={60} value={d.reopenWindowDays} onValue={(n) => set({ reopenWindowDays: Math.min(60, Math.max(1, Math.round(Number.isFinite(n) ? n : 1))) })} />
+        <Row label="Reopen window" htmlFor="t-reopen" help="A done item that gets a new requirement within this many days of closing reopens and says why; later than that, a new item is created. Any whole number of days from 1. Default 14." edited={d.reopenWindowDays !== t.saved.reopenWindowDays}>
+          <NumberInput id="t-reopen" min={1} value={d.reopenWindowDays} onValue={(n) => set({ reopenWindowDays: Math.max(1, Math.round(Number.isFinite(n) ? n : 1)) })} />
           <span className={s.unit}>days</span>
         </Row>
         <Row label="Merge score" htmlFor="t-merge" help="Two items this similar are offered as a merge. Higher is stricter." edited={d.mergeScore !== t.saved.mergeScore}>
@@ -250,20 +257,26 @@ export function SendingSection() {
               )}
             </span>
           </Row>
-          <Row
-            label="VDP autopilot"
-            htmlFor="s-vdp-autopilot"
-            help="The app applies, by itself, only the VDP items it can fix with known values (create the company or VDP, add an opp, the account id and period from Org62, strong assets, you as TA, Generate once the inputs are in). Judgment fields stay suggestions you approve."
-            edited={!!f.server && (f.server.channels?.vdp?.autopilot ?? false) !== vdp.autopilot}
-            testId="sending-vdp-autopilot"
-          >
-            <Switch id="s-vdp-autopilot" label="VDP autopilot" checked={vdp.autopilot === true} onChange={(v) => setVdp({ autopilot: v })} testId="vdp-autopilot-switch" />
-            <span className={s.help}>{vdp.autopilot ? `On: each one is an Outbox item, read back and in History; never while dry run is on or VDP needs re-auth.${d.dryRun ? ' Dry run is on, so it waits.' : ''}` : 'Off: every VDP change waits for your Apply or push.'}</span>
-          </Row>
-          <Row label="Autopilot's daily cap" htmlFor="s-vdp-cap" help="The most VDP writes autopilot makes in one day; the rest waits for tomorrow." edited={!!f.server && (f.server.channels?.vdp?.dailyCap ?? 40) !== vdp.dailyCap}>
-            <NumberInput id="s-vdp-cap" min={1} max={500} value={vdp.dailyCap ?? 40} onValue={(n) => setVdp({ dailyCap: Math.min(500, Math.max(1, Math.round(Number.isFinite(n) ? n : 40))) })} />
-            <span className={s.unit}>writes a day</span>
-          </Row>
+          {/* D-55: VDP autopilot, its trusted sites and its cap only while VDP is active (an AE has no VDP) */}
+          <PersonaGate gate={{ feature: 'vdp' }}>
+            <Row
+              label="VDP autopilot"
+              htmlFor="s-vdp-autopilot"
+              help="The app applies, by itself, only the VDP items it can fix with known values (create the company or VDP, add an opp, the account id and period from Org62, strong assets, you as TA, Generate once the inputs are in). Judgment fields stay suggestions you approve."
+              edited={!!f.server && (f.server.channels?.vdp?.autopilot ?? false) !== vdp.autopilot}
+              testId="sending-vdp-autopilot"
+            >
+              <Switch id="s-vdp-autopilot" label="VDP autopilot" checked={vdp.autopilot === true} onChange={(v) => setVdp({ autopilot: v })} testId="vdp-autopilot-switch" />
+              <span className={s.help}>{vdp.autopilot ? `On: each one is an Outbox item, read back and in History; never while dry run is on or VDP needs re-auth.${d.dryRun ? ' Dry run is on, so it waits.' : ''}` : 'Off: every VDP change waits for your Apply.'}</span>
+            </Row>
+            <Row top label="Trusted sites for asset links" help="Autopilot adds links only from these sites; anything else waits for you." edited={f.changed('autopilotAssetHosts')} testId="sending-vdp-asset-hosts">
+              <ListEditor label="Trusted sites" values={d.autopilotAssetHosts ?? [...DEFAULT_AUTOPILOT_ASSET_HOSTS]} saved={f.server.autopilotAssetHosts ?? []} placeholder="A site such as docs.google.com, then Enter" empty="No sites: every asset link waits for you." normalise={(v) => normaliseAssetHost(v)} onChange={(v) => f.set('autopilotAssetHosts', v)} />
+            </Row>
+            <Row label="Autopilot's daily cap" htmlFor="s-vdp-cap" help="The most VDP writes autopilot makes in one day; the rest waits for tomorrow." edited={!!f.server && (f.server.channels?.vdp?.dailyCap ?? 40) !== vdp.dailyCap}>
+              <NumberInput id="s-vdp-cap" min={1} max={500} value={vdp.dailyCap ?? 40} onValue={(n) => setVdp({ dailyCap: Math.min(500, Math.max(1, Math.round(Number.isFinite(n) ? n : 40))) })} />
+              <span className={s.unit}>writes a day</span>
+            </Row>
+          </PersonaGate>
           <Row label="Read-back verification" help="After a send, read the message back and show “Verified” on the Outbox row. Failures stay visible." edited={f.changed('verifyReadback')}>
             <Check checked={d.verifyReadback ?? true} onChange={(v) => f.set('verifyReadback', v)}>
               Verify every send
@@ -288,7 +301,11 @@ export function SendingSection() {
       >
         <ul className="list-disc space-y-1 pl-5 text-body text-fg">
           <li>Approved messages can now leave this Mac: Slack and Gmail sends and drafts.</li>
-          {vdp.autopilot ? <li>VDP autopilot is on: it starts applying what it can fix with known values.</li> : null}
+          {vdp.autopilot ? (
+            <PersonaGate gate={{ feature: 'vdp' }}>
+              <li>VDP autopilot is on: it starts applying what it can fix with known values.</li>
+            </PersonaGate>
+          ) : null}
           <li>Each one still needs your preview and confirm, then a {d.undoWindowSec ?? 10} s undo window.</li>
           <li>The dry run line in the sidebar changes to “Live send”.</li>
           <li>Turn it back on here at any time. Messages already sent stay sent.</li>
@@ -346,10 +363,15 @@ export function AssistantLimitsSection() {
             <span className={s.unit}>$</span>
             <NumberInput id="a-opus" min={0.01} max={10} step={0.05} width={104} value={per.opus} onValue={(n) => f.set('messageUsd', { ...per, opus: n })} />
           </Row>
-          <Row label="Steps per message" htmlFor="a-steps" help="Tool rounds before it must answer." edited={f.changed('maxSteps')}>
-            <NumberInput id="a-steps" min={1} max={80} step={1} width={104} value={d.maxSteps ?? 30} onValue={(n) => f.set('maxSteps', Math.round(n))} />
+          <Row
+            label="Steps per message"
+            htmlFor="a-steps"
+            help={`Tool rounds in one message: a runaway guard, not a cost limit (the per-message budget is). Any positive number; the default is ${STEPS_DEFAULT}. The Assistant stops and asks when it is reached.`}
+            edited={f.changed('maxSteps')}
+          >
+            <NumberInput id="a-steps" min={1} step={1} width={104} value={d.maxSteps ?? STEPS_DEFAULT} onValue={(n) => f.set('maxSteps', Math.round(n))} />
           </Row>
-          <Row label="Deep research, per run" htmlFor="a-research" help="Live search of Slack, Gmail, Calendar, Drive and Org62 when the app has nothing. Counts toward the day." edited={f.changed('researchUsd')}>
+          <Row label="Deep research, per run" htmlFor="a-research" help="Live search of Slack, Gmail, Calendar, Drive and Org62 when the app has nothing. Its own limit per run, not taken from the message's; counts toward the day." edited={f.changed('researchUsd')}>
             <span className={s.unit}>$</span>
             <NumberInput id="a-research" min={0.05} max={5} step={0.05} width={104} value={d.researchUsd ?? 0.5} onValue={(n) => f.set('researchUsd', n)} />
           </Row>
@@ -382,7 +404,7 @@ export function BudgetsSection() {
     <Section
       id="budgets"
       title="Budgets"
-      meta="Daily LLM spend. At the soft budget the header shows a chip. At the hard cap, scanners go deterministic-only until tomorrow."
+      meta="Daily AI spend. At the soft budget the header shows a chip. At the hard cap, scans run on rules only (no AI) until tomorrow."
       actions={<SaveActions dirty={f.dirty} onSave={() => void f.save()} onDiscard={f.discard} mutation={f.mutation} savedAt={f.savedAt} saveDisabled={!!err} testId="save-budgets" />}
       feedback={
         <>

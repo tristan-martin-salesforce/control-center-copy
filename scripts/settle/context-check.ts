@@ -6,15 +6,15 @@
  */
 import { sql } from 'drizzle-orm';
 import fs from 'node:fs';
-import os from 'node:os';
+import { inStateDir } from '../../src/lib/state-folder';
 import { createDb, resolveDatabaseUrl } from '../../src/db/client';
 import { buildSettleContext } from '../../src/engines/settle/context';
 import { loadSettleRaw, loadSettleUser } from '../../src/engines/settle/load-db';
-const SK = os.homedir() + '/Library/Application Support/control-center/stress/settle-key';
+const SK = inStateDir('stress', 'settle-key');
 const key = new Map<string, { item_id: string; deciding_source_item_id?: string | null }>();
 for (const f of fs.readdirSync(SK + '/key')) for (const l of fs.readFileSync(SK + '/key/' + f, 'utf8').split('\n')) if (l.trim()) { const r = JSON.parse(l); key.set(r.item_id, r); }
 const ids = fs.readFileSync(process.argv[2]!, 'utf8').split('\n').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
-const h = createDb({ url: resolveDatabaseUrl(), max: 2, applicationName: "control-center-settle-context-check" });
+const h = createDb({ url: resolveDatabaseUrl(), max: 2, applicationName: "command-center-settle-context-check" });
 const u = await loadSettleUser(h.db);
 let hit = 0, n = 0;
 for (const id of ids) {

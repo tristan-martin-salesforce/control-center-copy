@@ -6,10 +6,10 @@ Turns Tristan's real raw context into the mock seed, so the mocked UI feels like
 
 | What | Where |
 |---|---|
-| Raw gathered context (input) | `~/Library/Application Support/control-center/fixtures/raw/*.json` (chmod 700 dir) |
-| Private curation overlay (input) | `~/Library/Application Support/control-center/fixtures/overlay.mjs` |
-| Voice profile (optional input) | `~/Library/Application Support/control-center/voice/profile.json` |
-| Generated seed (output, chmod 600) | `~/Library/Application Support/control-center/fixtures/seed.json` |
+| Raw gathered context (input) | `~/Library/Application Support/command-center/fixtures/raw/*.json` (chmod 700 dir) |
+| Private curation overlay (input) | `~/Library/Application Support/command-center/fixtures/overlay.mjs` |
+| Voice profile (optional input) | `~/Library/Application Support/command-center/voice/profile.json` |
+| Generated seed (output, chmod 600) | `~/Library/Application Support/command-center/fixtures/seed.json` |
 
 The mock loads `seed.json` automatically when it exists (`src/server/datasource/mock/seed-loader.ts`);
 otherwise it falls back to the committed placeholder `src/mock/seed.example.json`.

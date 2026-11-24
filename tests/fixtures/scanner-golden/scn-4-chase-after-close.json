@@ -1,0 +1,53 @@
+{
+  "id": "scn-4-chase-after-close",
+  "title": "SCN-4: the asker chases after a close (\"that link doesn't open\"): the item must reopen",
+  "storyline": "03-scanner-quality.md SCN-4 (a chase after a close is swallowed by DUP-1), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-09T15:00:00.000Z",
+      "seen_at": "2026-11-09T15:05:00.000Z",
+      "from_me": false,
+      "body": "Can you send me the link to the pricing deck for ACME?",
+      "meta": { "channelId": "D0PERSONC1", "channelType": "im", "author": { "name": "PERSON_C", "email": "person_c@example.com", "externalId": "U0PERSONC" }, "participants": [{ "name": "PERSON_C", "externalId": "U0PERSONC" }] },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-09T15:20:00.000Z",
+      "seen_at": "2026-11-09T15:25:00.000Z",
+      "from_me": true,
+      "body": "Here it is: https://docs.google.com/presentation/d/FILE_PRICING_DECK_0001/edit",
+      "meta": { "channelId": "D0PERSONC1", "channelType": "im", "participants": [{ "name": "PERSON_C", "externalId": "U0PERSONC" }] }
+    },
+    {
+      "id": "s3",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-10T09:00:00.000Z",
+      "seen_at": "2026-11-10T09:05:00.000Z",
+      "from_me": false,
+      "body": "that link doesn't open for me, can you re-share the ACME pricing deck?",
+      "meta": { "channelId": "D0PERSONC1", "channelType": "im", "author": { "name": "PERSON_C", "email": "person_c@example.com", "externalId": "U0PERSONC" }, "participants": [{ "name": "PERSON_C", "externalId": "U0PERSONC" }] },
+      "agent": [{ "propose_new": { "kind": "ask", "title": "Re-share the ACME pricing deck link with PERSON_C" } }]
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Send PERSON_C the ACME pricing deck link",
+      "keywords": ["pricing deck"],
+      "origin": "s1",
+      "ask_quote": "send me the link to the pricing deck"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "reopened": true, "rule": "none", "why": "the delivery closed it (right), the chase says it did not work: it must reopen (fixed: DUP-1 links the chase as a follow_up: contradiction, R2)" }
+  ]
+}

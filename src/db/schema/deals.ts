@@ -13,7 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { tstz, createdAt, updatedAt, ownerUserId, amount } from './columns';
+import { tstz, createdAt, updatedAt, ownerUserId, amount, id15 } from './columns';
 import {
   runStatus,
   missedOppTier,
@@ -49,8 +49,11 @@ export const org62Events = pgTable(
     firstSeenAt: tstz('first_seen_at').notNull().defaultNow(),
     lastSeenAt: tstz('last_seen_at').notNull().defaultNow(),
     deletedUpstreamAt: tstz('deleted_upstream_at'),
+    org62EventId15: id15('org62_event_id15', 'org62_event_id'),
+    whatOrg62Id15: id15('what_org62_id15', 'what_org62_id'),
   },
   (t) => [
+    index('org62_events_owner_event_id15_idx').on(t.ownerUserId, t.org62EventId15),
     uniqueIndex('org62_events_owner_event_uidx').on(t.ownerUserId, t.org62EventId),
     index('org62_events_owner_starts_idx').on(t.ownerUserId, t.startsAt),
     /** Natural duplicate check: Subject + Start + Owner. */
@@ -121,8 +124,12 @@ export const org62UseCases = pgTable(
     lastSeenAt: tstz('last_seen_at').notNull().defaultNow(),
     goneAt: tstz('gone_at'),
     updatedAt: updatedAt(),
+    org62UseCaseId15: id15('org62_use_case_id15', 'org62_use_case_id'),
+    org62OpportunityId15: id15('org62_opportunity_id15', 'org62_opportunity_id'),
+    org62AccountId15: id15('org62_account_id15', 'org62_account_id'),
   },
   (t) => [
+    index('org62_use_cases_owner_opp_id15_idx').on(t.ownerUserId, t.org62OpportunityId15),
     uniqueIndex('org62_use_cases_owner_record_uidx').on(t.ownerUserId, t.org62UseCaseId),
     uniqueIndex('org62_use_cases_owner_vdp_uc_uidx').on(t.ownerUserId, t.vdpUseCaseId).where(sql`${t.vdpUseCaseId} is not null`),
     index('org62_use_cases_owner_opp_idx').on(t.ownerUserId, t.org62OpportunityId),

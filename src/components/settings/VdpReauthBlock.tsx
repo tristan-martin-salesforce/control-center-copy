@@ -1,7 +1,7 @@
 'use client';
 /**
  * Settings ▸ Sources ▸ VDP re-auth: where the cookie refresh script lives and which Python runs it. Health's
- * "Run refresh" (and the Assistant's reconnect) runs it on this Mac through the worker: silently while the Okta session
+ * "Re-auth VDP" (the error catalog's label; and the Assistant's reconnect) runs it on this Mac through the worker: silently while the Okta session
  * is live, else in Terminal with a browser for MFA. Saved instantly into `settings.scanning` on blur or Enter; the
  * worker reads it on the next click (src/reauth/run.ts).
  */
@@ -43,7 +43,7 @@ export function VdpReauthBlock() {
     <Block
       id="sources-vdp-reauth"
       title="VDP re-auth"
-      help="“Run refresh” in Health runs this script on this Mac: silently while your Okta session is live, else in Terminal with a browser window for MFA."
+      help="“Re-auth VDP” in Health runs this script on this Mac: silently while your Okta session is live, else in Terminal with a browser window for MFA."
     >
       <Row label="Refresh script" htmlFor="vdp-script" error={scriptErr} help={`Where refresh_vdp_fir_cookie.py lives (it ships with the vdp-app repo). Default: ${DEFAULT_VDP_REFRESH_SCRIPT}`}>
         <TextInput

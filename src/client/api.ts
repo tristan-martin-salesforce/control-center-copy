@@ -68,13 +68,33 @@ export function urlFor<K extends RouteKey>(key: K, input?: RouteClientInput<K>, 
   return `${opts.baseUrl ?? ''}${API_BASE}${buildPath(def.path, i.params)}${q ? `?${q}` : ''}`;
 }
 
-async function toApiError(res: Response): Promise<ApiError> {
-  let body: unknown = null;
+/** The body as JSON, or NOT_JSON (an HTML error page, a proxy's sign-in page, a dev server restarting). */
+const NOT_JSON = Symbol('not-json');
+async function readJsonBody(res: Response): Promise<unknown> {
+  let text: string;
   try {
-    body = await res.json();
+    text = await res.text();
   } catch {
-    /* not JSON */
+    return NOT_JSON;
   }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return NOT_JSON;
+  }
+}
+
+/**
+ * PKG R9: a response that isn't JSON is the app (or something in front of it) not answering as itself, so it reads
+ * "upstream_unavailable" with a plain sentence, never `SyntaxError: Unexpected token '<'`.
+ */
+export function notJsonError(status: number): ApiError {
+  return new ApiError('upstream_unavailable', `Command Center didn't answer as expected${status ? ` (HTTP ${status})` : ''}. It may be restarting; try again in a moment.`, status, true, { notJson: true });
+}
+
+async function toApiError(res: Response): Promise<ApiError> {
+  const body = await readJsonBody(res);
+  if (body === NOT_JSON) return notJsonError(res.status);
   const parsed = ApiErrorEnvelope.safeParse(body);
   if (parsed.success) {
     const e = parsed.data.error;
@@ -109,7 +129,9 @@ export async function api<K extends JsonRouteKey>(key: K, input?: RouteClientInp
     throw new ApiError('upstream_unavailable', `Network error: ${(err as Error).message}`, 0, true);
   }
   if (!res.ok) throw await toApiError(res);
-  return (await res.json()) as RouteOutput<K>;
+  const body = await readJsonBody(res);
+  if (body === NOT_JSON) throw notJsonError(res.status);
+  return body as RouteOutput<K>;
 }
 
 /** Call an SSE route (POST /chat) and iterate its events. */

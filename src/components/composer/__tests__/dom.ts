@@ -5,6 +5,7 @@
 import * as React from 'react';
 import { act, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { vi } from 'vitest';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 // vitest.config has no JSX setting, so esbuild emits classic `React.createElement` for .tsx: provide it.
@@ -40,22 +41,37 @@ export async function cleanup(): Promise<void> {
   document.body.innerHTML = '';
 }
 
-/** Poll (inside act) until fn returns a truthy value. */
+const POLL_MS = 20;
+
+/**
+ * Poll (inside act) until fn returns a truthy value. The budget is a number of polls (`timeoutMs / 20`), never a
+ * wall-clock deadline: each poll yields to the event loop for at least 20 ms, so a loaded machine gets more wall time
+ * instead of a flake. Under `vi.useFakeTimers()` each poll advances the fake clock by 20 ms instead of sleeping.
+ */
 export async function waitFor<T>(fn: () => T | null | undefined | false, timeoutMs = 4000): Promise<T> {
-  const end = Date.now() + timeoutMs;
+  const polls = Math.max(1, Math.ceil(timeoutMs / POLL_MS));
   let lastErr: unknown;
-  while (Date.now() < end) {
+  for (let i = 0; ; i++) {
     try {
       const v = fn();
       if (v) return v;
     } catch (e) {
       lastErr = e;
     }
+    if (i >= polls) break;
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
+      if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(POLL_MS);
+      else await new Promise((r) => setTimeout(r, POLL_MS));
     });
   }
   throw lastErr ?? new Error('waitFor: timed out');
+}
+
+/** Advance fake timers by `ms` inside act (the file called `vi.useFakeTimers()`), so timer-driven renders flush. */
+export async function advance(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
 }
 
 export async function click(el: Element | null | undefined): Promise<void> {

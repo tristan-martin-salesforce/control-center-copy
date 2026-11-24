@@ -10,14 +10,18 @@
  *  - Exact allowlist, checked in a PreToolUse hook (it runs for every call, built-ins included), the `canUseTool` gate,
  *    a scan of assistant `tool_use` blocks and the result's `permission_denials`. A disallowed tool aborts the run.
  *  - Budget: `maxTurns`, SDK `maxBudgetUsd` and a running estimate that aborts at the cap ($0.40, on the Assistant's
- *    spend line), plus a watchdog and the caller's AbortSignal. Clean env (scannerEnv) and the user's gateway config.
+ *    spend line), plus a watchdog and the caller's AbortSignal. With a spend gate (caps audit 26 F-4: the governor's
+ *    hold, src/llm/spend) the estimate is reported instead: past the hold the run raises a hand at the next tool call
+ *    (Health ▸ Spend) and waits there for the answer, as the Assistant does (the query stays alive, nothing is paid
+ *    twice): Allow continues, Stop or no answer ends it and the app's own reading is the report. The cap and turns are
+ *    then the runaway guard; the day line left stays a line. Clean env (scannerEnv) and the user's gateway config.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 
 import {
   createSdkMcpServer,
-  query as sdkQuery,
+  agentQuery as sdkQuery,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
   tool,
   type CanUseTool,
@@ -25,7 +29,7 @@ import {
   type McpSdkServerConfigWithInstance,
   type Options,
   type SDKMessage,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@/llm/provider';
 import { z } from 'zod';
 
 import { FeedbackConfidence } from '@/contract';
@@ -37,6 +41,7 @@ import { estimateCallCostUsd } from '@/llm/models';
 import { READIN_MODEL } from '@/llm/readin/prompt';
 import { safeLogText } from '@/llm/redact';
 import { isRealTool } from '@/llm/skill-runner';
+import { PAUSED_FOR_SPEND, RUNAWAY_TURNS, waitForAnswer, type SpendGate } from '@/llm/spend';
 
 import { capJson, type FeedbackReads } from './reads';
 
@@ -47,6 +52,8 @@ export const FEEDBACK_MODEL = READIN_MODEL;
 export const FEEDBACK_CAP_USD = 0.4;
 export const FEEDBACK_MAX_TURNS = 14;
 export const FEEDBACK_TIMEOUT_MS = 150_000;
+/** How long a diagnose run waits at its spend ask for the answer (the watchdog stops while it waits). */
+export const FEEDBACK_ASK_WAIT_MS = 60_000;
 
 /** The only built-ins the run loads. */
 export const CODE_TOOLS = ['Read', 'Grep', 'Glob'] as const;
@@ -138,7 +145,7 @@ export interface FeedbackAgentState {
 export type ToolResult = { text: string; isError?: boolean };
 
 /** The handlers behind `cc_feedback`: reads (already scrubbed by `reads`) and the finish call. */
-export function createFeedbackTools(reads: FeedbackReads, st: FeedbackAgentState, repoRoot: string): Record<FeedbackToolName, (args: unknown) => Promise<ToolResult>> {
+export function createFeedbackTools(reads: FeedbackReads, st: FeedbackAgentState, repoRoot: string, o: { codeTools?: boolean } = {}): Record<FeedbackToolName, (args: unknown) => Promise<ToolResult>> {
   const r = (fn: () => Promise<unknown>) => async () => ({ text: capJson(await fn()) });
   return {
     feedback_event_log: r(reads.eventLog),
@@ -151,6 +158,11 @@ export function createFeedbackTools(reads: FeedbackReads, st: FeedbackAgentState
     feedback_finish: async (args) => {
       const p = FinishOutput.safeParse(args);
       if (!p.success) return { text: `Invalid report; fix these and call feedback_finish again:\n${p.error.issues.slice(0, 8).map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('\n')}`, isError: true };
+      // PKG-8: a packaged build has no source tree, so there is no file to name
+      if (o.codeTools === false) {
+        st.output = { ...p.data, diagnosis: { ...p.data.diagnosis, files: [] } };
+        return { text: 'Recorded. You are done; stop now.' };
+      }
       const bad = p.data.diagnosis.files.filter((f) => {
         const a = checkCodeAccess(repoRoot, 'Read', { file_path: f.replace(/\/$/, '') });
         return !a.ok || !fs.existsSync(a.input.file_path as string);
@@ -207,7 +219,16 @@ export interface FeedbackRunInput {
   reads: FeedbackReads;
   repoRoot: string;
   costCapUsd: number;
+  /** F-4: the report's spend hold (`costCapUsd` and the turns are then the runaway guard's floor). */
+  spend?: SpendGate | null;
+  /** With a hold: the user budget left (the Assistant's day line, the hard cap); the run never passes it. */
+  userLineUsd?: number;
   signal: AbortSignal;
+  /**
+   * PKG-8: false when the source tree is not on this machine (a packaged build): the run loads no Read/Grep/Glob and
+   * diagnoses from the feedback_* reads only. Default true.
+   */
+  codeTools?: boolean;
 }
 
 export interface FeedbackRunResult {
@@ -215,8 +236,11 @@ export interface FeedbackRunResult {
   output: FinishOutput | null;
   model: string;
   costUsd: number;
+  /** Uncached input only (D1): cache reads and writes are their own fields. */
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   toolCalls: string[];
   latencyMs: number;
   error?: { code: string; message: string; disallowedTool?: string };
@@ -239,15 +263,16 @@ export interface SdkFeedbackAgentOptions {
 const realQuery: FeedbackQueryFn = ({ prompt, options }) => sdkQuery({ prompt, options }) as ReturnType<FeedbackQueryFn>;
 
 /** The run's SDK options (exported for the guard tests). */
-export function feedbackAgentOptions(i: { model: string; systemPrompt: string[]; repoRoot: string; server: McpSdkServerConfigWithInstance; maxTurns: number; costCapUsd: number; canUseTool: CanUseTool; preToolUse: HookCallback; gateway: GatewayConfig; executable: string; abortController: AbortController; stderr?: (d: string) => void }): Options {
+export function feedbackAgentOptions(i: { model: string; systemPrompt: string[]; repoRoot: string; server: McpSdkServerConfigWithInstance; maxTurns: number; costCapUsd: number; canUseTool: CanUseTool; preToolUse: HookCallback; gateway: GatewayConfig; executable: string; abortController: AbortController; stderr?: (d: string) => void; codeTools?: boolean }): Options {
+  const code = i.codeTools !== false;
   return {
     model: i.model,
     effort: 'medium',
-    tools: [...CODE_TOOLS],
+    tools: code ? [...CODE_TOOLS] : [],
     mcpServers: { [FEEDBACK_SERVER]: i.server },
     strictMcpConfig: true,
     // No bare allowedTools / dontAsk: they would decide before the canUseTool gate (READIN-1).
-    disallowedTools: [...DENIED_BUILTINS],
+    disallowedTools: code ? [...DENIED_BUILTINS] : [...DENIED_BUILTINS, ...CODE_TOOLS],
     permissionMode: 'default',
     canUseTool: i.canUseTool,
     hooks: { PreToolUse: [{ hooks: [i.preToolUse] }] },
@@ -277,7 +302,8 @@ export class SdkFeedbackAgent implements DiagnoseAgent {
     const st: FeedbackAgentState = { output: null, calls: [] };
     const result: FeedbackRunResult = { ok: false, output: null, model, costUsd: 0, inputTokens: 0, outputTokens: 0, toolCalls: [], latencyMs: 0 };
     assertReadOnly(FEEDBACK_ALLOWED_TOOLS);
-    const allow = new Set(FEEDBACK_ALLOWED_TOOLS);
+    const codeTools = input.codeTools !== false;
+    const allow = new Set(codeTools ? FEEDBACK_ALLOWED_TOOLS : FEEDBACK_ALLOWED_TOOLS.filter((t) => !(CODE_TOOLS as readonly string[]).includes(t)));
     const ac = new AbortController();
     let error: FeedbackRunResult['error'];
     const fail = (e: NonNullable<FeedbackRunResult['error']>) => {
@@ -293,14 +319,35 @@ export class SdkFeedbackAgent implements DiagnoseAgent {
       }
       return 'unknown';
     };
-    const handlers = createFeedbackTools(input.reads, st, input.repoRoot);
+    const handlers = createFeedbackTools(input.reads, st, input.repoRoot, { codeTools });
 
+    // F-4: past the hold, the next tool call waits for the user's answer (Allow continues; Stop or no answer ends it)
+    let overHold = false;
+    let extraMs = 0;
+    const raiseHand = async (): Promise<boolean> => {
+      const gate = input.spend!;
+      overHold = false;
+      await gate.ask({ pctDone: null }).catch(() => undefined);
+      log({ event: 'paused', code: PAUSED_FOR_SPEND });
+      const t = Date.now();
+      const a = await waitForAnswer(gate.hold.id, { timeoutMs: FEEDBACK_ASK_WAIT_MS, signal: ac.signal });
+      extraMs += Date.now() - t;
+      if (a?.kind === 'approve' || a?.kind === 'today') {
+        if (a.kind === 'approve') gate.hold.heldUsd = Math.round((gate.hold.heldUsd + a.usd) * 1e6) / 1e6;
+        gate.hold.state = 'approved';
+        gate.hold.answerUsd = a.kind === 'approve' ? a.usd : null;
+        return true;
+      }
+      fail({ code: PAUSED_FOR_SPEND, message: a?.kind === 'deny' ? 'stopped from the spend ask' : 'paused for spend: no answer in time' });
+      return false;
+    };
     const preToolUse: HookCallback = async (h) => {
       if (h.hook_event_name !== 'PreToolUse') return {};
       const g = guard(h.tool_name, 'pre_tool_use');
       const deny = (reason: string) => ({ hookEventName: 'PreToolUse' as const, permissionDecision: 'deny' as const, permissionDecisionReason: reason });
       if (g === 'abort') return { continue: false, stopReason: 'disallowed tool', hookSpecificOutput: deny('not on the feedback allowlist') };
       if (g === 'unknown') return { hookSpecificOutput: deny('not on the feedback allowlist') };
+      if (overHold && input.spend && !(await raiseHand())) return { continue: false, stopReason: 'spend ask', hookSpecificOutput: deny('stopped at the spend estimate') };
       if ((CODE_TOOLS as readonly string[]).includes(h.tool_name)) {
         const a = checkCodeAccess(input.repoRoot, h.tool_name, (h.tool_input ?? {}) as Record<string, unknown>);
         if (!a.ok) {
@@ -327,15 +374,26 @@ export class SdkFeedbackAgent implements DiagnoseAgent {
     if (input.signal.aborted) onExternalAbort();
     input.signal.addEventListener('abort', onExternalAbort, { once: true });
     const timeoutMs = this.o.timeoutMs ?? FEEDBACK_TIMEOUT_MS;
-    const watchdog = setTimeout(() => fail({ code: 'timeout', message: `watchdog: diagnose exceeded ${timeoutMs} ms` }), timeoutMs);
+    // the watchdog does not count the time a spend ask waits for its answer
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const arm = (ms: number) =>
+      (watchdog = setTimeout(() => {
+        if (extraMs > 0) {
+          const more = extraMs;
+          extraMs = 0;
+          arm(more);
+        } else fail({ code: 'timeout', message: `watchdog: diagnose exceeded ${timeoutMs} ms` });
+      }, ms));
+    arm(timeoutMs);
     let stderrTail = '';
     const options = feedbackAgentOptions({
       model,
       systemPrompt: input.systemPrompt,
       repoRoot: input.repoRoot,
+      codeTools,
       server: buildFeedbackServer(handlers, st),
-      maxTurns: FEEDBACK_MAX_TURNS,
-      costCapUsd: input.costCapUsd,
+      maxTurns: input.spend ? Math.max(FEEDBACK_MAX_TURNS, RUNAWAY_TURNS) : FEEDBACK_MAX_TURNS,
+      costCapUsd: input.spend ? Math.min(input.userLineUsd ?? Number.POSITIVE_INFINITY, Math.max(input.costCapUsd, input.spend.ceilingUsd())) : input.costCapUsd,
       canUseTool,
       preToolUse,
       gateway: this.o.gateway ?? (this.o.queryFn ? { env: {} } : claudeGatewayConfig()),
@@ -358,13 +416,19 @@ export class SdkFeedbackAgent implements DiagnoseAgent {
           if (m.usage) {
             usage.set(m.id ?? `anon-${usage.size}`, estimateCallCostUsd(m.model ?? model, m.usage));
             const est = [...usage.values()].reduce((a, c) => a + c, 0);
-            if (est > input.costCapUsd) fail({ code: 'cost_cap', message: `cost cap exceeded: est $${est.toFixed(4)} > $${input.costCapUsd}` });
+            if (input.spend) {
+              if (input.userLineUsd != null && est > input.userLineUsd) fail({ code: 'cost_cap', message: `the day's budget is reached: est $${est.toFixed(4)} > $${input.userLineUsd.toFixed(4)}` });
+              else if (input.spend.observe(est) === 'ask') overHold = true;
+            } else if (est > input.costCapUsd) fail({ code: 'cost_cap', message: `cost cap exceeded: est $${est.toFixed(4)} > $${input.costCapUsd}` });
           }
         } else if (msg.type === 'result') {
           sawResult = true;
           result.costUsd = msg.total_cost_usd ?? 0;
           const mu = Object.values(msg.modelUsage ?? {});
-          result.inputTokens = mu.reduce((a, u) => a + u.inputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens, 0);
+          // D1: cache reads and writes are booked apart from uncached input.
+          result.inputTokens = mu.reduce((a, u) => a + u.inputTokens, 0);
+          result.cacheReadTokens = mu.reduce((a, u) => a + u.cacheReadInputTokens, 0);
+          result.cacheWriteTokens = mu.reduce((a, u) => a + u.cacheCreationInputTokens, 0);
           result.outputTokens = mu.reduce((a, u) => a + u.outputTokens, 0);
           for (const d of msg.permission_denials ?? []) if (!(CODE_TOOLS as readonly string[]).includes(d.tool_name)) guard(d.tool_name, 'permission_denial');
           if (msg.subtype === 'error_max_budget_usd') fail({ code: 'cost_cap', message: 'cost cap exceeded (SDK maxBudgetUsd)' });

@@ -38,7 +38,7 @@ export function useTriageActions() {
     optimistic: (input, cache) => leave(input.params.id, cache),
     toast: (res: { entity: TriageItem }) => ({
       // one Claim verb: a missed opp the app knows becomes a DC request (100%, editable in Deals ▸ DCs)
-      ...(res.entity.kind === 'missed_opp' ? { body: 'DC request added: it goes on your next logging canvas (Deals ▸ DCs). Nothing was sent.' } : {}),
+      ...(res.entity.kind === 'missed_opp' ? { body: 'DC request added: it goes in your next batch (Deals ▸ DCs). Nothing was sent.' } : {}),
       title:
         res.entity.kind === 'mapping'
           ? `Mapped: ${mapChoice.current || res.entity.title}`

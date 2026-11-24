@@ -1,6 +1,7 @@
 /** Each closure rule, with the reasons, resolutions, labels and undo it promises. */
 import { describe, expect, it } from 'vitest';
-import { applyDecision, applySignal, normalizeSignal, undoDecision } from '@/engines/closure';
+import { applyDecision, undoDecision } from '@/engines/closure/apply';
+import { applySignal, normalizeSignal } from '@/engines/closure/machine';
 import { DEFAULT_CLOSURE_SETTINGS, type Signal } from '@/engines/types';
 import { citem, DANA, daysBefore, ME, plus, ROWS, SAM, SIGNALS, T0 } from './fixtures';
 

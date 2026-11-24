@@ -1,11 +1,41 @@
 /**
- * Model ids and list prices used for the running cost estimate (SCANNER.md §7, brief 09 §4.1).
+ * Model ids (by tier) and list prices used for the running cost estimate (SCANNER.md §7, brief 09 §4.1). The prices
+ * here are the Anthropic provider's (`agentSdkProvider.prices`); another provider brings its own table.
  * The authoritative cost is the SDK result's `total_cost_usd` / `modelUsage`; this table only lets the
  * runner abort mid-run when the per-run cap is crossed, before the result message arrives.
  */
 
-export const SCANNER_MODEL = 'claude-haiku-5-5';
-export const ESCALATION_MODEL = 'claude-sonnet-5-5';
+/**
+ * Model choice by capability (08 R6, H-4): code asks for a tier and the active provider maps it to its own model id.
+ * `fast` is the background scanners' model, `balanced` the escalation / drafting model, `strong` the user-asked one.
+ */
+export type ModelTier = 'fast' | 'balanced' | 'strong';
+export const MODEL_TIERS: readonly ModelTier[] = ['fast', 'balanced', 'strong'];
+
+/** The Anthropic tier map (the Agent SDK provider's `tiers`; src/llm/provider/agent-sdk.ts). */
+export const ANTHROPIC_TIER_MODELS: Readonly<Record<ModelTier, string>> = Object.freeze({
+  fast: 'claude-haiku-5-5',
+  balanced: 'claude-sonnet-5-5',
+  strong: 'claude-opus-5-5',
+});
+
+/**
+ * Assistant v2 (H-6): the Assistant's model names by tier, and back (src/llm/chat/router.ts routes a turn to a tier;
+ * the message header shows the label). `haiku | sonnet | opus` are `ChatModel` values.
+ */
+export const CHAT_TIER_MODEL: Readonly<Record<ModelTier, 'haiku' | 'sonnet' | 'opus'>> = Object.freeze({ fast: 'haiku', balanced: 'sonnet', strong: 'opus' });
+export const CHAT_MODEL_TIER: Readonly<Record<'haiku' | 'sonnet' | 'opus', ModelTier>> = Object.freeze({ haiku: 'fast', sonnet: 'balanced', opus: 'strong' });
+export const TIER_LABEL: Readonly<Record<ModelTier, string>> = Object.freeze({ fast: 'Haiku', balanced: 'Sonnet', strong: 'Opus' });
+
+export const isModelTier = (m: string): m is ModelTier => (MODEL_TIERS as readonly string[]).includes(m);
+
+/** A tier → the provider's model id (default: the Anthropic map); a model id passes through unchanged. */
+export function resolveModel(model: string | ModelTier, tiers: Readonly<Record<ModelTier, string>> = ANTHROPIC_TIER_MODELS): string {
+  return isModelTier(model) ? tiers[model] : model;
+}
+
+export const SCANNER_MODEL = ANTHROPIC_TIER_MODELS.fast;
+export const ESCALATION_MODEL = ANTHROPIC_TIER_MODELS.balanced;
 
 export interface ModelPrice {
   /** USD per million tokens. */
@@ -32,9 +62,9 @@ export interface TokenUsage {
   cache_read_input_tokens?: number | null;
 }
 
-/** Estimate the cost of one API call from its usage block. Unknown models are priced as Sonnet (conservative). */
-export function estimateCallCostUsd(model: string, u: TokenUsage): number {
-  const p = MODEL_PRICES[model] ?? MODEL_PRICES['claude-sonnet-5-5']!;
+/** Estimate the cost of one API call from its usage block (a provider passes its own `prices`). Unknown models are priced as Sonnet (conservative). */
+export function estimateCallCostUsd(model: string, u: TokenUsage, prices: Readonly<Record<string, ModelPrice>> = MODEL_PRICES): number {
+  const p = prices[model] ?? MODEL_PRICES[model] ?? MODEL_PRICES['claude-sonnet-5-5']!;
   const inp = u.input_tokens ?? 0;
   const out = u.output_tokens ?? 0;
   const cw = u.cache_creation_input_tokens ?? 0;
@@ -45,4 +75,13 @@ export function estimateCallCostUsd(model: string, u: TokenUsage): number {
   const outRate = long ? (p.longOutput ?? p.output) : p.output;
   const scale = long ? inRate / p.input : 1;
   return (inp * inRate + out * outRate + cw * p.cacheWrite5m * scale + cr * p.cacheRead * scale) / 1_000_000;
+}
+
+/**
+ * COST-2: the per-request prompt size above which `model` is priced higher (Haiku 5.5: 100K, 5×), or null when its
+ * price has no such tier. The runner's prompt guard and the ledger's `long_tier_requests` read it, so a provider with
+ * other thresholds only changes this table.
+ */
+export function longPromptThresholdOf(model: string): number | null {
+  return MODEL_PRICES[model]?.longPromptThreshold ?? null;
 }

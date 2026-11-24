@@ -1,5 +1,5 @@
 /**
- * `chat_org62_lookup` (BE-CHAT): a live, read-only Org62 search for opportunities or accounts. The model never writes
+ * `search source org62` (BE-CHAT): a live, read-only Org62 search for opportunities or accounts. The model never writes
  * SOQL: it passes words, this module builds one SELECT from fixed fields (no long-text bodies), and the query runs as
  * ONE `soqlQuery` call through runOneReadLookup (the scanners' read-only allowlist, not widened). Rows are matched to
  * the app's own opportunities and accounts so a follow-up change (edit_activities) can use their ids.
@@ -16,7 +16,7 @@ export const Org62LookupInput = z.object({
   account: z.string().max(80).optional(),
   /** Opportunities: open only (default true). */
   openOnly: z.boolean().optional(),
-  limit: z.number().int().min(1).max(25).optional(),
+  limit: z.number().int().min(1).max(200).optional(),
 });
 export type Org62LookupInput = z.infer<typeof Org62LookupInput>;
 
@@ -62,7 +62,7 @@ export function soqlLike(words: string): string {
 const OPP_FIELDS = 'Id, Name, AccountId, Account.Name, StageName, CloseDate, Amount, ForecastCategoryName, Type, IsClosed, IsWon, Owner.Name';
 
 export function buildOrg62Query(i: Org62LookupInput): string {
-  const limit = Math.max(1, Math.min(25, i.limit ?? 10));
+  const limit = Math.max(1, Math.min(200, i.limit ?? 10));
   if (i.find === 'accounts') {
     if (!i.name) throw new Org62LookupError('accounts: pass name');
     return `SELECT Id, Name, Type, Owner.Name FROM Account WHERE Name LIKE ${soqlLike(i.name)} ORDER BY Name LIMIT ${limit}`;
@@ -89,6 +89,19 @@ export function buildOrg62OppSearch(q: string, limit = 10): string {
   const where = ws.map((w) => `(Name LIKE ${soqlLike(w)} OR Account.Name LIKE ${soqlLike(w)})`);
   where.push('IsClosed = false');
   return `SELECT ${OPP_FIELDS} FROM Opportunity WHERE ${where.join(' AND ')} ORDER BY CloseDate DESC NULLS LAST LIMIT ${Math.max(1, Math.min(25, limit))}`;
+}
+
+/**
+ * D-103 (c): the picker's accounts for the same words: every typed word in the Account name (at most 4 words), by
+ * name. One more fixed SELECT on the same read-only soqlQuery (the allowlist is not widened); bound words only.
+ */
+export function buildOrg62AccountSearch(q: string, limit = 5): string {
+  const ws = q
+    .split(/[^\p{L}\p{N}&.'()/-]+/u)
+    .filter((w) => w.length >= 2)
+    .slice(0, 4);
+  if (!ws.length) throw new Org62LookupError('give at least 2 letters of a name');
+  return `SELECT Id, Name, Type, Owner.Name FROM Account WHERE ${ws.map((w) => `Name LIKE ${soqlLike(w)}`).join(' AND ')} ORDER BY Name LIMIT ${Math.max(1, Math.min(10, limit))}`;
 }
 
 const OPP_ID = /^006[a-zA-Z0-9]{12}([a-zA-Z0-9]{3})?$/;
@@ -184,9 +197,28 @@ export function matchInApp(
   });
 }
 
+/** An Org62 Account row → the Time picker's account hit (D-103 (c): picking it logs the row to the account). */
+export function org62AccountHit(r: Org62Row) {
+  return {
+    kind: 'account' as const,
+    org62Id: r.org62Id,
+    name: r.name,
+    accountName: r.name,
+    accountOrg62Id: r.org62Id,
+    stage: null,
+    closeDate: null,
+    amount: null,
+    owner: r.owner,
+    isOpen: true,
+    oppId: null,
+    accountId: r.inApp?.accountId ?? null,
+  };
+}
+
 /** An Org62 row → the Time picker's hit (the app's own ids when it has the record). */
 export function org62OppHit(r: Org62Row) {
   return {
+    kind: 'opp' as const,
     org62Id: r.org62Id,
     name: r.name,
     accountName: r.account,

@@ -20,5 +20,6 @@ export * from './places';
 export * from './onsite';
 export * from './overlap-flags';
 export * from './internal';
+export * from './needs-count';
 export * from './org62-check';
 export * from './note';

@@ -78,42 +78,55 @@ export async function runVdpAesJob(ctx: JobContext, d: VdpAesDeps = deps): Promi
   const read: string[] = [];
   let costUsd = 0;
   let partial: string | null = null;
-  // D6: every lookup holds its cost cap against the daily hard cap while it runs.
+  // one hold per job (the start gate's): every lookup books into it, and past it the job asks once (relay-guard.ts)
   const guard = d.guard?.(ctx) ?? relayGuard(ctx, 'vdp-specialist-aes');
-  for (const batch of aeBatches(ask)) {
-    const started = Date.now();
-    const q = specialistAesSoql(batch);
-    const r = await guard.run(async () => {
-      const r = await lookup({ connector: 'org62', tool: 'soqlQuery', args: { q } }, { skillPath: FORECAST_LOOKUP_SKILL, timeoutMs: 90_000 });
-      await recordSpend(ctx, day, { purpose: 'other', skillKey: 'vdp-specialist-aes', promptVersion: 'records', model: r.model, costUsd: r.costUsd, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cacheReadTokens: r.cacheReadTokens, cacheWriteTokens: r.cacheWriteTokens, contentHash: ledgerHash(r.model, 'soqlQuery', q), ok: r.text !== null, ...(r.text === null ? { errorCode: r.code } : {}), latencyMs: Date.now() - started }).catch(() => undefined);
-      return r;
-    });
-    if (!r) {
-      if (!read.length) return { skipped: 'hard_cap', opps: targets.length };
-      partial = 'hard_cap';
-      break;
+  const early = await guard.start?.();
+  if (early) return early;
+  try {
+    const batches = aeBatches(ask);
+    for (const [i, batch] of batches.entries()) {
+      const started = Date.now();
+      const q = specialistAesSoql(batch);
+      const r = await guard.run(async () => {
+        const r = await lookup({ connector: 'org62', tool: 'soqlQuery', args: { q } }, { skillPath: FORECAST_LOOKUP_SKILL, timeoutMs: 90_000 });
+        await recordSpend(ctx, day, { purpose: 'other', skillKey: 'vdp-specialist-aes', promptVersion: 'records', model: r.model, costUsd: r.costUsd, inputTokens: r.inputTokens, outputTokens: r.outputTokens, cacheReadTokens: r.cacheReadTokens, cacheWriteTokens: r.cacheWriteTokens, contentHash: ledgerHash(r.model, 'soqlQuery', q), ok: r.text !== null, ...(r.text === null ? { errorCode: r.code } : {}), latencyMs: Date.now() - started }).catch(() => undefined);
+        return r;
+      }, { pctDone: (100 * i) / batches.length });
+      if (!r) {
+        if (guard.stop === 'spend') {
+          partial = 'spend';
+          break;
+        }
+        if (!read.length) return { skipped: 'hard_cap', opps: targets.length };
+        partial = 'hard_cap';
+        break;
+      }
+      costUsd += r.costUsd;
+      void ctx.heartbeat().catch(() => undefined);
+      if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error('aborted');
+      if (r.code === 'disallowed_tool') throw new JobError('the AE read tried a tool outside the read-only allowlist', 'bug', { code: r.code });
+      if (r.text === null) {
+        if (!read.length) throw new JobError(`the Specialist Forecast AE read did not finish (${r.code})`, r.code === 'config' ? 'validation' : 'transient', { code: r.code });
+        partial = r.code;
+        break;
+      }
+      try {
+        for (const [k, v] of parseSpecialistAes(r.text)) found.set(k, v);
+      } catch (e) {
+        throw new JobError('Org62 answered in a way the app could not read', 'transient', { code: e instanceof SpecialistAeParseError ? 'unreadable' : 'parse' });
+      }
+      read.push(...batch);
     }
-    costUsd += r.costUsd;
-    void ctx.heartbeat().catch(() => undefined);
-    if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error('aborted');
-    if (r.code === 'disallowed_tool') throw new JobError('the AE read tried a tool outside the read-only allowlist', 'bug', { code: r.code });
-    if (r.text === null) {
-      if (!read.length) throw new JobError(`the Specialist Forecast AE read did not finish (${r.code})`, r.code === 'config' ? 'validation' : 'transient', { code: r.code });
-      partial = r.code;
-      break;
-    }
-    try {
-      for (const [k, v] of parseSpecialistAes(r.text)) found.set(k, v);
-    } catch (e) {
-      throw new JobError('Org62 answered in a way the app could not read', 'transient', { code: e instanceof SpecialistAeParseError ? 'unreadable' : 'parse' });
-    }
-    read.push(...batch);
+    const next = nextAeCache(cache, read, found, now.toISOString());
+    await withChangeSet({ db: ctx.db, userId: ctx.userId, actor: actors.system(VDP_AES_JOB), reason: `VDP AEs from the Specialist Forecasts: ${read.length} opportunities read`, entity: { type: 'settings', id: VDP_AES_KV }, undoable: false }, async (tx) => putKv(tx, ctx.userId, VDP_AES_KV, next));
+    // past the hold the job asked: its continuation reads the opps the cache has not read yet, on the same hold
+    const paused = (await guard.finish?.({ payload: { trigger: 'spend_continue' } })) ?? {};
+    return { opps: read.length, withAe: [...found.keys()].length, full, ...(partial ? { partial } : {}), costUsd: Math.round(costUsd * 10_000) / 10_000, ...paused };
+  } finally {
+    await guard.finish?.().catch(() => undefined);
   }
-  const next = nextAeCache(cache, read, found, now.toISOString());
-  await withChangeSet({ db: ctx.db, userId: ctx.userId, actor: actors.system(VDP_AES_JOB), reason: `VDP AEs from the Specialist Forecasts: ${read.length} opportunities read`, entity: { type: 'settings', id: VDP_AES_KV }, undoable: false }, async (tx) => putKv(tx, ctx.userId, VDP_AES_KV, next));
-  return { opps: read.length, withAe: [...found.keys()].length, full, ...(partial ? { partial } : {}), costUsd: Math.round(costUsd * 10_000) / 10_000 };
 }
 
 export function vdpAesJobDef(): JobHandlerDef {
-  return { kind: VDP_AES_JOB, queue: VDP_ASSETS_QUEUE, wired: true, description: "VDP AEs (D-63): the owners of my 100%-DC opps' Specialist Forecasts of a VDP type (fixed SOQL, read-only) → kv cache", handler: (ctx) => runVdpAesJob(ctx) };
+  return { kind: VDP_AES_JOB, queue: VDP_ASSETS_QUEUE, wired: true, spends: true, description: "VDP AEs (D-63): the owners of my 100%-DC opps' Specialist Forecasts of a VDP type (fixed SOQL, read-only) → kv cache", handler: (ctx) => runVdpAesJob(ctx) };
 }

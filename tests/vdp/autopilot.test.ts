@@ -5,7 +5,7 @@
  *   dry run       nothing staged or sent; paused: dry_run
  *   stale cookie  pauses (reauth), told once
  *   duplicates    create_company only when list_companies found nothing; a duplicate create_company reports returns
- *   assets        only the strongest grade, http(s) links
+ *   assets        only the strongest grade, https links on a trusted site (SEC-6); the rest held for your Apply
  *   owners        TA = me as the role's full list; the AE is never set
  *   generate      only once the use case's five inputs are in
  *   idempotency   never the same call twice; a failure is never retried
@@ -15,7 +15,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_SENDING_SETTINGS, SendingSettings, type Account, type Opportunity } from '../../src/contract';
+import { DEFAULT_AUTOPILOT_ASSET_HOSTS, DEFAULT_SENDING_SETTINGS, SendingSettings, type Account, type Opportunity } from '../../src/contract';
 import { assetPolicy, decorateCoverage, EMPTY_LEDGER, ledgerOf, nextLedger, opHash, stepPolicy, STRONG_ASSET_AT, type AutopilotLedger, type AutopilotLedgerEntry } from '../../src/engines/vdp/autopilot';
 import { industryIdFor, sameUseCaseTitle } from '../../src/engines/vdp/gaps';
 import { divisionOfTitle, priorityFromOpps, seniorStakeholder, titleFromOpp } from '../../src/engines/vdp/suggest';
@@ -29,7 +29,7 @@ import { inputsComplete, vdpActionForItem, vdpCoverageAndQueue, type CoverageAut
 import { runVdpAutopilot, type AutopilotApplyResult, type AutopilotPort } from '../../src/server/vdp/autopilot';
 import type { CandidateRecord } from '../../src/server/vdp/detail';
 import { autopilotDue } from '../../src/worker/vdp-autopilot-hook';
-import { FakeMcp } from '../beoutbox/fake';
+import { FakeMcp } from '../outbox/fake';
 import { NOW, uc, vdp } from './gap-fixtures';
 
 const READ = '2026-11-10T16:00:00.000Z';
@@ -63,7 +63,8 @@ const server = (o: Partial<VdpServerInfo> = {}): VdpServerInfo => ({
 });
 const cand = (id: string, o: Partial<CandidateRecord> = {}): CandidateRecord => ({ id, targetKey: 'A1', vdpSlug: 'acme', accountId: 'A1', companyName: 'Acme Placeholder', title: `Deck ${id}`, url: `https://docs.google.com/presentation/d/${id.padEnd(24, 'x')}/edit`, assetKey: id, kind: 'deck', why: 'its title names Acme', confidence: 0.9, origin: 'matcher', status: 'suggested', sources: [], firstSeenAt: NOW, statusAt: null, ...o });
 
-const ON = { on: true, dryRun: false, cap: 40 };
+const HOSTS = DEFAULT_AUTOPILOT_ASSET_HOSTS;
+const ON = { on: true, dryRun: false, cap: 40, assetHosts: HOSTS };
 const ap = (o: Partial<CoverageAutopilot> = {}): CoverageAutopilot => ({ settings: ON, ledger: EMPTY_LEDGER, auth: 'ok', today: '2026-11-10', dayOf: (iso) => iso.slice(0, 10), ...o });
 const build = (vdps: VdpSnapshot[], o: { autopilot?: CoverageAutopilot; candidates?: CandidateRecord[]; server?: VdpServerInfo; aesByOpp?: Map<string, Array<{ email: string; name: string | null; type: string }>> } = {}) =>
   vdpCoverageAndQueue({
@@ -131,7 +132,7 @@ describe('policy: auto (known values) vs suggest (judgment) vs you (handoff)', (
   });
 
   it('autopilot is off by default: same policies, nothing queued, no autopilot state on the items', () => {
-    const off = build([acme], { autopilot: ap({ settings: { on: false, dryRun: true, cap: 40 } }) });
+    const off = build([acme], { autopilot: ap({ settings: { on: false, dryRun: true, cap: 40, assetHosts: HOSTS } }) });
     expect(off.queue).toEqual([]);
     expect(off.coverage.autopilot).toMatchObject({ on: false, line: 'Autopilot: off', queued: 0 });
     expect(byKind(off.coverage, 'account_id')).toMatchObject({ policy: 'auto', autopilot: null });
@@ -163,6 +164,14 @@ describe('the Outbox door: only autopilot ops, only filling empty fields, only w
     expect(autopilotRefusal(dest('vdp.update_use_case') as never, sending)).toMatch(/never makes update_use_case/);
     expect(autopilotRefusal(dest('vdp.update_vdp_header', 3) as never, sending)).toMatch(/never changes a value/);
     expect(autopilotRefusal(dest('slack_canvas.create') as never, sending)).toMatch(/only applies VDP/);
+  });
+
+  it('SEC-6: refuses an asset link off the trusted sites right before the write (the second line)', () => {
+    const asset = (url: string) => ({ kind: 'action' as const, action: 'vdp.add_vdp_asset', target: { label: 'x', url: null }, input: { field: 'url', before: null, value: url, changes: [{ field: 'url', before: null, value: url }, { field: 'title', before: null, value: 'Deck' }] }, changes: [], text: null });
+    expect(autopilotRefusal(asset('https://docs.google.com/presentation/d/abc/edit') as never, sending)).toBeNull();
+    expect(autopilotRefusal(asset('https://evil.example/deck.pdf') as never, sending)).toBe('Held for you: link is on evil.example, not a trusted site');
+    expect(autopilotRefusal(asset('https://docs.google.com@evil.example/deck.pdf') as never, sending)).toMatch(/user name/);
+    expect(autopilotRefusal(asset('https://evil.example/deck.pdf') as never, { ...sending, autopilotAssetHosts: ['evil.example'] })).toBeNull();
   });
 
   it('an autonomy-policy approval mints a proof only when the policy allows it, by autopilot', () => {
@@ -338,11 +347,11 @@ describe('companies, owners, Generate and assets', () => {
     expect(queue.some((q) => q.op === 'generate_use_case')).toBe(false);
   });
 
-  it('assets: only the strongest grade with an http(s) link is autopilot’s; others are yours to confirm; non-http is flagged', () => {
-    expect(assetPolicy({ status: 'suggested', confidence: STRONG_ASSET_AT, url: 'https://x.example.test/a', kind: 'deck' }, true).policy).toBe('auto');
-    expect(assetPolicy({ status: 'suggested', confidence: 0.8, url: 'https://x.example.test/a', kind: 'deck' }, true)).toMatchObject({ policy: 'suggest', reason: /strongest/ });
-    expect(assetPolicy({ status: 'suggested', confidence: 0.95, url: 'ftp://x.example.test/a', kind: 'deck' }, true).policy).toBe('you');
-    expect(assetPolicy({ status: 'suggested', confidence: 0.95, url: 'https://x.example.test/a', kind: 'demo' }, true).policy).toBe('suggest');
+  it('assets: only the strongest grade with an https link on a trusted site is autopilot’s; others are yours to confirm; non-http is flagged', () => {
+    expect(assetPolicy({ status: 'suggested', confidence: STRONG_ASSET_AT, url: 'https://docs.google.com/presentation/d/abc/edit', kind: 'deck' }, true, HOSTS).policy).toBe('auto');
+    expect(assetPolicy({ status: 'suggested', confidence: 0.8, url: 'https://docs.google.com/presentation/d/abc/edit', kind: 'deck' }, true, HOSTS)).toMatchObject({ policy: 'suggest', reason: /strongest/ });
+    expect(assetPolicy({ status: 'suggested', confidence: 0.95, url: 'ftp://x.example.test/a', kind: 'deck' }, true, HOSTS).policy).toBe('you');
+    expect(assetPolicy({ status: 'suggested', confidence: 0.95, url: 'https://acme-demo.lightning.force.com/a', kind: 'demo' }, true, HOSTS).policy).toBe('suggest');
     const { coverage, queue } = build([vdp()], { candidates: [cand('c1'), cand('c2', { confidence: 0.75 }), cand('c3', { url: 'ftp://files.example.test/deck.pdf' })] });
     const items = coverage.vdps[0]!.assetItems;
     expect(items.map((a) => [a.candidateId, a.policy])).toEqual([
@@ -352,6 +361,26 @@ describe('companies, owners, Generate and assets', () => {
     ]);
     expect(items.find((a) => a.candidateId === 'c3')).toMatchObject({ apply: null, policyReason: /http\(s\)/ });
     expect(queue.filter((q) => q.op === 'add_vdp_asset').map((q) => q.key)).toEqual(['asset:c1']);
+  });
+
+  // SEC-6 (D-60 amended 2026-11-21): the link came from a search over untrusted text. Before, any http(s) link of the
+  // strongest grade was autopilot's (this test used https://x.example.test/a); now only a trusted site's https link is,
+  // and anything else is an ordinary item that waits for your Apply, never dropped.
+  it('SEC-6: a strong link on an untrusted site is held for your Apply, with the host, never queued or dropped', () => {
+    const strong = { status: 'suggested', confidence: 0.95, kind: 'pdf' };
+    expect(assetPolicy({ ...strong, url: 'https://x.example.test/deck.pdf' }, true, HOSTS)).toEqual({ policy: 'suggest', reason: 'Held for you: link is on x.example.test, not a trusted site' });
+    expect(assetPolicy({ ...strong, url: 'http://docs.google.com/a.pdf' }, true, HOSTS)).toMatchObject({ policy: 'suggest', reason: /not https/ });
+    expect(assetPolicy({ ...strong, url: 'https://evil.example/deck.pdf' }, true, [...HOSTS, 'evil.example']).policy).toBe('auto');
+    expect(assetPolicy({ ...strong, url: 'https://docs.google.com/presentation/d/abc/edit' }, true, []).policy).toBe('suggest');
+    const hostile = cand('c4', { url: 'https://attacker.example/q3-deck.pdf', kind: 'pdf' });
+    const { coverage, queue } = build([vdp()], { candidates: [cand('c1'), hostile] });
+    const held = coverage.vdps[0]!.assetItems.find((a) => a.candidateId === 'c4')!;
+    expect(held).toMatchObject({ policy: 'suggest', policyReason: 'Held for you: link is on attacker.example, not a trusted site', autopilot: null, state: 'todo' });
+    expect(held.apply).not.toBeNull(); // still yours to Apply
+    expect(queue.filter((q) => q.op === 'add_vdp_asset').map((q) => q.key)).toEqual(['asset:c1']);
+    // the user trusts the site: the same link is autopilot's
+    const trusted = build([vdp()], { candidates: [hostile], autopilot: ap({ settings: { ...ON, assetHosts: [...HOSTS, 'attacker.example'] } }) });
+    expect(trusted.queue.filter((q) => q.op === 'add_vdp_asset').map((q) => q.key)).toEqual(['asset:c4']);
   });
 
   it('the item hash is the key and the values it would send', () => {

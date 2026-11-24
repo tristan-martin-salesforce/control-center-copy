@@ -6,8 +6,9 @@
  * Nothing is applied for you (the owner verifies each one, 2026-11-14).
  *
  * Picked: the rows the read side would ask about (DbDataSource.activitySuggestPending: live, no opp, not internal, not
- * on a canvas, no rules answer at or above RULES_SETTLE, no stored answer for the row as it is now), newest first. At
- * most 15 calls a pass, each capped at $0.01, the pass at $0.15. Cost (COST-1): the daily hard cap is checked before
+ * on a canvas, no rules answer at or above RULES_SETTLE, no stored answer for the row as it is now), newest first. In
+ * pages of 15 calls, each capped at $0.01, the page at $0.15; a page that stops with rows still due queues the next
+ * page (src/jobs/pass-pages.ts, caps audit 2026-11-21), so every row is asked. Cost (COST-1): the daily hard cap is checked before
  * every call; at the cap nothing is called (`deferred_budget`, one llm_decisions row) and the rows keep the rules'
  * suggestion. Each call is one llm_calls row (purpose `classify`, skill `activity-suggest`, the daily budget) with its
  * trigger, model reason, content hash, outcome and tokens. An unusable answer is stored as a low-confidence none, so
@@ -34,6 +35,7 @@ import { DbScannerStore } from '@/scanner/store-db';
 import { DbDataSource } from '@/server/datasource/db';
 import { putKv } from '@/server/datasource/db/ext';
 
+import { nextPageDue, queueNextPage } from '../pass-pages';
 import { QUEUES } from '../registry';
 import type { JobContext, JobHandlerDef } from '../types';
 
@@ -42,8 +44,10 @@ export const ACTIVITY_SUGGEST_SKILL = 'activity-suggest';
 const ENGINE = 'activity-suggest@1';
 export const activitySuggestDedupeKey = (userId: string) => `activity.suggest:${userId}`;
 
+/** A page (not a cap): the next page is queued while rows are due. */
 const MAX_CALLS = 15;
 const PER_CALL_USD = 0.01;
+/** The page's $ line (a page boundary too); the daily hard cap is the budget. */
 const PER_PASS_USD = 0.15;
 
 export interface ActivitySuggestDeps {
@@ -123,16 +127,16 @@ export async function runActivitySuggest(ctx: JobContext, d: ActivitySuggestDeps
     let unusable = 0;
     let failed = 0;
     let deferred: string | null = null;
+    let atPage = false;
     for (const { entry, candidates: ranked } of due) {
-      if (calls >= maxCalls) break;
-      if (spent + PER_CALL_USD > PER_PASS_USD) {
-        deferred = 'pass_cap';
+      if (calls >= maxCalls || spent + PER_CALL_USD > PER_PASS_USD) {
+        atPage = true;
         break;
       }
       // COST-1: the daily hard cap first; at the cap nothing is called and the rows keep the rules' suggestion
       if ((await store.budgetStatus()).state === 'capped') {
         deferred = 'daily_hard_cap';
-        await recordDecision(ctx.db, ctx.userId, { skill: ACTIVITY_SUGGEST_SKILL, kind: 'block', reason: 'hard_cap', trigger: 'schedule', subject: 'activity.suggest', usd: PER_CALL_USD * Math.min(maxCalls - calls, due.length - calls), day, once: true, detail: { rows: due.length - calls } });
+        await recordDecision(ctx.db, ctx.userId, { skill: ACTIVITY_SUGGEST_SKILL, kind: 'block', reason: 'hard_cap', trigger: 'schedule', subject: 'activity.suggest', usd: PER_CALL_USD * (due.length - calls), day, once: true, detail: { rows: due.length - calls } });
         break;
       }
       if (ctx.signal.aborted) break;
@@ -173,7 +177,9 @@ export async function runActivitySuggest(ctx: JobContext, d: ActivitySuggestDeps
         await putKv(tx, ctx.userId, SUGGESTIONS_KV, Object.keys(stored).length ? { rows: stored } : null);
       });
     }
-    return { status: deferred ? 'deferred_budget' : 'done', due: due.length, calls, answered, unusable, failed, dropped, costUsd: Math.round(spent * 10_000) / 10_000, ...(deferred ? { deferred } : {}) };
+    const more = nextPageDue({ stoppedAtPage: atPage, left: due.length - calls, progressed: answered + unusable, aborted: ctx.signal.aborted });
+    const nextPage = more ? await queueNextPage(ctx, { kind: ACTIVITY_SUGGEST_JOB, queue: QUEUES.engine, dedupeKey: activitySuggestDedupeKey(ctx.userId), maxAttempts: 2, timeoutSeconds: 900 }) : false;
+    return { status: deferred ? 'deferred_budget' : 'done', due: due.length, calls, answered, unusable, failed, dropped, costUsd: Math.round(spent * 10_000) / 10_000, ...(deferred ? { deferred } : {}), ...(more ? { more, nextPage } : {}) };
   } finally {
     await ds.dispose().catch(() => undefined);
   }
@@ -181,7 +187,7 @@ export async function runActivitySuggest(ctx: JobContext, d: ActivitySuggestDeps
 
 export function activitySuggestJobDef(d: ActivitySuggestDeps = {}): JobHandlerDef {
   if (d.handle || d.model) configureActivitySuggest(d);
-  return { kind: ACTIVITY_SUGGEST_JOB, queue: QUEUES.engine, wired: true, description: 'Time: the cheap model’s suggestion (internal, or which opportunity) for rows the rules can’t place (under the daily hard cap)', handler: (ctx) => runActivitySuggest(ctx) };
+  return { kind: ACTIVITY_SUGGEST_JOB, queue: QUEUES.engine, wired: true, spends: true, description: 'Time: the cheap model’s suggestion (internal, or which opportunity) for rows the rules can’t place (under the daily hard cap)', handler: (ctx) => runActivitySuggest(ctx) };
 }
 
 /**

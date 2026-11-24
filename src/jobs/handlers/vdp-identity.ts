@@ -94,5 +94,5 @@ export async function runVdpIdentityJob(ctx: JobContext, d: VdpIdentityDeps = de
 }
 
 export function vdpIdentityJobDef(): JobHandlerDef {
-  return { kind: VDP_IDENTITY_JOB, queue: 'vdp', wired: true, description: 'VDP company identity (D-69): the cheap judgment (Haiku, capped) for the companies the rules call ambiguous → kv cache', handler: (ctx) => runVdpIdentityJob(ctx) };
+  return { kind: VDP_IDENTITY_JOB, queue: 'vdp', wired: true, spends: true, description: 'VDP company identity (D-69): the cheap judgment (Haiku, capped) for the companies the rules call ambiguous → kv cache', handler: (ctx) => runVdpIdentityJob(ctx) };
 }

@@ -73,7 +73,7 @@ export function ClaimDcDialog({ target, onClose, onSubmit, busy, commentRequired
       description={
         <>
           {target?.myDc ? <span className="font-bold text-fg">{myDcWords(target.myDc)}. </span> : null}
-          It goes on your next logging canvas; nothing is sent until you Apply it on Activity.
+          It goes in your next batch; nothing is sent until you Apply it on Activity.
         </>
       }
       confirmLabel={edit ? 'Save the request' : words && !words.same && target?.myDc ? 'Request the change' : 'Add DC request'}
@@ -135,7 +135,7 @@ export function dcRequestToast(r: Pick<DcRequest, 'kind' | 'fromSplit' | 'splitP
   toast({
     key,
     tone: 'success',
-    title: r.kind === 'change' ? 'DC change added: it goes on your next logging canvas' : 'DC request added: it goes on your next logging canvas',
+    title: r.kind === 'change' ? 'DC change added: it goes in your next batch' : 'DC request added: it goes in your next batch',
     body: `${r.kind === 'change' ? `Change your DC ${r.fromSplit ?? '?'}% → ${r.splitPercent}%` : `${r.splitPercent}% DC`} on ${r.oppName}. Nothing was sent.`,
     action: { label: 'DC list', href: '/deals/dcs' },
     undo: auditId ? { auditId } : undefined,

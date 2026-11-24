@@ -1,7 +1,7 @@
 /**
  * Shared bits of the scan audit CLIs (`npm run scan:trace | scan:explain | scan:report`).
  *
- * Read-only: they only SELECT. They use DATABASE_URL (default postgres://localhost:5432/control_center) and print the
+ * Read-only: they only SELECT. They use DATABASE_URL (default postgres://localhost:5432/command_center) and print the
  * database name, never the URL. Output is ids, codes, counts, links and short reasons; `--json` prints the raw result.
  */
 import { sql } from 'drizzle-orm';
@@ -19,7 +19,7 @@ export const has = (argv: string[], name: string) => argv.includes(name);
 
 export async function open(): Promise<{ handle: DbHandle; db: Db; userId: string; dbName: string }> {
   const url = resolveDatabaseUrl();
-  const handle = createDb({ url, max: 2, applicationName: 'control-center-scan-cli' });
+  const handle = createDb({ url, max: 2, applicationName: 'command-center-scan-cli' });
   const u = await handle.db.execute<{ id: string }>(sql`select id from users where is_active order by created_at limit 1`);
   if (!u.rows[0]) {
     await handle.close();

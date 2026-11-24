@@ -65,12 +65,39 @@ export function adminWaitingBySurface(drafts: ReadonlyArray<Pick<Draft, 'destina
 const SEVERITY: Readonly<Record<string, number>> = { ok: 0, paused: 1, catching_up: 2, degraded: 3, offline: 4, error: 5, auth_needed: 6 };
 
 /**
+ * Health ▸ Setup rows that exist only for sources (src/ops/doctor-service.ts DEPENDENCIES): a row goes when every
+ * source it serves is inactive for the persona (VDP for an AE: no "VDP signed out" to fix, no Setup badge for it).
+ * Claude sign-in, the database, the worker and the rest serve the whole app and always show.
+ */
+const SETUP_DEP_SOURCES: Readonly<Record<string, readonly ConnectorId[]>> = {
+  'vdp-access': ['vdp'],
+  'slack-mcp': ['slack'],
+  'org62-mcp': ['org62'],
+  devbar: ['gmail', 'calendar', 'drive', 'gemini_notes'],
+};
+
+/** Setup's dependency rows the persona has (29-persona-qa). No persona: all of them. */
+export function setupDepsFor<D extends { id: string }>(deps: readonly D[], persona: ResolvedPersona | null | undefined): D[] {
+  if (!persona) return [...deps];
+  return deps.filter((d) => {
+    const sources = SETUP_DEP_SOURCES[d.id];
+    return !sources || sources.some((c) => persona.connectors.includes(c));
+  });
+}
+
+/**
  * Health as the persona sees it, applied at the very end of getHealth (db and mock): the rows of inactive sources go,
  * and the summary (the sidebar's "needs re-auth" lines, the health dot, "n of m live") is recomputed from the rows
- * that stay. No persona: unchanged.
+ * that stay; Setup keeps only the dependencies of active sources (`setupDepsFor`). No persona: unchanged.
  */
-export function healthForPersona<C extends { id: string; source?: string | null; state: string }, H extends { connectors: C[]; summary: { ok: number; total: number; worst: string; broken: Array<{ id: string }> } }>(h: H, persona: ResolvedPersona | null | undefined): H {
+export function healthForPersona<C extends { id: string; source?: string | null; state: string }, H extends { connectors: C[]; summary: { ok: number; total: number; worst: string; broken: Array<{ id: string }> }; setup?: { dependencies: Array<{ id: string }> } }>(h: H, persona: ResolvedPersona | null | undefined): H {
   if (!persona) return h;
+  const deps = h.setup ? setupDepsFor(h.setup.dependencies, persona) : null;
+  const withSetup: H = h.setup && deps && deps.length !== h.setup.dependencies.length ? { ...h, setup: { ...h.setup, dependencies: deps } } : h;
+  return connectorsForPersona(withSetup, persona);
+}
+
+function connectorsForPersona<C extends { id: string; source?: string | null; state: string }, H extends { connectors: C[]; summary: { ok: number; total: number; worst: string; broken: Array<{ id: string }> } }>(h: H, persona: ResolvedPersona): H {
   const connectors = connectorRowsFor(h.connectors, persona);
   if (connectors.length === h.connectors.length) return h;
   const kept = new Set(connectors.map((c) => c.id));

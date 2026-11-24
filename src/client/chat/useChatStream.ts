@@ -12,12 +12,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ApiErrorBody, ChatMessage, ChatModel, ChatSseEvent, ChatSseEventType, ChatThread, ChatThreadDetail, ContextRef, Settings } from '@/contract';
+import type { ApiErrorBody, ChatMessage, ChatModelChoice, ChatSseEvent, ChatSseEventType, ChatThread, ChatThreadDetail, ContextRef, Settings } from '@/contract';
 import { ApiErrorEnvelope } from '@/contract';
 import { api, ApiError, queryKey, urlFor } from '@/client/api';
 import { isAbortError, parseChatFrame, readSseStream } from './sse';
 import { CHAT_KEYS, readJson, readString, writeJson, writeString } from './storage';
-import { extrasFor, failTurn, isReconciled, localId, mergeMessages, newServerMessages, reconciledAssistantId, reduceTurn, startTurn, stopTurn, TERMINAL } from './turn';
+import { extrasFor, failTurn, isReconciled, isStepLimitError, localId, mergeMessages, newServerMessages, reconciledAssistantId, reduceTurn, startTurn, stopTurn, TERMINAL } from './turn';
 import type { ChatMessageView, ChatTurnStatus, LiveTurn, TurnExtras } from './types';
 
 export interface UseChatStreamOptions {
@@ -32,7 +32,7 @@ export interface UseChatStreamOptions {
    * The model each message asks for (BE-CHAT). Default: settings.chat.defaultModel from the query cache, else
    * the locally chosen model (localStorage), else none (the server's default).
    */
-  model?: ChatModel;
+  model?: ChatModelChoice;
 }
 
 export type ChatStatus = 'idle' | ChatTurnStatus;
@@ -58,7 +58,10 @@ export interface ChatStreamApi {
   setDraft(value: string): void;
   send(text: string, context?: ContextRef[]): boolean;
   stop(): void;
-  /** Ask the failed message again; `allowExtraUsd` is the user's one-time "Allow more" on a capped message. */
+  /**
+   * Ask the failed message again. With `allowExtraUsd` (the user's one-time "Allow more") on an answer stopped at its
+   * cost limit, continue that answer instead (ASSIST-2).
+   */
   retry(opts?: { allowExtraUsd?: number }): void;
   notice: string | null;
   dismissNotice(): void;
@@ -97,12 +100,13 @@ export function useChatStream(opts: UseChatStreamOptions = {}): ChatStreamApi {
   const modelRef = useRef(opts.model);
   modelRef.current = opts.model;
   /** The model this message is sent with (see UseChatStreamOptions.model). */
-  const currentModel = useCallback((): ChatModel | undefined => {
+  const currentModel = useCallback((): ChatModelChoice | undefined => {
     if (modelRef.current) return modelRef.current;
-    const fromSettings = qc.getQueryData<Settings>(queryKey('getSettings'))?.chat?.defaultModel;
+    // Assistant v2: Settings ▸ Budgets ▸ Assistant routing (auto, or "always <model>"); the server routes `auto`
+    const fromSettings = qc.getQueryData<Settings>(queryKey('getSettings'))?.chat?.routing;
     if (fromSettings) return fromSettings;
     const local = readString(CHAT_KEYS.model)?.toLowerCase();
-    return local === 'sonnet' || local === 'opus' ? local : undefined;
+    return local === 'auto' || local === 'haiku' || local === 'sonnet' || local === 'opus' ? local : undefined;
   }, [qc]);
 
   // ── Threads ───────────────────────────────────────────────────────────
@@ -244,7 +248,7 @@ export function useChatStream(opts: UseChatStreamOptions = {}): ChatStreamApi {
       const ac = new AbortController();
       abortRef.current = ac;
       const model = currentModel();
-      const body = JSON.stringify({ threadId: t.threadId, text: t.userText, context: t.context.map(({ type, id, label, via }) => ({ type, id, label, via })), ...(model ? { model } : {}), ...(t.allowExtraUsd ? { allowExtraUsd: t.allowExtraUsd } : {}) });
+      const body = JSON.stringify({ threadId: t.threadId, text: t.userText, context: t.context.map(({ type, id, label, via }) => ({ type, id, label, via })), ...(model ? { model } : {}), ...(t.allowExtraUsd ? { allowExtraUsd: t.allowExtraUsd } : {}), ...(t.continueMessageId ? { continueMessageId: t.continueMessageId } : {}) });
       let res: Response | null = null;
       for (let i = 0; ; i++) {
         try {
@@ -259,7 +263,7 @@ export function useChatStream(opts: UseChatStreamOptions = {}): ChatStreamApi {
           const detail = await refetchThread(t.threadId);
           if (detail && newServerMessages(t, detail.messages).some((m) => m.role === 'user')) return void resync(t);
           if (i >= attempts) {
-            updateTurn(t.key, (cur) => failTurn(cur, { code: 'upstream_unavailable', message: "Can't reach the assistant. Check that Control Center is running, then retry.", retryable: true }));
+            updateTurn(t.key, (cur) => failTurn(cur, { code: 'upstream_unavailable', message: "Can't reach the assistant. Check that Command Center is running, then retry.", retryable: true }));
             return;
           }
           updateTurn(t.key, (cur) => ({ ...cur, status: 'reconnecting', attempt: i + 1 }));
@@ -383,6 +387,45 @@ export function useChatStream(opts: UseChatStreamOptions = {}): ChatStreamApi {
     (opts: { allowExtraUsd?: number } = {}) => {
       const extra = typeof opts.allowExtraUsd === 'number' && opts.allowExtraUsd > 0 ? opts.allowExtraUsd : undefined;
       const cur = turnRef.current;
+      // ASSIST-2: "Allow more" on an answer stopped at its cost limit continues that answer (the server keeps it, with
+      // its tool rows, as context); it never re-sends the question, which would pay for the same work twice.
+      if (extra) {
+        const msgs = threadData(cur?.threadId ?? threadId ?? '')?.messages ?? threadQ.data?.messages ?? [];
+        const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+        const stoppedId =
+          cur?.status === 'error' && cur.error?.code === 'budget_exceeded' && cur.messageId
+            ? cur.messageId
+            : lastAssistant && msgs.at(-1)?.id === lastAssistant.id && lastAssistant.parts.some((p) => p.type === 'error' && p.error.code === 'budget_exceeded')
+              ? lastAssistant.id
+              : null;
+        const target = cur?.threadId ?? threadId;
+        if (stoppedId && target) {
+          allowRef.current.set(target, Math.max(allowRef.current.get(target) ?? 0, extra));
+          const t = startTurn({ threadId: target, text: `Continue (allowed $${extra.toFixed(2)} more)`, context: cur?.context ?? [], baseIds: [...msgs.map((m) => m.id), ...(cur?.userMessageId ? [cur.userMessageId] : []), ...(cur?.messageId ? [cur.messageId] : [])], allowExtraUsd: extra, continueMessageId: stoppedId });
+          setTurn(t);
+          void run(t);
+          return;
+        }
+      }
+      // P33-2: an answer stopped at Steps per message is continued, like the typed "continue": the server picks the
+      // stopped answer up by `continueMessageId`, and the question is never sent again (that would redo the same steps).
+      if (!extra) {
+        const msgs = threadData(cur?.threadId ?? threadId ?? '')?.messages ?? threadQ.data?.messages ?? [];
+        const lastAssistant = [...msgs].reverse().find((m) => m.role === 'assistant');
+        const stoppedId =
+          cur?.status === 'error' && isStepLimitError(cur.error) && cur.messageId
+            ? cur.messageId
+            : !cur && lastAssistant && msgs.at(-1)?.id === lastAssistant.id && lastAssistant.parts.some((p) => p.type === 'error' && isStepLimitError(p.error))
+              ? lastAssistant.id
+              : null;
+        const target = cur?.threadId ?? threadId;
+        if (stoppedId && target) {
+          const t = startTurn({ threadId: target, text: 'Continue', context: cur?.context ?? [], baseIds: [...msgs.map((m) => m.id), ...(cur?.userMessageId ? [cur.userMessageId] : []), ...(cur?.messageId ? [cur.messageId] : [])], continueMessageId: stoppedId });
+          setTurn(t);
+          void run(t);
+          return;
+        }
+      }
       const failedText = cur?.status === 'error' ? cur.userText : null;
       if (failedText !== null && cur) {
         const detail = threadData(cur.threadId);
@@ -397,7 +440,7 @@ export function useChatStream(opts: UseChatStreamOptions = {}): ChatStreamApi {
       const lastUser = [...msgs].reverse().find((m) => m.role === 'user');
       if (lastUser) send(lastUser.text, lastUser.context, extra);
     },
-    [threadData, setTurn, run, threadQ.data, send],
+    [threadData, threadId, setTurn, run, threadQ.data, send],
   );
 
   const selectThread = useCallback((id: string) => setThreadId(id), []);

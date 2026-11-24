@@ -1,0 +1,33 @@
+{
+  "id": "scn-9-ask-past-1000-chars",
+  "title": "SCN-9: the ask sits past character 1,000 of a long recap message",
+  "storyline": "03-scanner-quality.md SCN-9 (asks past character 1000 are lost at ingest), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-12T19:00:00.000Z",
+      "seen_at": "2026-11-12T19:10:00.000Z",
+      "from_me": false,
+      "body": "Thanks for the time today, this was really helpful for the whole team. Quick recap so we are all aligned before the board review next week. On scope: we agreed the POC covers member services only, with claims status and benefits questions as the two intents, and the handoff to a human rep with the case summary. Provider services stays out of scope until the second phase, and the pharmacy questions go to the existing IVR for now. On data: the claims warehouse feeds Data 360 nightly in batch for the POC, with a target of near real time in production; the member profile is unified on the member id, and the test members are synthetic. On security: SSO through the IdP for staff users only, no real member data in the POC org, and the vendor questionnaire comes from infosec by the 24th. On timeline: build in two sprints, demo to the contact-center leads in week three, board review in week four. On success criteria: containment of at least 40 percent on the two intents, average handle time down for the handed-off cases, and no wrong answers on claim status in the scripted tests. Last thing: can you send me the security whitepaper for the Data 360 connector by Thursday? Our CISO wants to read it before the board review.",
+      "meta": { "channelId": "D0PERSOND1", "channelType": "im", "author": { "name": "PERSON_D", "email": "person_d@example.com", "externalId": "U0PERSOND" }, "participants": [{ "name": "PERSON_D", "externalId": "U0PERSOND" }] },
+      "agent": [{ "propose": "i1" }]
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Send PERSON_D the Data 360 connector security whitepaper",
+      "keywords": ["security whitepaper"],
+      "origin": "s1",
+      "ask_quote": "can you send me the security whitepaper",
+      "note": "the ask starts at character 1,100; excerpts keep up to 4,000 characters since p0-closure-fixes (R6), so it is visible"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "why": "the whitepaper was never sent" }
+  ]
+}

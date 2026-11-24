@@ -1,106 +1,159 @@
 /**
- * Activity's views (pure, tested in ./views.test.ts). Two main tabs, each with its sub-tabs (D-60 shell; D-70 renamed
- * Time to Activity; the sub-views' contents are docs/ui/time-redesign.md's):
+ * Activity's views (pure; tests/time/views.test.ts). D-87: three tabs, plus Forecast for the AE:
  *
- *   Org62  Log it (?view=week, the SE's default: the quarter header, Ready to log, Logging runs, Internal) · Needs you
- *          (?view=needs: only what needs you, across the quarter: rows and use cases) · Weeks (?view=weeks: pick any week;
- *          what the app found that week, onsite days, Week at a glance, the week's rows) · Ledger (?view=log: a quarter
- *          as a report, then its rows) · Use cases (?view=usecases: each use case in Org62 and VDP, neither, one or
- *          both, where they differ, its assets) · Forecast (?view=forecast, the AE's default)
- *   VDP    Changes (?view=vdp: what goes to VDP, pushed with checkboxes; what autopilot applied) · My VDPs
- *          (?view=vdp&sub=mine: who is on each VDP, its use cases and assets, "N missing" / "N to check")
+ *   To log   ?view=log (the default): what the app can log for me, grouped by day, with what needs me on top. A
+ *            List / Week toggle (`&show=week`, `&week=<Monday>` for another week) and the Review page
+ *            (`&review=1`: one page of checkboxes, then one "Log these").
+ *   History  ?view=history: what was logged (the quarter as a report, then its rows), with each row's Org62 record,
+ *            Undo while it can still be taken back, and the corrections.
+ *   VDP      ?view=vdp: the VDP changes staged and applied, and what autopilot did; `&sub=mine` filters to My VDPs.
+ *   Forecast ?view=forecast: the AE's weekly duty (their default), only for a persona with Specialist Forecast.
  *
- * The page lives at /activity; /time (any query) redirects there (src/components/shell/routes.ts), and the old `view`
- * values are unchanged, so every link still lands. A `?week=` deep link opens Weeks on that week (the week-scoped parts
- * moved there). A view that belongs to a persona feature (D-55) shows only while that feature is active: VDP and Use
- * cases are the SE's (available, not preconfigured, for an AE). Inactive means no daily surface: its tab is hidden, and
- * a direct link shows that it is available to activate instead.
+ * Every old link still lands (docs/UX.md "Activity: old links"): `week` → To log; `needs` → To log at what needs me;
+ * `weeks` (and any `?week=`) → To log's Week; `usecases` → To log at the use cases; `ledger` → History; `forecast`
+ * without the feature → To log; anything unknown → To log. The redirect replaces the URL, so Back skips the old one.
+ * `/time` (any query) already redirects to `/activity` (src/components/shell/routes.ts) and lands here.
  */
 import type { PersonaFeature } from '@/contract';
 import { allows } from '@/personas/gates';
 import type { ResolvedPersona } from '@/personas/types';
 
-export type TimeView = 'week' | 'needs' | 'weeks' | 'log' | 'usecases' | 'vdp' | 'forecast';
-export type TimeArea = 'org62' | 'vdp';
+export type ActivityView = 'log' | 'history' | 'vdp' | 'forecast';
 export type VdpSub = 'changes' | 'mine';
+/** To log's toggle: the list (the default) or one week, day by day. */
+export type LogShow = 'list' | 'week';
 
 export const ACTIVITY_PATH = '/activity';
 
-export const TIME_VIEWS: Array<{ value: TimeView; label: string; area: TimeArea; feature?: PersonaFeature }> = [
-  { value: 'week', label: 'Log it', area: 'org62' },
-  { value: 'needs', label: 'Needs you', area: 'org62' },
-  { value: 'weeks', label: 'Weeks', area: 'org62' },
-  { value: 'log', label: 'Ledger', area: 'org62' },
-  // D-70: use cases in Org62 and VDP (the use cases come from VDP: the SE's feature)
-  { value: 'usecases', label: 'Use cases', area: 'org62', feature: 'vdp' },
-  // lane A: Specialist Forecast, the AE's default view
-  { value: 'forecast', label: 'Forecast', area: 'org62', feature: 'specialistForecast' },
-  { value: 'vdp', label: 'VDP', area: 'vdp', feature: 'vdp' },
-];
-
-export const TIME_AREAS: Array<{ value: TimeArea; label: string; feature?: PersonaFeature }> = [
-  { value: 'org62', label: 'Org62' },
+export const ACTIVITY_VIEWS: Array<{ value: ActivityView; label: string; feature?: PersonaFeature }> = [
+  { value: 'log', label: 'To log' },
+  { value: 'history', label: 'History' },
   { value: 'vdp', label: 'VDP', feature: 'vdp' },
+  { value: 'forecast', label: 'Forecast', feature: 'specialistForecast' },
 ];
 
-export const VDP_SUBS: Array<{ value: VdpSub; label: string }> = [
-  { value: 'changes', label: 'Changes' },
-  { value: 'mine', label: 'My VDPs' },
-];
+/** The anchors To log's sections carry (the old views land on them). */
+export const LOG_ANCHORS = { needs: 'time-needs', ready: 'time-ready', runs: 'time-runs', dcs: 'time-dcs', useCases: 'time-usecases', internal: 'time-internal' } as const;
 
-/** The views a `?week=` belongs to now: Log it and Needs you no longer show a week (Weeks does). */
-const WEEK_LINKED: ReadonlySet<string> = new Set(['week', 'needs']);
+/** Where each old `?view=` lands. */
+export const LEGACY_VIEWS: Readonly<Record<string, { view: ActivityView; show?: LogShow; anchor?: string }>> = {
+  week: { view: 'log' },
+  needs: { view: 'log', anchor: LOG_ANCHORS.needs },
+  weeks: { view: 'log', show: 'week' },
+  usecases: { view: 'log', anchor: LOG_ANCHORS.useCases },
+  ledger: { view: 'history' },
+};
+
+/** The persona's default view: Forecast for an AE with Specialist Forecast (their weekly duty), else To log. */
+export function defaultViewFor(persona?: ResolvedPersona | null): ActivityView {
+  return persona && persona.id === 'ae' && allows(persona, { feature: 'specialistForecast' }) ? 'forecast' : 'log';
+}
+
+export interface ActivityRoute {
+  view: ActivityView;
+  show: LogShow;
+  /** To log's Review page. */
+  review: boolean;
+  /** `?week=` (To log's Week). */
+  week: string | null;
+  sub: VdpSub;
+  /** A section to scroll to (an old view's place inside To log). */
+  anchor: string | null;
+  /** The canonical URL when the one asked for was an old one (replace it); null when it is already canonical. */
+  redirect: string | null;
+}
+
+const KNOWN: ReadonlySet<string> = new Set(ACTIVITY_VIEWS.map((v) => v.value));
 
 /**
- * `?view=` → the view. Without one (or an unknown one): the persona's default, Forecast for an AE with Specialist
- * Forecast active (their weekly duty), else Log it (`week`). A `?week=` with no view, or with Log it's or Needs you's
- * (the old deep links), opens Weeks on that week.
+ * `?view=…` → the view and, for an old value, where it lands now. `persona` undefined: not known yet, so a `forecast`
+ * link waits (no redirect) until the persona says whether it has the feature.
  */
-export function timeViewOf(param: string | null | undefined, persona?: ResolvedPersona | null, week?: string | null): TimeView {
-  if (week && (!param || WEEK_LINKED.has(param))) return 'weeks';
-  const known = TIME_VIEWS.find((t) => t.value === param);
-  if (known) return known.value;
-  return persona && persona.id === 'ae' && allows(persona, { feature: 'specialistForecast' }) ? 'forecast' : 'week';
+export function resolveActivityRoute(search: URLSearchParams | string, persona?: ResolvedPersona | null): ActivityRoute {
+  const sp = typeof search === 'string' ? new URLSearchParams(search) : search;
+  const raw = sp.get('view');
+  const week = sp.get('week');
+  const sub: VdpSub = sp.get('sub') === 'mine' ? 'mine' : 'changes';
+  const review = sp.get('review') === '1';
+  let view: ActivityView;
+  let show: LogShow = sp.get('show') === 'week' ? 'week' : 'list';
+  let anchor: string | null = null;
+  let legacy = false;
+  if (raw && KNOWN.has(raw)) view = raw as ActivityView;
+  else if (raw && LEGACY_VIEWS[raw]) {
+    const to = LEGACY_VIEWS[raw]!;
+    view = to.view;
+    if (to.show) show = to.show;
+    anchor = to.anchor ?? null;
+    legacy = true;
+  } else {
+    view = raw ? 'log' : defaultViewFor(persona);
+    legacy = !!raw;
+  }
+  // an old ?week= deep link (no view, or Log it's / Needs you's) opens To log's Week on that week
+  if (week && (!raw || raw === 'week' || raw === 'needs')) {
+    view = 'log';
+    show = 'week';
+    anchor = null;
+    legacy = legacy || raw !== 'log';
+  }
+  // Forecast belongs to a feature: without it (once the persona is known), To log
+  if (view === 'forecast' && persona && !allows(persona, { feature: 'specialistForecast' })) {
+    view = 'log';
+    legacy = true;
+  }
+  const route: ActivityRoute = { view, show: view === 'log' ? show : 'list', review: view === 'log' && review, week: view === 'log' ? week : null, sub, anchor, redirect: null };
+  if (legacy || (raw === null && week)) route.redirect = hrefFor(route, persona, sp);
+  return route;
 }
 
-/** The main tab a view belongs to. */
-export const timeAreaOf = (view: TimeView): TimeArea => TIME_VIEWS.find((t) => t.value === view)?.area ?? 'org62';
+/** The params a view keeps when it is rewritten (the details panel's and the Ledger's own filters; History's `batch`, C10). */
+const KEEP = ['draft', 'panel', 'kind', 'item', 'row', 'quarter', 'status', 'q', 'account', 'opp', 'type', 'batch'];
 
-/** `?sub=` under VDP: My VDPs (`mine`), else Changes. */
-export const vdpSubOf = (param: string | null | undefined): VdpSub => (param === 'mine' ? 'mine' : 'changes');
-
-/** The Org62 sub-tabs this persona sees, in order. While it loads (null) gated views stay hidden. */
-export function timeTabsFor(persona: ResolvedPersona | null | undefined): Array<{ value: TimeView; label: string }> {
-  return TIME_VIEWS.filter((t) => t.area === 'org62' && allows(persona, t.feature ? { feature: t.feature } : undefined)).map(({ value, label }) => ({ value, label }));
+/** The canonical URL of a route (the persona's default view is the bare /activity). */
+export function hrefFor(r: Pick<ActivityRoute, 'view' | 'show' | 'review' | 'week' | 'sub' | 'anchor'>, persona?: ResolvedPersona | null, keep?: URLSearchParams): string {
+  const sp = new URLSearchParams();
+  if (r.view !== defaultViewFor(persona)) sp.set('view', r.view);
+  if (r.view === 'log' && r.show === 'week') sp.set('show', 'week');
+  if (r.view === 'log' && r.show === 'week' && r.week) sp.set('week', r.week);
+  if (r.view === 'log' && r.review) sp.set('review', '1');
+  if (r.view === 'vdp' && r.sub === 'mine') sp.set('sub', 'mine');
+  for (const k of r.view === 'history' ? [...KEEP, 'week'] : KEEP) {
+    const v = keep?.get(k);
+    if (v !== null && v !== undefined) sp.set(k, v);
+  }
+  const q = sp.toString();
+  return `${ACTIVITY_PATH}${q ? `?${q}` : ''}${r.anchor ? `#${r.anchor}` : ''}`;
 }
 
-/** The main tabs (Org62, VDP) this persona sees: an AE without VDP sees Org62 only. */
-export function areaTabsFor(persona: ResolvedPersona | null | undefined): Array<{ value: TimeArea; label: string }> {
-  return TIME_AREAS.filter((t) => allows(persona, t.feature ? { feature: t.feature } : undefined)).map(({ value, label }) => ({ value, label }));
+const BASE: Omit<ActivityRoute, 'view' | 'redirect'> = { show: 'list', review: false, week: null, sub: 'changes', anchor: null };
+
+/** Where a tab goes. */
+export const hrefForView = (v: ActivityView, persona?: ResolvedPersona | null): string => hrefFor({ ...BASE, view: v }, persona);
+
+/** To log's Week on one week (its Monday), or the current one. */
+export const hrefForWeek = (monday: string | null, persona?: ResolvedPersona | null): string => hrefFor({ ...BASE, view: 'log', show: 'week', week: monday }, persona);
+
+/** To log at one of its sections. */
+export const hrefForAnchor = (anchor: string, persona?: ResolvedPersona | null): string => hrefFor({ ...BASE, view: 'log', anchor }, persona);
+
+/** The Review page. */
+export const hrefForReview = (persona?: ResolvedPersona | null): string => hrefFor({ ...BASE, view: 'log', review: true }, persona);
+
+/** VDP, or VDP filtered to My VDPs. */
+export const hrefForVdpSub = (s: VdpSub, persona?: ResolvedPersona | null): string => hrefFor({ ...BASE, view: 'vdp', sub: s }, persona);
+
+/** The tabs this persona sees, in order (a gated one stays hidden while the persona loads). */
+export function activityTabsFor(persona: ResolvedPersona | null | undefined): Array<{ value: ActivityView; label: string }> {
+  return ACTIVITY_VIEWS.filter((t) => allows(persona, t.feature ? { feature: t.feature } : undefined)).map(({ value, label }) => ({ value, label }));
 }
-
-/** Where a main tab goes: Org62 → the persona's default Org62 view, VDP → Changes. */
-export function hrefForArea(area: TimeArea, persona: ResolvedPersona | null | undefined): string {
-  if (area === 'vdp') return `${ACTIVITY_PATH}?view=vdp`;
-  const v = timeViewOf(null, persona);
-  return v === 'week' ? ACTIVITY_PATH : `${ACTIVITY_PATH}?view=${v}`;
-}
-
-/** Where an Org62 sub-tab goes (the persona's default is the bare /activity). */
-export const hrefForView = (v: TimeView, persona: ResolvedPersona | null | undefined): string => (v === timeViewOf(null, persona) ? ACTIVITY_PATH : `${ACTIVITY_PATH}?view=${v}`);
-
-/** Where a VDP sub-tab goes. */
-export const hrefForVdpSub = (s: VdpSub): string => (s === 'mine' ? `${ACTIVITY_PATH}?view=vdp&sub=mine` : `${ACTIVITY_PATH}?view=vdp`);
-
-/** Weeks on one week (its Monday), or the current one. */
-export const hrefForWeek = (monday: string | null): string => `${ACTIVITY_PATH}?view=weeks${monday ? `&week=${encodeURIComponent(monday)}` : ''}`;
 
 /**
- * What a view renders for this persona: the view itself, a neutral loading frame while the persona loads (a gated
- * view's words never flash), or the feature that is not active (shown as available to activate).
+ * What a view renders for this persona: the view, a neutral frame while the persona loads (a gated view's words never
+ * flash), or the feature that is not active (shown as available to activate).
  */
-export function timeViewAccess(view: TimeView, persona: ResolvedPersona | null | undefined): { state: 'show' } | { state: 'loading' } | { state: 'inactive'; feature: PersonaFeature } {
-  const feature = TIME_VIEWS.find((t) => t.value === view)?.feature;
+export function viewAccess(view: ActivityView, persona: ResolvedPersona | null | undefined): { state: 'show' } | { state: 'loading' } | { state: 'inactive'; feature: PersonaFeature } {
+  const feature = ACTIVITY_VIEWS.find((t) => t.value === view)?.feature;
   if (!feature) return { state: 'show' };
   if (!persona) return { state: 'loading' };
   return allows(persona, { feature }) ? { state: 'show' } : { state: 'inactive', feature };

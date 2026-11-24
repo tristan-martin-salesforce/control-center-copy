@@ -20,6 +20,7 @@ import { asc, eq, inArray, like, and } from 'drizzle-orm';
 
 import type { AgentRun, ToolAdapter, ToolHealth, ToolRun } from '@/contract';
 import { toToolAdapter, ToolAdapterSeedRow } from '@/contract';
+import { logger } from '@/lib/log';
 import { toolManifestSchema, type ToolManifest } from '@/tools/manifest';
 import { claudeSessions, toolAdapters, toolRunOutputs, toolRuns, userSettings } from '@/db/schema';
 
@@ -185,7 +186,22 @@ interface AdapterExt {
 
 export async function loadToolAdapters(rc: ReadCtx): Promise<(ToolAdapter & { rowId: string })[]> {
   const rows = await rc.db.select().from(toolAdapters).where(eq(toolAdapters.ownerUserId, rc.userId)).orderBy(asc(toolAdapters.createdAt), asc(toolAdapters.key));
-  return rows.map((r) => {
+  const bad: string[] = [];
+  const out: (ToolAdapter & { rowId: string })[] = [];
+  for (const r of rows) {
+    try {
+      out.push(adapterFromRow(rc, r));
+    } catch {
+      bad.push(r.id);
+    }
+  }
+  // One bad row must not take every page down: drop it, say so once (ids only, never field values).
+  if (bad.length) logger('db').warn({ code: 'DATA.ROW_INVALID', table: 'tool_adapters', count: bad.length, ids: bad.slice(0, 20) }, 'tool_adapters: rows failed the contract and were left out');
+  return out;
+}
+
+export function adapterFromRow(rc: ReadCtx, r: typeof toolAdapters.$inferSelect): ToolAdapter & { rowId: string } {
+  {
     const x = ext<AdapterExt>(rc, 'tool_adapters', r.id);
     const health: ToolHealth = {
       state: x.healthUnknown || r.lastHealthOk === null ? 'unknown' : r.lastHealthOk ? 'ok' : 'down',
@@ -214,7 +230,7 @@ export async function loadToolAdapters(rc: ReadCtx): Promise<(ToolAdapter & { ro
     const pos = (k: string) => (order.includes(k) ? order.indexOf(k) : order.length);
     const view = ToolAdapterSeedRow.parse({ manifest: withPropertyOrder(manifest, order), ...state });
     return { rowId: r.id, ...view, fields: [...view.fields].sort((a, b) => pos(a.key) - pos(b.key)) };
-  });
+  }
 }
 
 /**

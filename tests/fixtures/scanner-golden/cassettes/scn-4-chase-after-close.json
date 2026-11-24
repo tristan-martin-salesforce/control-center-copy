@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\"), keyed by the completion pass ledger hash. Re-key offline after a prompt or skill change: npm run eval:record. Replace with live replies: npm run eval:record -- --live --yes-spend (costs money).",
+  "entries": [
+    {
+      "hash": "4bb8e4e33297f60bc98dcdf8e2f8e51b",
+      "label": "2026-11-09 15:27Z | Send PERSON_C the ACME pricing deck link",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"source\": \"s1\", \"basis\": \"delivered\", \"confidence\": 0.9, \"reason\": \"I sent the pricing deck link in the same DM\"}]}"
+    },
+    {
+      "hash": "923d13d6e6376de2fb4a3645ca48bc54",
+      "label": "2026-11-10 09:07Z | Send PERSON_C the ACME pricing deck link",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"confidence\": 0.1, \"reason\": \"the asker says the link does not open and asks to re-share\"}]}"
+    }
+  ]
+}

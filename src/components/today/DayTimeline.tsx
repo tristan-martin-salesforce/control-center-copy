@@ -62,6 +62,19 @@ interface Viewport {
 }
 
 /** Position from the pixel layout; columns inside the main lane keep a 4 px gutter between them. */
+/**
+ * A meeting block is named by what it shows (axe label-content-name-mismatch, WCAG 2.5.3): the title, the badge and
+ * the meta line read as shown, then a visually hidden suffix with what the block leaves out: the time when the meta
+ * line doesn't carry it (live, declined, a badge in its place), and the declined line when a badge hides it.
+ * A tiny block shows nothing and keeps its full aria-label.
+ */
+export function eventSpokenSuffix(time: string, meta: string, shownMeta: string | null, declined: boolean): string {
+  const parts: string[] = [];
+  if (shownMeta === null && declined) parts.push(meta);
+  if (!(shownMeta ?? (declined ? meta : '')).includes(time)) parts.push(time);
+  return parts.length ? ` · ${parts.join(' · ')}` : '';
+}
+
 function place(box: BlockBox | undefined, b: TLBlock): CSSProperties {
   if (!box) return { display: 'none' };
   const w = box.right - box.left;
@@ -227,7 +240,7 @@ export function DayTimeline(p: DayTimelineProps) {
           {ready ? (
             <div className="td-zoom" role="group" aria-label="Zoom the day" data-zoom={zoom}>
               <IconButton icon="zoomout" label="Zoom out" title="Zoom out ( - )" size="xs" iconSize="sm" disabled={zoom <= 1} onClick={zoomOut} aria-keyshortcuts="-" />
-              <button type="button" className="td-zoom-v" onClick={fit} disabled={zoom <= 1} title={zoom > 1 ? 'Fit the whole day ( 0 )' : 'The whole day fits · zoom with + or Ctrl/⌘ + scroll'} aria-label={zoom > 1 ? `Zoom ${zoomLabel(zoom)}, fit the whole day` : 'Whole day shown'} aria-keyshortcuts="0">
+              <button type="button" className="td-zoom-v" onClick={fit} disabled={zoom <= 1} title={zoom > 1 ? 'Fit the whole day ( 0 )' : 'The whole day fits · zoom with + or Ctrl/⌘ + scroll'} aria-label={zoom > 1 ? `Fit: zoom ${zoomLabel(zoom)}, fit the whole day` : 'Fit: whole day shown'} aria-keyshortcuts="0">
                 {zoomLabel(zoom)}
               </button>
               <IconButton icon="zoomin" label="Zoom in" title="Zoom in ( = or + · Ctrl/⌘ + scroll or pinch )" size="xs" iconSize="sm" disabled={zoom >= ZOOM_MAX} onClick={zoomIn} aria-keyshortcuts="= +" />
@@ -315,9 +328,11 @@ export function DayTimeline(p: DayTimelineProps) {
                     : live
                       ? `now · ${left}m left${ms.note ? ` · ${ms.note}` : ''}`
                       : `${time}${ms.note ? ` · ${ms.note}` : ''}`;
+                  const shownMeta = short && ms.badge ? null : meta;
+                  const spoken = eventSpokenSuffix(time, meta, shownMeta, declined);
                   const title = (
                     <span className="td-ev-t">
-                      {ms.star ? <span className="text-fg-heading">★ </span> : null}
+                      {ms.star ? <span aria-hidden className="text-fg-heading">★ </span> : null}
                       {ev.title}
                     </span>
                   );
@@ -338,23 +353,25 @@ export function DayTimeline(p: DayTimelineProps) {
                         data-tone={ms.tone ?? undefined}
                         data-event-id={ev.id}
                         style={{ ...style, ...(live ? ({ '--elapsed': String(b.live) } as CSSProperties) : null) }}
-                        aria-label={`${time} · ${ev.title}${declined ? (ev.attendance === 'declined' || ev.attendance === 'cancelled' ? ` · ${ev.attendance}` : ' · not answered yes: not blocking') : ''}${ms.badge ? ` · ${ms.badge.label}` : ''}`}
+                        aria-label={tiny ? `${time} · ${ev.title}${declined ? (ev.attendance === 'declined' || ev.attendance === 'cancelled' ? ` · ${ev.attendance}` : ' · not answered yes: not blocking') : ''}${ms.badge ? ` · ${ms.badge.label}` : ''}` : undefined}
                         onClick={() => p.onOpenEvent(ev)}
                         onMouseEnter={() => ev.prep?.workItemId && p.onHoverItem(ev.prep.workItemId)}
                         onMouseLeave={() => p.onHoverItem(null)}
                       >
                         {tiny ? null : short ? (
                           <>
-                            {title}
+                            {title}{' '}
                             {ms.badge ? <Badge tone={ms.badge.tone}>{ms.badge.label}</Badge> : <span className="td-ev-m">{meta}</span>}
+                            {spoken ? <span className="sr-only">{spoken}</span> : null}
                           </>
                         ) : (
                           <>
                             <span className="td-ev-line">
                               {title}
-                              {ms.badge ? <Badge tone={ms.badge.tone}>{ms.badge.label}</Badge> : null}
-                            </span>
+                              {ms.badge ? <>{' '}<Badge tone={ms.badge.tone}>{ms.badge.label}</Badge></> : null}
+                            </span>{' '}
                             <span className="td-ev-m">{meta}</span>
+                            {spoken ? <span className="sr-only">{spoken}</span> : null}
                           </>
                         )}
                       </button>

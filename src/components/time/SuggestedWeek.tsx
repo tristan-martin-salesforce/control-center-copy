@@ -1,6 +1,6 @@
 'use client';
 /**
- * Time ▸ Log hours, step 1 "Suggested" (docs/ui/time-redesign.md): what the app proposed for the selected week and
+ * Time ▸ Log hours, step 1 "Suggested" (docs/archive/2026-build/time-redesign.md): what the app proposed for the selected week and
  * how much, then where those rows are now as one line of counts (each a jump to its section), the CF/CR split, the
  * onsite days (Confirm, Not onsite, Mark trip) and "Week at a glance": the calendar grid, a disclosure closed by
  * default and remembered, since it is the evidence behind the suggestions, not a task.

@@ -17,6 +17,7 @@ import { classifyDeliveryError } from '../errors';
 import { OUTBOX_SERVER, OUTBOX_TOOLS } from '../mcp-config';
 import type { ReadbackOutcome, ToolCall, ToolResult, WriteOutcome } from '../types';
 import type { OutboxAdapter, ReadbackContext, ReadFn } from './index';
+import type { MessageLanding } from './slack';
 import { containsLead, str, strList } from './text';
 
 const SERVER = OUTBOX_SERVER.gmail;
@@ -94,3 +95,9 @@ async function readback(read: ReadFn, ctx: ReadbackContext): Promise<ReadbackOut
 }
 
 export const gmailAdapter: OutboxAdapter = { channel: 'gmail', toolCall, parseWrite, readback };
+
+/** D-98 (09 R5): a delivered Gmail message or draft for its landing row: the thread, how many recipients, the mode, the tool, the link (never the subject, body or an address). */
+export function gmailLanding(payload: Record<string, unknown>, mode: DispatchMode, write: WriteOutcome): MessageLanding {
+  const recipients = strList(payload.to).length + strList(payload.cc).length;
+  return { destination: 'gmail', externalId: write.externalId, values: { thread_id: str(payload.threadId), recipients: String(recipients), mode, tool: OUTBOX_TOOLS.gmail.write[mode], link: write.link } };
+}

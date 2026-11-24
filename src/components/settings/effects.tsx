@@ -8,6 +8,7 @@ import { ClosingReason, type AutonomyLevel, type CalendarEvent, type ClosingActi
 import { CLOSING_REASON_LABEL } from '@/engines/home/closed';
 import { AppLink } from '@/components/shell/AppLink';
 import { useApi } from '@/client/hooks';
+import { usePersona } from '@/client/persona';
 import { cheatSheetGroups } from '@/components/shell/CheatSheet';
 import { copyText } from '@/components/time/shared';
 import { toast } from '@/client/toast';
@@ -46,7 +47,8 @@ function Card({ title, right, children, className }: { title?: ReactNode; right?
     <div className={cn(s.card, className)}>
       {title || right ? (
         <div className={s.cardHead}>
-          {title ? <h4>{title}</h4> : null}
+          {/* h3 under the pane's h2 (heading levels go up one at a time) */}
+          {title ? <h3>{title}</h3> : null}
           {right ? <span className={s.muted}>{right}</span> : null}
         </div>
       ) : null}
@@ -69,6 +71,7 @@ const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:
 
 function ProfileEffect() {
   const { profile, policy } = useSettingsModel();
+  const persona = usePersona();
   const cal = useApi('getCalendar');
   const now = useNow();
   const d = profile.draft;
@@ -100,7 +103,8 @@ function ProfileEffect() {
   }
   const next = (cal.data?.events ?? []).filter((e) => Date.parse(e.start) > now.getTime() && e.attendance !== 'declined' && e.attendance !== 'cancelled').sort((a, b) => a.start.localeCompare(b.start))[0];
   const mgrRule = policy.policy?.rules.find((r) => r.enabled && r.when.fromManager);
-  const roleLabel = d.role === 'se_manager' ? 'SE manager' : 'SE (IC)';
+  // D-55: the persona and its level name the role pack (an AE's is "Specialist AE"); nothing role-specific while it loads
+  const roleLabel = persona?.levelLabel ?? null;
   const ticks = valid ? Array.from({ length: Math.floor((end - start) / 120) + 1 }, (_, i) => Math.ceil(start / 120) * 120 + i * 120).filter((m) => m >= start && m <= end) : [];
   const abbr = zoneAbbrev(tz, now);
 
@@ -152,9 +156,9 @@ function ProfileEffect() {
         </Card>
         <Card title="Role and manager">
           <div className={s.facts}>
-            <Fact icon="person" k={`${roleLabel} role pack`} v={policy.policy ? `Your policy is “${policy.policy.name}” v${policy.policy.version}. The role also decides what the agent treats as yours.` : 'Decides what the agent treats as yours.'} />
+            <Fact icon="person" k={roleLabel ? `${roleLabel} role pack` : 'Role pack'} v={policy.policy ? `Your policy is “${policy.policy.name}” v${policy.policy.version}. The role also decides what the agent treats as yours.` : 'Decides what the agent treats as yours.'} />
             <Fact icon="lines" k={d.managerName || 'No manager set'} v={d.managerName ? (mgrRule ? `Matches rule “${mgrRule.text}” (boost ${mgrRule.boost > 0 ? '+' : ''}${mgrRule.boost}).` : 'Feeds the “Manager ask” weight.') : 'The manager-asks rule and weight match nobody until you add one.'} />
-            {profile.changed('role') ? <Fact icon="warn" k={`Switching to ${roleLabel}`} v="Saves your role. Your current policy and its edits stay as they are." /> : null}
+            {profile.changed('role') && roleLabel ? <Fact icon="warn" k={`Switching to ${roleLabel}`} v="Saves your role. Your current policy and its edits stay as they are." /> : null}
           </div>
         </Card>
         <Card title="Time zone and days">
@@ -220,7 +224,7 @@ function DisplayEffect() {
             <div key={ci} className={s.keys}>
               {col.map((g) => (
                 <div key={g.id} style={{ display: 'contents' }}>
-                  <h5>{g.title}</h5>
+                  <h4>{g.title}</h4>
                   {g.items.map((it) => (
                     <div key={it.keys + it.label} style={{ display: 'contents' }}>
                       <span>{it.label}</span>
@@ -437,7 +441,7 @@ function BudgetsEffect() {
         <div className={s.meter} role="meter" aria-valuemin={0} aria-valuemax={soft} aria-valuenow={sp.today.usd} aria-label="Today's spend against the soft budget">
           <i className={cn(sp.today.usd >= hard ? s.capped : sp.today.usd >= chipAt && s.over)} style={{ width: `${Math.min(100, pct)}%` }} />
         </div>
-        {sp.today.usd >= hard ? <p className={cn(s.help, s.danger)}>At the hard cap: scanners are deterministic-only until tomorrow.</p> : null}
+        {sp.today.usd >= hard ? <p className={cn(s.help, s.danger)}>At the hard cap: scans run on rules only (no AI) until tomorrow.</p> : null}
       </Card>
       <div className={s.epGrid}>
         <Card title="Last 7 days" right={overChip ? `${overChip} day${overChip === 1 ? '' : 's'} past the chip` : 'never near the soft budget'}>

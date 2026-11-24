@@ -43,6 +43,15 @@ export const ItemsQuery = z.object({
   source: SourceKind.optional(),
   kind: WorkKind.optional(),
   q: z.string().optional(),
+  /**
+   * Paging (post-2.0 Work list scope, additive, as GET /deals): `limit` rows of the tab from `cursor` (the previous
+   * page's `nextCursor`). No `limit` = the whole tab, as before. The counts always count every row. The cursor is
+   * opaque: on the Closed tab a keyset of the last row shown (closed at, created at, id; P25-6), so a close or a reopen
+   * between pages neither repeats nor skips a row; on the other tabs an offset.
+   */
+  cursor: z.string().max(128).optional(),
+  /** A page size, not a cap: paging goes on past it (`nextCursor`); 500 bounds one response (the UI asks for 50). */
+  limit: z.coerce.number().int().min(1).max(500).optional(),
 });
 export type ItemsQuery = z.infer<typeof ItemsQuery>;
 
@@ -70,7 +79,12 @@ export const TimeLedgerQuery = z.object({ quarter: TimeLedgerQuarter.optional() 
 export type TimeLedgerQuery = z.infer<typeof TimeLedgerQuery>;
 export const SearchQuery = z.object({ q: z.string().default(''), limit: z.coerce.number().int().min(1).max(50).default(20) });
 export const SinceQuery = z.object({ ts: IsoDateTime.optional() }); // default = the user's last-active time
-export const ListQuery = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) });
+/**
+ * GET /scans (the scan ledger): newest first, `limit` runs from `cursor` (the previous page's `nextCursor`, caps audit
+ * F-2, additive). A page size, not a cap: paging reaches the oldest run. The cursor is opaque: a keyset of the last run
+ * shown (started at, id), so a scan that starts between pages neither repeats nor skips a row.
+ */
+export const ListQuery = z.object({ limit: z.coerce.number().int().min(1).max(500).default(100), cursor: z.string().max(128).optional() });
 /** GET /people (CONTRACT-1): name/email/Slack id/role/account match; empty q lists everyone (A→Z). */
 export const PeopleQuery = z.object({
   q: z.string().default(''),
@@ -212,6 +226,11 @@ export const ActivityPatch = z
     durationH: z.number().multipleOf(0.25).min(0),
     taskType: z.string().nullable(),
     oppId: Id.nullable(),
+    /**
+     * D-103 (c): what the row logs to. `opp` is `oppId`; `account` logs to the account itself (an account with no open
+     * opportunity: a Solutions Event on the Account); `internal` is `internal: true`. `oppId` keeps working.
+     */
+    target: z.object({ kind: z.enum(['opp', 'account', 'internal']), id: z.string() }),
     meetingType: z.enum(['CF', 'CR']).nullable(),
     description: z.string(),
     status: z.enum(['proposed', 'approved', 'dismissed']),
@@ -317,13 +336,21 @@ export const ChatRequest = z.object({
   threadId: Id.optional(), // default: the "Today" thread
   text: z.string().min(1).max(8000),
   context: z.array(ChatContextInput).default([]),
-  /** Model for this turn (CONTRACT-1). Default: settings.chat.defaultModel. Echoed in the `start` event. */
-  model: ChatModel.optional(),
+  /**
+   * Model for this turn (CONTRACT-1). Default: settings.chat.routing (Assistant v2: `auto` routes each turn to a tier,
+   * src/llm/chat/router.ts). The model that answered is echoed in the `start` event.
+   */
+  model: ChatModel.or(z.literal('auto')).optional(),
   /**
    * A one-time approval to spend this much more on this message (the "Allow more" on a capped message): it raises the
    * per-message cap and may go past the assistant's daily line by the same amount, for this message only.
    */
   allowExtraUsd: z.number().min(0).max(5).optional(),
+  /**
+   * ASSIST-2 (2026-11-20): "Allow more" continues this assistant message (one stopped at its cost limit) instead of
+   * re-running the question: the stopped answer and its tool rows are the context, and the cap is `allowExtraUsd`.
+   */
+  continueMessageId: Id.optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequest>;
 

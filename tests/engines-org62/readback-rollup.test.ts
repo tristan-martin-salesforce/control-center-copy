@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyReadback, quarterProgress, readyToSubmit, verifyReadback, weeklyRollup, normSubject, type ActivityEntry } from '@/engines/activity';
+import { applyReadback, verifyReadback, normSubject } from '@/engines/activity/readback';
+import { quarterProgress, readyToSubmit, weeklyRollup } from '@/engines/activity/rollup';
+import type { ActivityEntry } from '@/engines/activity/types';
 import { CFG, OPP_ACME, entry, ev62 } from '../fixtures/org62/activity';
 
 const NOW = '2026-11-05T18:00:00Z';

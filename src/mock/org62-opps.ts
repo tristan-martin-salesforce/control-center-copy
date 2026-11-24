@@ -66,6 +66,8 @@ export const soqlAnswer = (records: MockOrg62Opp[]) => JSON.stringify({ totalSiz
 
 /** The placeholder Org62 id of a seed opp (the seed has none): what mock logging batches and searches show. */
 export const mockOrg62IdFor = (oppId: string) => `006XX${oppId.replace(/[^A-Za-z0-9]/g, '').slice(0, 10).padEnd(10, '0')}AAA`;
+/** The placeholder Org62 Account id of a seed account (D-103 (c): an account target's WhatId in mock batches). */
+export const mockOrg62AccountIdFor = (accountId: string) => `001XX${accountId.replace(/[^A-Za-z0-9]/g, '').slice(0, 10).padEnd(10, '0')}AAA`;
 /** The app's id for a placeholder record once it is added (stable, so picking it twice reuses it). */
 export const mockOppIdFor = (org62Id: string) => `opp_o62_${org62Id.slice(0, 15)}`;
 export const mockAccountIdFor = (org62Id: string) => `acc_o62_${org62Id.slice(0, 15)}`;

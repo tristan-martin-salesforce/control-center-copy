@@ -6,6 +6,7 @@
  */
 import type { ActionDestination } from '@/contract';
 import { canvasInputOf, ucRowCount } from './payload';
+import { legacyShape } from './tables';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const hoursLabel = (h: number) => `${Math.round(h * 100) / 100} h`;
@@ -13,9 +14,9 @@ const hoursLabel = (h: number) => `${Math.round(h * 100) / 100} h`;
 /** "Sales Events" → "Sales Event": one Event of the record type. */
 export const eventNoun = (recordTypeName: string): string => recordTypeName.trim().replace(/s$/, '') || 'Event';
 
-/** Deal Contribution ADD rows in a work order (`|1|Deal_Contribution__c|…`). */
+/** Deal Contribution rows in a work order (creates and changes; either table layout, WO-1). */
 export function dcRowCount(markdown: string): number {
-  return markdown.split('\n').filter((l) => /^\|[^|]*\|Deal_Contribution__c\|/.test(l)).length;
+  return legacyShape(markdown).split('\n').filter((l) => /^\|[^|]*\|Deal_Contribution__c\|/.test(l)).length;
 }
 
 export interface LogCanvasPromptInput {
@@ -47,6 +48,8 @@ export function logCanvasPrompt(i: LogCanvasPromptInput): string {
   return [
     `Please execute the "${i.title}" canvas now${i.url ? ` (${i.url})` : ''}.`,
     `It lists ${what.length ? what.join(', ') : 'the work order'}.`,
+    // WO-1: one table per object and verb, each with its own paragraph: Slackbot never picks a column for a type
+    'It has one table per job (EVENTS TO CREATE, DEAL CONTRIBUTIONS TO CREATE, USE CASES TO CREATE, then the TO UPDATE tables): work through the tables from top to bottom and follow the paragraph under each heading.',
     ...(i.rows
       ? [`For each activity row: create the ${noun} (or update it if one already exists for that date and opp), keep the ${i.taskType === false ? '' : 'task type, '}opp (WhatId), CF/CR, start/end and description exactly as written, and do not add rows that are not on the canvas.`]
       : []),
@@ -67,7 +70,7 @@ export function forecastCanvasPrompt(i: ForecastCanvasPromptInput): string {
   return [
     `Please execute the "${i.title}" canvas now${i.url ? ` (${i.url})` : ''}.`,
     `It updates ${what} on my Specialist Forecasts (SpecialistForecast__c): only those fields, only those records.`,
-    "When you finish, reply with counts: updated / skipped / failed. Control Center reads the records again and flags anything that didn't land.",
+    "When you finish, reply with counts: updated / skipped / failed. Command Center reads the records again and flags anything that didn't land.",
   ].join('\n');
 }
 

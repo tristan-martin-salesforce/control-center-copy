@@ -159,6 +159,11 @@ export const TodayPayload = z.object({
     waitingForCanvas: z.object({ dcs: z.number().int().min(0), useCases: z.number().int().min(0) }).default({ dcs: 0, useCases: 0 }),
     /** 2026-11-13 audit C8: Assistant proposal cards staged and not applied or discarded yet (a quiet Assistant badge). */
     assistantPending: z.number().int().min(0).default(0),
+    /**
+     * C10: Activity ▸ To log's one count (what needs you: fix rows plus sending failures), the To log tab's badge
+     * (src/engines/activity/to-log-count.ts, the rule lanesOf reads), so the sidebar never says 1 while the tab says 38.
+     */
+    toLog: z.number().int().min(0).default(0),
   }),
   scannerPulse: z.object({ label: z.string(), state: ConnectorState }),
 });
@@ -175,7 +180,10 @@ export const ItemsPayload = z.object({
   tab: WorkTab,
   items: z.array(WorkItem),
   counts: z.record(WorkTab, z.number().int()),
+  /** The tab's rows over every page (= counts[tab]; without `limit`, the rows shown). */
   total: z.number().int(),
+  /** With `limit`: the cursor of the next page, null on the last (absent without `limit`). */
+  nextCursor: z.string().nullable().optional(),
 });
 export type ItemsPayload = z.infer<typeof ItemsPayload>;
 

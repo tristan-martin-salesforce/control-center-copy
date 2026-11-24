@@ -8,22 +8,12 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import {
-  type CalendarEvidence,
-  type EvidenceBundle,
-  crossesMidnight,
-  detectOnsite,
-  flightDestination,
-  groupFlights,
-  isFlightTitle,
-  isMarkerEvent,
-  isPhysicalLocation,
-  localDay,
-  placeOf,
-  proposeActivity,
-  splitAtMidnight,
-  toMs,
-} from '@/engines/activity';
+import type { CalendarEvidence, EvidenceBundle } from '@/engines/activity/types';
+import { crossesMidnight, isFlightTitle, isMarkerEvent } from '@/engines/activity/event-kinds';
+import { detectOnsite, groupFlights } from '@/engines/activity/onsite';
+import { flightDestination, isPhysicalLocation, placeOf } from '@/engines/activity/places';
+import { localDay, toMs } from '@/engines/activity/time';
+import { proposeActivity, splitAtMidnight } from '@/engines/activity/propose';
 import { CFG, MAPPINGS, OPP_ACME, cal } from '../fixtures/org62/activity';
 
 const TZ = 'America/Denver';

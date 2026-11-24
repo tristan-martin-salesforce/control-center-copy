@@ -8,6 +8,8 @@ import type { NowCard, RailEntry, ShelfEntry, SpineSlot, TodayPayload, WorkItem 
 import type { PanelEntity } from '@/components/shell/panel';
 import type { PullRef } from './capacity';
 import { dueLabel, hhmm, hm, minuteOfDay, msOf, zoned } from './time';
+import { offsetMin } from '@/engines/home/time';
+import { whyLine, whyOfItem, type WhyParts } from '@/engines/priority/why';
 
 export type Section = 'run' | 'fit' | 'pull' | 'promise';
 export type RowTone = 'blocked' | 'overdue' | 'risk' | null;
@@ -28,8 +30,12 @@ export interface DayRow {
   card: NowCard | null;
   entity: PanelEntity;
   title: string;
+  /** Run rows: the ranking's why (why now, then why it matters; lane 07 R7). Other rows: their own line. */
   why: string;
+  /** The extractor's (or the NBA's) sentence and reasoning: the detail under the ranking's why. */
   whyDetail: string | null;
+  /** Run rows: the two parts behind `why` (null when neither says anything; the sentence shows instead). */
+  whyParts?: WhyParts | null;
   /** Neutral context: account, source or kind ("Acme", "Outbox", "Org62"). */
   context: string | null;
   meta: string;
@@ -60,6 +66,19 @@ export interface RowsInput {
   pullForward: PullRef[] | null;
   /** Every open item the page knows (GET /items?tab=all_open), so engine refs outside the payload resolve. */
   catalog?: ReadonlyMap<string, WorkItem>;
+  /** Settings ▸ Profile working hours: a late item's grace is one working day (lane 07 R1). */
+  workingHours?: { start: string; end: string; days: number[] };
+}
+
+const DEFAULT_HOURS = { start: '08:00', end: '17:30', days: [1, 2, 3, 4, 5] };
+
+/** Lane 07 R7: the ranking's two-part why for a run row, recomputed at render time ("2 d late" stays true). */
+function rankWhy(item: WorkItem, input: RowsInput): WhyParts | null {
+  const now = msOf(input.nowIso);
+  const wh = input.workingHours ?? DEFAULT_HOURS;
+  const m = item.refs.meeting;
+  const parts = whyOfItem({ ...item, meeting: m ? { label: m.label, start: m.start } : null }, now, { ...wh, utcOffsetMinutes: input.tz ? offsetMin(now, input.tz) : 0, ...(input.tz ? { timeZone: input.tz } : {}) });
+  return parts.matters || parts.now ? parts : null;
 }
 
 const ACTIONABLE = new Set(['open', 'in_progress', 'waiting_on_me', 'likely_done', 'reopened']);
@@ -72,8 +91,9 @@ export function isBlocked(item: Pick<WorkItem, 'state' | 'waiting'>): boolean {
 /**
  * Today's load, mirroring the engine's rule (src/engines/priority/capacity.ts `todayScope`) so the list
  * matches `youMinToday`: pinned (a start-by you set to today) or planned today; due today (earlier today
- * still counts); or start-by today-or-earlier for work due after tomorrow. Overdue-from-earlier and
- * due-tomorrow work is pull-forward, not load. Reopened / looped-back-in items always show (they need you).
+ * still counts); or start-by today-or-earlier for work due later, tomorrow included (PRIO-3: work that must
+ * start today is today's load). Overdue-from-earlier work is pull-forward, not load. Reopened / looped-back-in
+ * items always show (they need you).
  */
 export function isTodayScoped(item: WorkItem, nowIso: string, tz: string | undefined, planned: ReadonlySet<string>): boolean {
   if (item.state === 'likely_done') return false;
@@ -85,8 +105,7 @@ export function isTodayScoped(item: WorkItem, nowIso: string, tz: string | undef
   if (!item.due) return false;
   const dueDay = day(item.due);
   if (dueDay === today) return true;
-  const afterTomorrow = dueDay > day(new Date(msOf(nowIso) + 86_400_000).toISOString());
-  return afterTomorrow && !!item.startBy && day(item.startBy) <= today;
+  return dueDay > today && !!item.startBy && day(item.startBy) <= today;
 }
 
 /** The NBA runs an agent (Claude session or tool) alongside your hands-on part. */
@@ -141,6 +160,9 @@ function runRow(item: WorkItem, card: NowCard | null, input: RowsInput): DayRow 
   const context = contextOf(item);
   const effort = `you ~${hm(item.effort.youMin)}${bg ? ' · agent checks run alongside' : item.effort.agentMin > 0 ? ` · agent ~${hm(item.effort.agentMin)}` : ''}`;
   const who = item.waiting?.who?.name?.split(' ')[0];
+  const sentence = card?.nba?.why ?? item.why;
+  const reasoning = card?.nba?.whyDetail ?? item.whyDetail;
+  const parts = rankWhy(item, input);
   return {
     key: `run:${item.id}`,
     section: 'run',
@@ -148,8 +170,9 @@ function runRow(item: WorkItem, card: NowCard | null, input: RowsInput): DayRow 
     card,
     entity: { kind: 'work_item', id: item.id, label: card?.nba?.title ?? item.title },
     title: card?.nba?.title ?? item.title,
-    why: card?.nba?.why ?? item.why,
-    whyDetail: card?.nba?.whyDetail ?? item.whyDetail,
+    why: (parts && whyLine(parts)) || sentence,
+    whyDetail: parts ? [sentence, reasoning].filter((x, i, xs): x is string => !!x && xs.indexOf(x) === i).join('\n\n') || null : reasoning,
+    whyParts: parts,
     context,
     meta: [context, effort].filter(Boolean).join(' · '),
     when: { main, sub },

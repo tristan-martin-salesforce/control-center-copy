@@ -12,8 +12,10 @@ import { connectorPrimary } from '@/components/panels/derive';
 import { DEFAULT_HANDS_ON } from '@/engines/priority/estimate';
 import { Button } from '@/ui';
 import { AppLink } from '@/components/shell/AppLink';
+import { connectorProblem, problemOf } from '@/client/health-setup';
 import { BROKEN_STATES, needsYou } from './derive';
 import { RaiseCapButton } from './RaiseCap';
+import { SpendAskRows } from './SpendAsks';
 import type { useConnectorActions } from './actions';
 
 type Actions = ReturnType<typeof useConnectorActions>;
@@ -34,7 +36,9 @@ export function NeedsYou({ h, now, tz, actions, onOpen, panelId }: { h: HealthPa
   const soft = h.spend.state === 'soft_alert';
   // D-60: VDP autopilot is on but paused (re-auth VDP, dry run, today's cap): told here until it clears
   const ap = h.vdpAutopilot?.paused ? h.vdpAutopilot : null;
-  if (!broken.length && !amber.length && !workerDown && !waiting && !capped && !soft && !ap) return null;
+  // H-5: runs that passed their estimate and wait for an answer
+  const asks = h.spendAsks ?? [];
+  if (!broken.length && !amber.length && !workerDown && !waiting && !capped && !soft && !ap && !asks.length) return null;
   const since = (iso: string) => (sameDay(iso, now, tz) ? clock(iso, tz) : dayLabel(iso, tz));
   let filledUsed = false;
   const takeFilled = () => {
@@ -48,6 +52,8 @@ export function NeedsYou({ h, now, tz, actions, onOpen, panelId }: { h: HealthPa
       {broken.map((c) => {
         const p = connectorPrimary(c);
         const r = c.reauth;
+        // one diagnosis, in the catalog's words; the Setup row owns the detail (01 UI-7: no second wording here)
+        const prob = connectorProblem(c, h.setup?.dependencies);
         // Open in the docked panel: its footer holds the filled button, so this one goes quiet.
         const filled = p.kind === 'reauth' && panelId !== c.id && takeFilled();
         return (
@@ -59,8 +65,12 @@ export function NeedsYou({ h, now, tz, actions, onOpen, panelId }: { h: HealthPa
               </h2>
               <span className="text-caption text-muted tabular-nums">since {since(c.since)}</span>
             </div>
-            <p className="mt-1 max-w-[68ch] text-body text-fg">{c.impact ?? `Items from ${c.label} may be missing or stale until it’s fixed.`}</p>
-            {r?.command ? <CommandBlock className="mt-3 max-w-[60rem]" command={r.command} note={r.instructions ?? undefined} /> : r?.instructions ? <p className="mt-2 max-w-[68ch] text-body text-fg">{r.instructions}</p> : null}
+            {prob ? (
+              <p className="mt-1 max-w-[68ch] text-body text-fg" data-problem-code={prob.code}>
+                <b>{prob.title}.</b> {prob.nextStep}
+              </p>
+            ) : null}
+            {c.impact ? <p className="mt-1 max-w-[68ch] text-caption text-muted">{c.impact}</p> : null}
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {p.kind === 'reauth' ? (
                 <Button variant={filled ? 'primary' : 'secondary'} size="sm" icon={r?.kind === 'terminal_command' ? 'new_window' : 'refresh'} loading={actions.reauthing(c.id)} onClick={() => actions.reauth.mutate(c)} data-reauth={c.id}>
@@ -73,6 +83,11 @@ export function NeedsYou({ h, now, tz, actions, onOpen, panelId }: { h: HealthPa
               <Button variant="quiet" size="sm" onClick={() => onOpen(c)}>
                 Details
               </Button>
+              {prob?.href ? (
+                <AppLink href={prob.href} className="text-caption font-bold text-link hover:underline" data-setup-link={prob.depId}>
+                  How to fix
+                </AppLink>
+              ) : null}
               <span className="text-caption text-muted">You ~{DEFAULT_HANDS_ON.reauth}m. Scanning resumes and catches up on its own.</span>
             </div>
           </article>
@@ -89,28 +104,26 @@ export function NeedsYou({ h, now, tz, actions, onOpen, panelId }: { h: HealthPa
           </div>
           <p className="mt-1 max-w-[68ch] text-body text-fg">{waiting.message} Scans and jobs wait until then.</p>
           {waitingCommand(waiting.fix) ? (
-            <CommandBlock className="mt-3 max-w-[60rem]" command={waitingCommand(waiting.fix)!} note={waitingCommand(waiting.fix) === 'npm run update' ? 'Run it from the Control Center folder: it backs up the database, migrates and restarts both services.' : 'Run it from the Control Center folder.'} />
+            <CommandBlock className="mt-3 max-w-[60rem]" command={waitingCommand(waiting.fix)!} note={waitingCommand(waiting.fix) === 'npm run update' ? 'Run it from the Command Center folder: it backs up the database, migrates and restarts both services.' : 'Run it from the Command Center folder.'} />
           ) : waiting.fix ? (
             <p className="mt-2 max-w-[68ch] text-body text-fg">{waiting.fix}</p>
           ) : null}
         </article>
       ) : null}
-      {workerDown || capped ? (
+      {workerDown ? <WorkerDown /> : null}
+      {capped ? (
         <article className="rounded-lg border border-danger-200 bg-danger-50 px-5 py-4 shadow-[inset_3px_0_0_var(--color-danger-500)]" data-health-system>
           <h2 className="text-lead font-bold text-danger-700">
             <span aria-hidden>✕ </span>
-            {workerDown ? 'The background worker isn’t running' : 'The hard spend cap is reached'}
+            The hard spend cap is reached
           </h2>
-          <p className="mt-1 max-w-[68ch] text-body text-fg">
-            {workerDown
-              ? 'Scans and jobs are paused until it starts.'
-              : `Scanners run deterministic-only until tomorrow ($${h.spend.today.usd.toFixed(2)} of $${h.spend.today.hardCapUsd}).`}
-          </p>
-          {workerDown ? <CommandBlock className="mt-3 max-w-[60rem]" command="npm run worker" note="Run it from the Command Center folder." /> : <RaiseCapButton spend={h.spend} variant="primary" className="mt-3" />}
+          <p className="mt-1 max-w-[68ch] text-body text-fg">{`Scans run on rules only (no AI) until tomorrow ($${h.spend.today.usd.toFixed(2)} of $${h.spend.today.hardCapUsd}).`}</p>
+          <RaiseCapButton spend={h.spend} variant="primary" className="mt-3" />
         </article>
       ) : null}
-      {amber.length || soft || ap ? (
+      {amber.length || soft || ap || asks.length ? (
         <ul className="flex flex-col gap-1" data-health-amber>
+          <SpendAskRows asks={asks} />
           {ap ? (
             <li className="flex min-w-0 flex-wrap items-baseline gap-x-3 text-body" data-testid="health-vdp-autopilot">
               <span className="font-bold text-warning-700">
@@ -129,7 +142,7 @@ export function NeedsYou({ h, now, tz, actions, onOpen, panelId }: { h: HealthPa
                 <span aria-hidden>▲ </span>
                 {c.label} {c.state === 'offline' ? 'is offline' : 'is degraded'}
               </span>
-              <span className="min-w-0 text-caption text-muted">{c.impact ?? c.lastError?.message ?? `since ${since(c.since)}`}</span>
+              <span className="min-w-0 text-caption text-muted">{c.impact ?? connectorProblem(c, h.setup?.dependencies)?.title ?? `since ${since(c.since)}`}</span>
               <Button variant="quiet" size="xs" onClick={() => onOpen(c)}>
                 Details
               </Button>
@@ -150,5 +163,26 @@ export function NeedsYou({ h, now, tz, actions, onOpen, panelId }: { h: HealthPa
         </ul>
       ) : null}
     </section>
+  );
+}
+
+/** The worker stopped (DEP.WORKER.DOWN): the catalog's words and its restart command, the same as its Setup row. */
+function WorkerDown() {
+  const p = problemOf('DEP.WORKER.DOWN');
+  const command = p.action?.kind === 'run' ? p.action.ref : null;
+  return (
+    <article className="rounded-lg border border-danger-200 bg-danger-50 px-5 py-4 shadow-[inset_3px_0_0_var(--color-danger-500)]" data-health-system="worker" data-problem-code={p.code}>
+      <h2 className="text-lead font-bold text-danger-700">
+        <span aria-hidden>✕ </span>
+        {p.title}
+      </h2>
+      <p className="mt-1 max-w-[68ch] text-body text-fg">{p.text}</p>
+      {command ? <CommandBlock className="mt-3 max-w-[60rem]" command={command} note="Run it in Terminal; scans and jobs resume when it checks in." /> : null}
+      {p.href ? (
+        <AppLink href={p.href} className="mt-2 inline-block text-caption font-bold text-link hover:underline" data-setup-link={p.depId}>
+          How to fix
+        </AppLink>
+      ) : null}
+    </article>
   );
 }

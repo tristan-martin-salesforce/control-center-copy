@@ -14,7 +14,7 @@ import { MockDataSource } from '../../src/server/datasource/mock';
 import { AppError } from '../../src/server/errors';
 import { resolveFeedbackChannel, readTeamConfig } from '../../src/server/feedback/channel';
 import { formatFeedbackMessage } from '../../src/server/feedback/format';
-import { FakeMcp } from '../beoutbox/fake';
+import { FakeMcp } from '../outbox/fake';
 
 const seed = Seed.parse(JSON.parse(readFileSync(path.resolve(__dirname, '../../src/mock/seed.example.json'), 'utf8')));
 const CHANNEL = 'C0FEEDBACK01';
@@ -103,7 +103,7 @@ describe('diagnose → stage → Send', () => {
     expect(plain.report).toMatchObject({ expected: '', actual: 'The week shows 0 h but the Log has meetings' });
     expect(d.report.diagnosis.files).toContain('src/components/time/TimePage.tsx');
     expect(d.message.split('\n')[0]).toBe(':beetle: *Bug: The Time page should show the week hours but it shows 0 h*');
-    expect(d.message).toContain('v0.1.0 · persona SE · page Time · /time?tab=log');
+    expect(d.message).toContain('v0.1.0 · channel dev · persona SE · page Time · /time?tab=log');
     expect(d.channel).toMatchObject({ id: CHANNEL, source: 'settings', dryRun: true, live: false });
   });
 

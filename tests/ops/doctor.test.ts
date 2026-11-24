@@ -1,11 +1,28 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The data checks are a lazy import in runDoctor (drizzle and the job handlers): load them with the file, so the first
+// full report never pays for transforming that module graph inside its test timeout.
+import '../../src/ops/checks/data';
 import { formatReport, runDoctor, summarizeMcp, type DoctorContext } from '../../src/ops/doctor';
 import type { ExecFn, ExecResult } from '../../src/ops/exec';
 import { HeartbeatWriter } from '../../src/ops/heartbeat';
 import { parseMcpList } from '../../src/ops/mcp';
+
+// No process is spawned by this file: every check's commands go through the fake `exec` below, and src/ops/paths.ts
+// resolves the Homebrew prefix at import (`brew --prefix`, a real child process) unless HOMEBREW_PREFIX is set.
+// (vi.hoisted runs before the imports above.)
+const brewEnv = vi.hoisted(() => {
+  const before = process.env.HOMEBREW_PREFIX;
+  process.env.HOMEBREW_PREFIX ??= '/opt/homebrew';
+  return before;
+});
+afterAll(() => {
+  if (brewEnv === undefined) delete process.env.HOMEBREW_PREFIX;
+  else process.env.HOMEBREW_PREFIX = brewEnv;
+});
 
 let dir: string;
 const NOW = Date.parse('2026-11-05T15:00:00Z');
@@ -122,7 +139,7 @@ describe('doctor: lane E checks', () => {
     const backups = join(dir, 'state', 'backups');
     const put = (folder: string, hoursAgo: number) => {
       mkdirSync(folder, { recursive: true });
-      const f = join(folder, 'control_center-20261105-020000.dump');
+      const f = join(folder, 'command_center-20261105-020000.dump');
       writeFileSync(f, 'x');
       const t = new Date(NOW - hoursAgo * 3600_000);
       utimesSync(f, t, t);
@@ -156,8 +173,8 @@ describe('doctor: lane E checks', () => {
     mkdirSync(join(dir, 'bin'), { recursive: true });
     for (const f of [node, npm]) writeFileSync(f, '#!/bin/sh\n', { mode: 0o755 });
     const plist = (args: string[]) => `<plist><dict><key>ProgramArguments</key>\n  <array>\n${args.map((a) => `    <string>${a}</string>`).join('\n')}\n  </array></dict></plist>`;
-    writeFileSync(join(agents, 'com.controlcenter.web.plist'), plist([node, '/repo/scripts/ops/run-service.mjs', '--name', 'web', '--', '/repo/node_modules/.bin/next', 'start']));
-    writeFileSync(join(agents, 'com.controlcenter.worker.plist'), plist([node, '/repo/scripts/ops/run-service.mjs', '--name', 'worker', '--', npm, 'run', 'worker:start']));
+    writeFileSync(join(agents, 'com.commandcenter.web.plist'), plist([node, '/repo/scripts/ops/run-service.mjs', '--name', 'web', '--', '/repo/node_modules/.bin/next', 'start']));
+    writeFileSync(join(agents, 'com.commandcenter.worker.plist'), plist([node, '/repo/scripts/ops/run-service.mjs', '--name', 'worker', '--', npm, 'run', 'worker:start']));
     const exec = (version: string): ExecFn => async (cmd, args) => (cmd === node && args[0] === '--version' ? res({ stdout: `${version}\n` }) : res({ code: 1 }));
     expect(await check(ctx({}, exec('v24.1.0')), 'agent-node')).toMatchObject({ status: 'ok', detail: 'web v24.1.0, worker v24.1.0' });
     expect(await check(ctx({}, exec('v18.20.0')), 'agent-node')).toMatchObject({ status: 'fail', fix: expect.stringContaining('npm run ops:install') });

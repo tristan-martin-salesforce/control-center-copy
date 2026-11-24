@@ -215,15 +215,21 @@ function AccountsPane({
   return (
     <Pane as="section" aria-label="Accounts" head={<SectionHead title="Accounts" count={accounts.length} sub="by open pipeline" />} bodyClassName="pb-3">
       {withOpps.length ? (
-        <div role="list" aria-label="Accounts with open opportunities">
+        <div>
+          {/* the heading sits above its list (a list holds only its items) */}
           <h3 className="px-5 pt-2 pb-1 text-caption font-bold text-muted">With open opportunities · {withOpps.length}</h3>
-          {withOpps.map(row)}
+          <div role="list" aria-label="Accounts with open opportunities">
+            {withOpps.map(row)}
+          </div>
         </div>
       ) : null}
       {without.length ? (
-        <div role="list" aria-label="Accounts without open opportunities" className="mt-2">
+        <div className="mt-2">
+          {/* the heading sits above its list (a list holds only its items) */}
           <h3 className="px-5 pt-2 pb-1 text-caption font-bold text-muted">No open opportunities · {without.length}</h3>
-          {without.map(row)}
+          <div role="list" aria-label="Accounts without open opportunities">
+            {without.map(row)}
+          </div>
         </div>
       ) : null}
     </Pane>

@@ -169,7 +169,7 @@ export function buildTools(sb: SessionBuild) {
   const adapterId = new Map<string, string>();
   for (const [key, name, kind, caps, base, health, launch, schema, ver, ok] of AD) {
     const id = uid('tool_adapters', key); adapterId.set(key, id);
-    adapters.push({ id, owner_user_id: OWNER, key, name, kind, base_url: base, health_path: health, launch_command: launch, capabilities: caps, input_schema: schema, version: ver, enabled: key !== 'pulse_footprint', last_health_at: ok === null ? null : T('11-18 08:30'), last_health_ok: ok, created_at: T('10-19 09:30'), updated_at: T('11-18 08:30') });
+    adapters.push({ id, owner_user_id: OWNER, key: key.replace(/_/g, '-'), name, kind, base_url: base, health_path: health, launch_command: launch, capabilities: caps, input_schema: schema, version: String(Math.max(1, parseInt(ver, 10))), enabled: key !== 'pulse_footprint', last_health_at: ok === null ? null : T('11-18 08:30'), last_health_ok: ok, created_at: T('10-19 09:30'), updated_at: T('11-18 08:30') });
   }
   const runs: Row[] = []; const outputs: Row[] = [];
   const mk = (key: string, adapter: string, cap: string, wi: number | null, nba: string | null, status: string, input: Record<string, unknown>, o: { ext?: string; job?: number | null; session?: string; summary?: string; started?: string; finished?: string; code?: string; msg?: string; created: string }) => {

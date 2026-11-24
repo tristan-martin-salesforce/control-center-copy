@@ -34,6 +34,12 @@ export const OUTBOX_SERVER: Record<OutboxChannel, string> = {
    * relay (src/outbox/transport.ts) carries it only for this channel, only to that channel id, only with a spent confirm.
    */
   feedback: 'slack',
+  /**
+   * Slack's hosted MCP again, for a release announcement only (D-90, W12-7): ONE message to the configured announcement
+   * channel, carried by the release relay only for this channel, only to that id, only with a spent confirm. The
+   * `release.drive_upload` hand-off shares the channel but never makes a call (its adapter refuses every one).
+   */
+  release: 'slack',
 };
 
 export interface ChannelTools {
@@ -73,6 +79,12 @@ export const OUTBOX_TOOLS: Readonly<Record<OutboxChannel, ChannelTools>> = Objec
   // A feedback report: Send posts one top-level message (both modes; a report has no Slack draft). No new tool: this
   // is the message channel's own send, kept apart so the live relay can tell a report from any other Slack post.
   feedback: Object.freeze({
+    write: Object.freeze({ draft: 'slack_send_message', send: 'slack_send_message' }),
+    read: Object.freeze(['slack_read_thread']),
+  }),
+  // A release announcement (D-90): the same one top-level message as a feedback report, to the announcement channel. No
+  // new tool (the allowlist is unchanged); kept apart so the live relay can tell an announcement from any other post.
+  release: Object.freeze({
     write: Object.freeze({ draft: 'slack_send_message', send: 'slack_send_message' }),
     read: Object.freeze(['slack_read_thread']),
   }),

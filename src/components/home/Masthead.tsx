@@ -4,7 +4,7 @@
  * The Today / next-working-day toggle sits on the date line; late in the day (from an hour before the working day
  * ends, after it, or on a day off) a quiet "Plan tomorrow →" suggests it. Home never switches by itself.
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { HomeDay, HomeMasthead, HomeNextDay } from '@/contract';
 import { useApi } from '@/client/hooks';
 import { FillingIn } from '@/components/shell/FillingIn';
@@ -75,7 +75,13 @@ export function Masthead({
   next = null,
   requested,
   onDay,
+  viewToggle,
+  children,
 }: {
+  /** Home ▸ Plan: the Home | Plan toggle, first on the date line. */
+  viewToggle?: ReactNode;
+  /** Under the sentence: the briefing's "what to move" line when the day is overbooked. */
+  children?: ReactNode;
   m: HomeMasthead;
   nowMs: number;
   stale?: { onRetry: () => void } | null;
@@ -91,6 +97,7 @@ export function Masthead({
   return (
     <section className="hm-mast" aria-label={plan ? `${next?.label ?? 'The next day'} in one sentence` : 'Today in one sentence'} data-home-panel="masthead" data-day={day}>
       <div className="hm-mast-date">
+        {viewToggle}
         {next && onDay ? <DayToggle day={requested ?? day} next={next} onDay={onDay} /> : null}
         <span>
           {plan ? (
@@ -105,7 +112,8 @@ export function Masthead({
         </span>
         {!plan && next?.nudge && onDay ? (
           <span className="hm-plan-nudge" data-testid="home-plan-nudge">
-            Your day is wrapping up ·{' '}
+            {/* true late on a working day and all day on a weekend ("wrapping up" at 09:00 on a Saturday was not) */}
+            Look ahead ·{' '}
             <button type="button" className="hm-link" onClick={() => onDay('next')}>
               Plan {dayInSentence(next.label)} →
             </button>
@@ -131,6 +139,7 @@ export function Masthead({
           <Segments segs={m.sentence} />
         )}
       </h2>
+      {children}
       {m.ahead.length ? (
         <p className="hm-dek">
           <Segments segs={m.ahead} />

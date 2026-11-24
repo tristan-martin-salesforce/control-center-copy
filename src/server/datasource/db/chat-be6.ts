@@ -13,105 +13,49 @@
  * Nothing here calls an external system, except the read-only Gmail / Drive lookups of `chat_search_sources`
  * when live connectors are on (CC_CHAT_LLM=1 and CC_CHAT_CONNECTORS≠0).
  */
-import { insertLlmCall, ledgerHash } from '@/db/ledger';
 import { randomUUID } from 'node:crypto';
-import { and, desc, eq, sql } from 'drizzle-orm';
-import type { ActivityEntry, AgentRun, ChatChange, ChatModel, ChatPart, ChatScan, Draft, Evidence, PolicyRule, PriorityPolicy, Proposal, Receipt, ReceiptChange, ReceiptFailure, Resolution, ResolutionDetail, SourceRef, WorkItemRecord } from '@/contract';
-import { budgetsForDay, WorkItemPatch } from '@/contract';
-import type { Db } from '@/db/client';
+import { sql } from 'drizzle-orm';
+
+import { errorFields } from '@/lib/log';
+import {
+  type ActivityEntry, type AgentRun, type Draft, type Evidence, type PolicyRule, type PriorityPolicy, type Proposal,
+  type Receipt, type ReceiptChange, type ReceiptFailure, type ResolutionDetail, type SourceRef, type WorkItemRecord,
+  WorkItemPatch,
+} from '@/contract';
 import { enqueueEnrich } from '@/jobs/handlers/enrich';
-import { jobs as jobsTable, scanRuns as scanRunsTable } from '@/db/schema';
-import { PgRuntimeJobQueue } from '@/jobs/runtime-queue';
-import type { ChatSourceHit, ChatUsageRecord } from '@/llm/chat/types';
+import type { ChatSourceHit } from '@/llm/chat/types';
 import { redactText } from '@/llm/redact';
-import { scanJob } from '@/scanner/runtime/jobs';
-import type { ConnectorId } from '@/scanner/types';
-import { activityError, activityReceiptLines, changeError, editedActivity, needsRerank, RESOLUTION_LABEL, weightsWith } from '@/server/chat/changes';
+import {
+  activityReceiptLines, editedActivity, needsRerank, RESOLUTION_LABEL, weightsWith,
+} from '@/server/chat/changes';
 import { appliedSummary, applyRouteCalls, type AppliedCalls, type RouteCall } from '@/server/chat/app-routes';
 import type { ChatHostBackend } from '@/server/chat/host';
 import type { DataSource } from '@/server/datasource/types';
 import { personaOf } from '@/personas';
-import { CHAT_PLAN_PREFIX, chatDraft, chatLimitsFromEnv, chatProposal, chatScan, chatSession, draftRef, findConnector, resolveRepoFolder, type ChatPlanRecord } from '@/server/chat/outputs';
-import { refreshScanPart, scanIdOfPart } from '@/server/chat/turn';
+import {
+  chatDraft, chatProposal, chatSession, draftRef, resolveRepoFolder, type ChatPlanRecord,
+} from '@/server/chat/outputs';
 import { AppError, invalid } from '@/server/errors';
-
 import { ruleOp } from '../mock/chat-be6';
-import { scanStatusFromDb, type DbRunStatus } from './enums';
 import type { ReadModel } from './model';
 import { insertSession } from './store/agents';
 import { writeKv, type WriteCtx } from './store/common';
-import { readSpend, writeSpend } from './store/health';
 import { insertDraft } from './store/nba';
 import { insertPolicyVersion } from './store/settings';
-import { buildOrg62OppById, buildOrg62OppsByIds, buildOrg62OppSearch, buildOrg62Query, matchInApp, Org62LookupError, parseOrg62Rows, type Org62LookupInput, type Org62Row } from '@/server/chat/org62';
+import { buildOrg62OppById } from '@/server/chat/org62';
 import { recordTypeKv } from '@/server/chat/record-type';
 import { loggingProfile } from '@/engines/activity/persona';
-import { runChatResearch, type ChatResearchInput } from '@/server/chat/research';
-import { loadChatSkill } from '@/llm/chat/prompt';
 import { canvasHolds } from '@/lib/canvas/payload';
-
 import { buildLogBatch } from './store/log-batch';
 import { appliedLogCanvases } from '../log-canvases';
 import { logDiscrepancies } from './store/log-check';
-import { runOneReadLookup } from '@/server/onboarding/identity';
-
 import { updateActivity } from './store/time';
-import { insertEvidence, insertWorkItem, logTransition, type WorkLinkTargets } from './store/work';
+import { insertEvidence, insertWorkItem, logTransition } from './store/work';
+import { planKey, ledgerLog, editConflict, changeLabel, RECEIPT_FIELDS } from './chat-be6.shared';
+import { DbChatBe6Reads } from './chat-be6.reads';
+export type { DbChatKit } from './chat-be6.shared';
 
-const planKey = (id: string) => `${CHAT_PLAN_PREFIX}${id}`;
-
-/** Connector source → the scanner connector and the scope a chat rescan runs. */
-const SCAN_SCOPE: Record<string, { connector: ConnectorId; scope: string }> = {
-  slack: { connector: 'slack', scope: 'inbox' },
-  gmail: { connector: 'gmail', scope: 'inbox' },
-  calendar: { connector: 'calendar', scope: 'primary' },
-  drive: { connector: 'drive', scope: 'tracked' },
-  gemini: { connector: 'gemini_notes', scope: 'poll' },
-  claude: { connector: 'claude_sessions', scope: 'all' },
-  org62: { connector: 'org62', scope: 'opps' },
-  vdp: { connector: 'vdp', scope: 'plans' },
-};
-
-const RECEIPT_FIELDS = new Set(['state', 'snoozedUntil', 'rank', 'resolution', 'title', 'purpose', 'due', 'startBy', 'effort', 'notes', 'kind', 'accountId', 'initiativeId', 'oppId', 'signals']);
-
-interface MutMetaLite {
-  action: string;
-  summary: string;
-  entity?: { type: string; id: string };
-  actor?: 'chat';
-  undoable?: boolean;
-}
-
-/** What the db DataSource lends BE-CHAT (bound private helpers). */
-export interface DbChatKit {
-  db: Db;
-  now(): Date;
-  userId(): Promise<string>;
-  model(): Promise<ReadModel>;
-  mutate<T>(m: MutMetaLite, fn: (w: WriteCtx, model: ReadModel) => Promise<T>): Promise<{ result: T; auditId: string; undoable: boolean }>;
-  writeItem(w: WriteCtx, model: ReadModel, cur: WorkItemRecord, next: WorkItemRecord, o: { bump: boolean }): Promise<unknown>;
-  rankedIds(): Promise<string[]>;
-  rerankIn(w: WriteCtx, model: ReadModel, policy: PriorityPolicy, rankedIds: string[], now: Date, policyRowId?: string): Promise<unknown>;
-  resolvedRecord(model: ReadModel, cur: WorkItemRecord, o: { reason: string; resolution: Resolution; detail: Partial<Omit<ResolutionDetail, 'inferred'>>; doneBy: 'user' | 'chat'; at: string }): WorkItemRecord;
-  blankItem(now: string, me: { id: string; name: string }): WorkItemRecord;
-  links(model: ReadModel): WorkLinkTargets;
-  /** The ranker's #1 under `policy` (ids + scores, read from the in-memory model). */
-  rankTop(model: ReadModel, policy: PriorityPolicy, now: Date): { id: string; score: number } | undefined;
-  scoreOf(model: ReadModel, w: WorkItemRecord, policy: PriorityPolicy, now: Date): number;
-  receipt(auditId: string, summary: string, filter: (table: string, field: string) => boolean): Promise<Receipt>;
-  publish(tables: string[], ids: string[], reason: string): void;
-  /** The one read-only Org62 / Slack call (default runOneReadLookup; tests inject a fake). */
-  readLookup?: typeof runOneReadLookup;
-  /** Live Org62 lookups outside a chat turn (the Time picker): the Assistant's gate, or a test's fake reader. */
-  org62Live?: boolean;
-}
-
-export class DbChatBe6 {
-  constructor(private readonly k: DbChatKit) {}
-
-  private plan(model: ReadModel, id: string): ChatPlanRecord | undefined {
-    return model.ctx.kv.get(planKey(id)) as ChatPlanRecord | undefined;
-  }
+export class DbChatBe6 extends DbChatBe6Reads {
 
   // ---------------------------------------------------------------------------
   // Host backend
@@ -196,8 +140,10 @@ export class DbChatBe6 {
       },
       ...(opts.liveConnectors
         ? {
-            searchConnectors: (q, sources, limit, signal) => searchGoogle(q, sources, limit, signal),
             org62Lookup: (i) => this.org62Lookup(i),
+            // Assistant v2: one opportunity by id through the fixed template, and Slack / VDP reads through the runtime
+            org62Record: (id: string) => this.org62Soql(buildOrg62OppById(id), 'opportunities'),
+            liveRead: (connector: 'slack' | 'vdp', tool: string, args: Record<string, unknown>, signal?: AbortSignal) => this.liveRead(connector, tool, args, signal),
             research: (i, o) => this.research(i, o),
             // D-58: the Assistant's own live reads: the scanners' Slack / Org62 servers and the read-only Google client
             liveReads: true,
@@ -210,174 +156,77 @@ export class DbChatBe6 {
   }
 
   /**
-   * One model call's spend (chat: a turn, or a sub-call such as the Org62 lookup): its `llm_calls` row, the day
-   * rollups, and the Health spend projection. `requestKey` names a call outside a chat turn (the Time picker).
+   * DM-10 (2026-11-20): the Assistant's search over what the app recorded. Postgres full-text search on
+   * `source_items.search_tsv` (title + body, the GIN-indexed generated column) ranked by `ts_rank`, newest first on a tie;
+   * the excerpt is computed from `body` (null once the body expired, D-7). ILIKE over title + body only when the tsvector
+   * can't answer: the query has no searchable words (an id, a number) or the column is missing (an old schema). A SQL
+   * error is logged by its code and returned as a note, never turned into an empty list.
    */
-  private async recordSpend(u: ChatUsageRecord, requestKey?: string) {
-    const k = this.k;
-    const userId = await k.userId();
-    const m = await k.model();
-    const day = localDay(k.now(), m.settings().profile.timezone);
-    const status = u.status === 'budget_blocked' ? 'budget_blocked' : u.status === 'timeout' ? 'timeout' : u.status === 'error' ? 'error' : 'ok';
-    const skill = u.skill ?? chatSkillTag();
-    const requestHash = requestKey ?? `chat:${u.messageId}:${randomUUID()}`;
-    // D0: one writer for the ledger. A chat call is always the user's own message (or a lookup it made); each turn
-    // is its own content, so its hash names the turn. The day roll-up stays below (it also counts the chat line).
-    await insertLlmCall(k.db, {
-      ownerUserId: userId,
-      purpose: 'chat',
-      model: u.model,
-      skillKey: skill.split('@')[0]!,
-      promptVersion: skill,
-      requestHash,
-      chatMessageId: /^[0-9a-f-]{36}$/i.test(u.messageId) ? u.messageId : null,
-      status,
-      errorCode: u.errorCode ?? null,
-      inputTokens: u.inputTokens,
-      outputTokens: u.outputTokens,
-      cacheReadTokens: u.cacheReadTokens,
-      cacheWriteTokens: u.cacheWriteTokens,
-      costUsd: u.costUsd,
-      costEstimated: u.estimated,
-      latencyMs: u.latencyMs,
-      budgetDay: day,
-      startedAt: new Date(k.now().getTime() - u.latencyMs),
-      finishedAt: k.now(),
-      rollup: false,
-      trigger: 'user_action',
-      modelReason: 'default',
-      contentHash: ledgerHash(u.model, skill, u.threadId, u.messageId, requestHash),
-      outcome: u.errorCode ? `${status}:${u.errorCode}` : status,
-    });
-    if (!(u.costUsd > 0)) return;
-    await k.db.execute(sql`
-      insert into llm_budget_days (budget_id, day, spent_usd, call_count)
-      select b.id, ${day}::date, ${u.costUsd}, 1 from llm_budgets b
-       where b.owner_user_id = ${userId} and (b.scope = 'total' or (b.scope = 'purpose' and b.scope_value = 'chat'))
-      on conflict (budget_id, day) do update set spent_usd = llm_budget_days.spent_usd + excluded.spent_usd,
-                                                 call_count = llm_budget_days.call_count + 1, updated_at = now()`);
-    // the Health spend projection (cc.spend): today, the chat line, the model line
-    await k.mutate({ action: 'chat.spend', summary: 'Chat spend', entity: { type: 'settings', id: 'spend' }, actor: 'chat', undoable: false }, async (w, model) => {
-      const sp = readSpend(model.ctx);
-      const usd = Math.round((sp.today.usd + u.costUsd) * 1e6) / 1e6;
-      const add = <T extends { usd: number }>(rows: T[], match: (r: T) => boolean, make: () => T) => (rows.some(match) ? rows.map((r) => (match(r) ? { ...r, usd: Math.round((r.usd + u.costUsd) * 1e6) / 1e6 } : r)) : [...rows, make()]);
-      const soft = sp.today.softBudgetUsd || model.settings().budgets.softUsd;
-      await writeSpend(w, {
-        ...sp,
-        today: { ...sp.today, usd, softBudgetUsd: soft, hardCapUsd: sp.today.hardCapUsd || model.settings().budgets.hardUsd, pct: soft > 0 ? Math.round((usd / soft) * 100) : 0 },
-        byScanner: add(sp.byScanner, (r) => r.name === 'chat', () => ({ name: 'chat', usd: u.costUsd })),
-        byModel: add(sp.byModel, (r) => r.model === u.model, () => ({ model: u.model, usd: u.costUsd })),
-      });
-    });
-  }
-
-  private async budget(model: ChatModel) {
+  protected async searchLedger(q: string, limit: number): Promise<{ hits: ChatSourceHit[]; notes: string[] }> {
     const userId = await this.k.userId();
-    const m = await this.k.model();
-    const day = localDay(this.k.now(), m.settings().profile.timezone);
-    const lim = chatLimitsFromEnv(process.env, model, m.settings().chat);
-    const r = await this.k.db.execute<{ chat: string | null; total: string | null }>(sql`
-      select (select coalesce(sum(cost_usd), 0) from llm_calls where owner_user_id = ${userId} and budget_day = ${day}::date and purpose = 'chat') as chat,
-             (select coalesce(sum(cost_usd), 0) from llm_calls where owner_user_id = ${userId} and budget_day = ${day}::date and budget = 'daily') as total -- BUD-1`);
-    const row = r.rows[0] ?? { chat: '0', total: '0' };
-    const eff = budgetsForDay(m.settings().budgets, day);
-    const spend = readSpend(m.ctx);
-    return {
-      chatTodayUsd: Number(row.chat ?? 0),
-      // "Today only" raises the assistant's day line too, unless env pins it (tests, ops).
-      chatDailyUsd: eff.chatUsd != null && process.env.CC_CHAT_DAILY_USD === undefined ? eff.chatUsd : lim.chatDailyUsd,
-      totalTodayUsd: Math.max(Number(row.total ?? 0), spend.today.usd),
-      hardCapUsd: eff.hardUsd,
-      perMessageUsd: lim.perMessageUsd,
-      maxTurns: lim.maxTurns,
-      researchUsd: lim.researchUsd,
+    const text = q.replace(/\s+/g, ' ').trim().slice(0, 200);
+    if (text.length < 2) return { hits: [], notes: [] };
+    const n = Math.max(1, Math.min(50, Math.trunc(limit)));
+    type Row = { source: string; kind: string; title: string | null; excerpt: string | null; url: string | null; external_id: string; at: Date | null; work_item_id: string | null; work_item_title: string | null };
+    const cols = sql`s.source::text as source, s.kind::text as kind, s.title, left(regexp_replace(coalesce(s.body, ''), '\\s+', ' ', 'g'), 400) as excerpt,
+                     s.url, s.external_id, s.occurred_at as at, e.work_item_id, w.title as work_item_title`;
+    const joins = sql`left join lateral (select work_item_id from work_item_evidence ev where ev.source_item_id = s.id order by ev.created_at desc limit 1) e on true
+                      left join work_items w on w.id = e.work_item_id`;
+    const ilike = async (): Promise<Row[]> => {
+      const tokens = text.toLowerCase().split(/[^\p{L}\p{N}@._-]+/u).filter((t) => t.length >= 2).slice(0, 6);
+      if (!tokens.length) return [];
+      const like = sql.join(
+        tokens.map((t) => sql`(coalesce(s.title, '') || ' ' || coalesce(s.body, '')) ilike ${`%${t.replace(/[%_\\]/g, (c) => `\\${c}`)}%`}`),
+        sql` and `,
+      );
+      return (await this.k.db.execute<Row>(sql`select ${cols} from source_items s ${joins} where s.owner_user_id = ${userId} and (${like}) order by s.occurred_at desc nulls last limit ${n}`)).rows;
     };
-  }
-
-  private async searchLedger(q: string, limit: number): Promise<ChatSourceHit[]> {
-    const userId = await this.k.userId();
-    const tokens = q.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length >= 3).slice(0, 6);
-    if (!tokens.length) return [];
-    const like = sql.join(
-      tokens.map((t) => sql`(coalesce(s.title, '') || ' ' || coalesce(s.excerpt, '')) ilike ${`%${t}%`}`),
-      sql` or `,
-    );
-    const rows = await this.k.db
-      .execute<{ source: string; kind: string; title: string | null; excerpt: string | null; url: string | null; external_id: string; at: Date | null; work_item_id: string | null; work_item_title: string | null }>(
-        sql`select s.source::text as source, s.kind::text as kind, s.title, s.excerpt, s.url, s.external_id, s.occurred_at as at,
-                   e.work_item_id, w.title as work_item_title
-              from source_items s
-              left join lateral (select work_item_id from work_item_evidence ev where ev.source_item_id = s.id order by ev.created_at desc limit 1) e on true
-              left join work_items w on w.id = e.work_item_id
-             where s.owner_user_id = ${userId} and (${like})
-             order by s.occurred_at desc nulls last
-             limit ${Math.max(1, Math.min(50, limit * 3))}`,
-      )
-      .then((r) => r.rows)
-      .catch(() => []);
-    const score = (s: string) => tokens.filter((t) => s.toLowerCase().includes(t)).length;
-    return rows
-      .map((r) => ({ r, s: score(`${r.title ?? ''} ${r.excerpt ?? ''}`) }))
-      .sort((a, b) => b.s - a.s)
-      .slice(0, limit)
-      .map(({ r }) => ({
-        source: (r.source === 'google_drive' ? 'drive' : r.source === 'google_calendar' ? 'calendar' : r.source) as ChatSourceHit['source'],
-        kind: r.kind,
-        title: redactText(r.title ?? r.external_id).slice(0, 160),
-        excerpt: redactText(r.excerpt ?? '').slice(0, 240),
-        url: r.url,
-        externalId: r.external_id,
-        at: r.at ? new Date(r.at).toISOString() : null,
-        workItemId: r.work_item_id,
-        workItemTitle: r.work_item_title,
-      }));
-  }
-
-  // ---------------------------------------------------------------------------
-  // Rescans (a RuntimeJob on the Postgres queue; the worker runs it)
-  // ---------------------------------------------------------------------------
-
-  private async rescan(connector: string, hours: number): Promise<ChatScan> {
-    const m = await this.k.model();
-    const c = findConnector(m.all('connectors'), connector);
-    if (!c) throw invalid(`Unknown connector "${connector}" (one of ${m.all('connectors').map((x) => x.source).join(', ')})`);
-    const now = this.k.now();
-    const window = { from: new Date(now.getTime() - hours * 3_600_000).toISOString(), to: now.toISOString() };
-    const conn = { id: c.id, label: c.label, source: c.source };
-    if (c.state === 'auth_needed') return chatScan({ id: randomUUID(), connector: conn, windowHours: hours, window, jobId: null, jobStatus: null, run: null, now: now.toISOString(), authBroken: true });
-    const target = SCAN_SCOPE[c.source];
-    if (!target) throw invalid(`${c.label} has no scan from chat`);
-    const job = scanJob({ connector: target.connector, scope: target.scope, window, mode: 'manual', trigger: 'chat', runAt: now.toISOString() });
-    const userId = await this.k.userId();
-    await new PgRuntimeJobQueue(this.k.db, userId).enqueue([job]);
-    const [row] = await this.k.db.select({ id: jobsTable.id, status: jobsTable.status }).from(jobsTable).where(and(eq(jobsTable.ownerUserId, userId), eq(jobsTable.dedupeKey, job.dedupeKey))).orderBy(desc(jobsTable.id)).limit(1);
-    if (!row) throw new AppError('internal', 'scan job was not enqueued');
-    this.k.publish(['jobs'], [String(row.id)], 'chat.scan');
-    return chatScan({ id: String(row.id), connector: conn, windowHours: hours, window, jobId: String(row.id), jobStatus: row.status === 'queued' ? 'queued' : (row.status as 'running'), run: null, now: now.toISOString() });
-  }
-
-  async scanStatus(scanId: string): Promise<ChatScan | null> {
-    if (!/^\d+$/.test(scanId)) return null;
-    const userId = await this.k.userId();
-    const [j] = await this.k.db.select().from(jobsTable).where(and(eq(jobsTable.id, Number(scanId)), eq(jobsTable.ownerUserId, userId)));
-    if (!j) return null;
-    const p = j.payload as { kind?: string; connector?: string; window?: { from: string; to: string } };
-    if (p.kind !== 'scan' || !p.window) return null;
-    const [r] = await this.k.db.select().from(scanRunsTable).where(eq(scanRunsTable.jobId, j.id)).orderBy(desc(scanRunsTable.startedAt)).limit(1);
-    const m = await this.k.model();
-    const source = Object.entries(SCAN_SCOPE).find(([, v]) => v.connector === p.connector)?.[0] ?? p.connector ?? '';
-    const c = m.all('connectors').find((x) => x.source === source);
-    const hours = Math.max(1, Math.round((Date.parse(p.window.to) - Date.parse(p.window.from)) / 3_600_000));
-    return chatScan({
-      id: scanId,
-      connector: { id: c?.id ?? source, label: c?.label ?? source, source: (c?.source ?? null) as ChatScan['source'] },
-      windowHours: hours,
-      window: p.window,
-      jobId: scanId,
-      jobStatus: j.status,
-      run: r ? { id: r.id, status: scanStatusFromDb(r.status as DbRunStatus, r.errorCode), itemsSeen: r.itemsSeen, itemsNew: r.itemsNew, itemsChanged: r.itemsUpdated, error: r.errorMessage } : null,
-      now: this.k.now().toISOString(),
-    });
+    let rows: Row[];
+    let how: 'fts' | 'ilike' = 'fts';
+    try {
+      const probe = await this.k.db.execute<{ words: number }>(sql`select numnode(websearch_to_tsquery('english', ${text})) as words`);
+      if (Number(probe.rows[0]?.words ?? 0) === 0) {
+        how = 'ilike';
+        rows = await ilike();
+      } else {
+        rows = (
+          await this.k.db.execute<Row>(sql`
+            select ${cols}
+              from source_items s ${joins}
+             where s.owner_user_id = ${userId} and s.search_tsv @@ websearch_to_tsquery('english', ${text})
+             order by ts_rank(s.search_tsv, websearch_to_tsquery('english', ${text})) desc, s.occurred_at desc nulls last
+             limit ${n}`)
+        ).rows;
+      }
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? 'unknown';
+      if (code === '42703' && how === 'fts') {
+        // no search_tsv on this schema: the plain-text match is the only way to answer
+        try {
+          how = 'ilike';
+          rows = await ilike();
+        } catch (err2) {
+          const code2 = (err2 as { code?: string }).code ?? 'unknown';
+          ledgerLog().warn({ ...errorFields(err2), how: 'ilike' }, 'chat ledger search failed');
+          return { hits: [], notes: [`ledger search failed (database error ${code2}); this is not "nothing found": say the app's own search is unavailable and use the live sources`] };
+        }
+      } else {
+        ledgerLog().warn({ ...errorFields(err), how }, 'chat ledger search failed');
+        return { hits: [], notes: [`ledger search failed (database error ${code}); this is not "nothing found": say the app's own search is unavailable and use the live sources`] };
+      }
+    }
+    const hits = rows.map((r) => ({
+      source: (r.source === 'google_drive' ? 'drive' : r.source === 'google_calendar' ? 'calendar' : r.source) as ChatSourceHit['source'],
+      kind: r.kind,
+      title: redactText(r.title ?? r.external_id).slice(0, 160),
+      excerpt: redactText(r.excerpt ?? '').slice(0, 240),
+      url: r.url,
+      externalId: r.external_id,
+      at: r.at ? new Date(r.at).toISOString() : null,
+      workItemId: r.work_item_id,
+      workItemTitle: r.work_item_title,
+    }));
+    return { hits, notes: how === 'ilike' ? ['ledger: matched words in titles and bodies (the query has no full-text words)'] : [] };
   }
 
   // ---------------------------------------------------------------------------
@@ -474,7 +323,7 @@ export class DbChatBe6 {
   }
 
   /** Boost an item until the ranker puts it first (score gap + 1, doubled until it holds; 8 tries). */
-  private async pin(w: WriteCtx, model: ReadModel, itemId: string, policy: PriorityPolicy, now: Date) {
+  protected async pin(w: WriteCtx, model: ReadModel, itemId: string, policy: PriorityPolicy, now: Date) {
     const cur = model.get('workItems', itemId)!;
     const top = this.k.rankTop(model, policy, now);
     let boost = top && top.id !== cur.id ? Math.max(1, Math.ceil(top.score - this.k.scoreOf(model, cur, policy, now) + 1)) : 0;
@@ -493,7 +342,7 @@ export class DbChatBe6 {
    * The next logging batch: work orders, skips, the Org62 check. A preview, so it reads only: no Org62 lookup and no kv
    * write (D-58 fix). An unknown record type stays a placeholder here; staging the batch looks it up and keeps it.
    */
-  private async logBatch(i: { from?: string; to?: string; includeProposed?: boolean }, _live: boolean) {
+  protected async logBatch(i: { from?: string; to?: string; includeProposed?: boolean; appliedOffset?: number }, _live: boolean) {
     const userId = await this.k.userId();
     const m = await this.k.model();
     const tz = m.settings().profile.timezone;
@@ -519,84 +368,13 @@ export class DbChatBe6 {
       discrepancies: disc.map(({ id, date, description, kind, detail }) => ({ id, date, description, kind, detail })),
       recordTypeKnown: !!recordTypeId,
       ownerKnown: !!b.owner,
-      // the canvases already applied (created in Slack), with their link and where their rows are (Time's receipts)
-      applied: appliedLogCanvases(m.all('drafts'), m.all('activity'), now),
+      // the canvases already applied (created in Slack), with their link and where their rows are (Time's receipts):
+      // a page of 10 with the total and the next offset, so the Assistant reaches every one (caps audit F-5)
+      ...appliedLogCanvases(m.all('drafts'), m.all('activity'), now, { offset: i.appliedOffset }),
     };
   }
 
-  /** One question-scoped research run over live Slack, Gmail, Calendar, Drive and Org62 (src/server/chat/research.ts). */
-  private async research(i: ChatResearchInput, o: { costCapUsd: number; signal: AbortSignal; onTool?: (fullName: string) => void }) {
-    const userId = await this.k.userId();
-    const m = await this.k.model();
-    const { GoogleWorkspaceClient } = await import('@/connectors/google/client');
-    const { dbLedgerSearch } = await import('./readin');
-    return runChatResearch(i, {
-      db: this.k.db,
-      userId,
-      now: this.k.now(),
-      timezone: m.settings().profile.timezone,
-      google: new GoogleWorkspaceClient({ timeoutMs: 30_000, maxRetries: 0 }),
-      ledger: dbLedgerSearch(this.k.db, userId),
-      costCapUsd: o.costCapUsd,
-      signal: o.signal,
-      ...(o.onTool ? { onTool: o.onTool } : {}),
-    });
-  }
-
-  /** One live soqlQuery built from fixed fields (src/server/chat/org62.ts), matched to the app's opps and accounts. */
-  private async org62Lookup(i: Org62LookupInput) {
-    return this.org62Soql(buildOrg62Query(i), i.find);
-  }
-
-  /** Run one SELECT through the read-only lookup (the scan allowlist's soqlQuery), parsed and matched to the app. */
-  private async org62Soql(soql: string, find: Org62LookupInput['find']) {
-    const started = Date.now();
-    const r = await (this.k.readLookup ?? runOneReadLookup)({ connector: 'org62', tool: 'soqlQuery', args: { q: soql } }, { skillPath: 'skills/read-lookup.md', timeoutMs: 60_000 });
-    const usage = { model: r.model, inputTokens: r.inputTokens, outputTokens: r.outputTokens, status: r.code === 'timeout' ? ('timeout' as const) : r.text === null ? ('error' as const) : ('ok' as const), ...(r.text === null ? { errorCode: r.code } : {}), latencyMs: Date.now() - started };
-    if (r.text === null) return { soql, rows: [] as Org62Row[], notes: [`The Org62 lookup did not finish: ${r.message}`], costUsd: r.costUsd, usage };
-    const m = await this.k.model();
-    const rows = matchInApp(
-      parseOrg62Rows(r.text, find),
-      m.all('opps').map((o) => ({ id: o.id, accountId: o.accountId, org62Url: o.org62Url, isMine: o.isMine, myDc: o.myDc, dcAssigned: o.dcAssigned })),
-      m.all('accounts').map((a) => ({ id: a.id, org62Url: a.org62Url })),
-    );
-    return { soql, rows, notes: rows.length ? [] : ['Nothing in Org62 matches.'], costUsd: r.costUsd, usage };
-  }
-
-  /**
-   * The Time picker's Org62 reads (outside a chat turn): live only behind the Assistant's own gate (CC_CHAT_LLM=1,
-   * connectors on) and while the Assistant's day budget lasts; the spend is recorded like the Assistant's lookup
-   * (purpose chat, skill read-lookup@1). `search` is the picker's word search; `byId` re-reads one picked record;
-   * `byIds` reads several in one SELECT (adding untracked opps, e.g. to claim DCs on them).
-   */
-  async pickerOrg62(op: { search: string } | { byId: string } | { byIds: readonly string[] }): Promise<{ rows: Org62Row[]; notes: string[]; live: boolean; costUsd?: number }> {
-    if (!this.k.org62Live) return { rows: [], notes: ['Org62 live lookups are not available here: the Assistant is off (CC_CHAT_LLM) or its connectors are (CC_CHAT_CONNECTORS=0).'], live: false };
-    let soql: string;
-    try {
-      soql = 'search' in op ? buildOrg62OppSearch(op.search) : 'byIds' in op ? buildOrg62OppsByIds(op.byIds) : buildOrg62OppById(op.byId);
-    } catch (e) {
-      if (e instanceof Org62LookupError) throw invalid(`Can't search Org62 like that: ${e.message}`);
-      throw e;
-    }
-    const m = await this.k.model();
-    const b = await this.budget(m.settings().chat.defaultModel);
-    if (b.chatTodayUsd >= b.chatDailyUsd) return { rows: [], notes: [`Today's Assistant budget ($${b.chatDailyUsd.toFixed(2)}) is used up: raise it in Settings ▸ Budgets ▸ Assistant limits, or try again tomorrow.`], live: true };
-    const r = await this.org62Soql(soql, 'opportunities');
-    await this.recordSpend({ threadId: '', messageId: randomUUID(), ...r.usage, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: r.costUsd, estimated: false, skill: 'read-lookup@1' }, `${'byIds' in op ? 'deals:add-org62-opps' : 'time:opp-picker'}:${randomUUID()}`).catch(() => undefined);
-    return { rows: r.rows, notes: r.notes, live: true, costUsd: r.costUsd ?? 0 };
-  }
-
-  /** Opportunity id → its name and account (for previews and Time-page rows). */
-  private oppNames(m: ReadModel, ids: string[]) {
-    return new Map(
-      ids.flatMap((id) => {
-        const o = m.get('opps', id);
-        return o ? [[id, { name: o.name, accountName: m.get('accounts', o.accountId)?.name ?? null }] as const] : [];
-      }),
-    );
-  }
-
-  private async applyOne(w: WriteCtx, model: ReadModel, c: ChatPlanRecord['changes'][number], at: string, created: WorkItemRecord[], linked: Array<{ ev: Evidence; item: WorkItemRecord }>, actEdits: Array<{ cur: ActivityEntry; next: ActivityEntry }> = []) {
+  protected async applyOne(w: WriteCtx, model: ReadModel, c: ChatPlanRecord['changes'][number], at: string, created: WorkItemRecord[], linked: Array<{ ev: Evidence; item: WorkItemRecord }>, actEdits: Array<{ cur: ActivityEntry; next: ActivityEntry }> = []) {
     const cur = 'itemId' in c ? model.get('workItems', c.itemId)! : undefined;
     const write = async (next: WorkItemRecord, reason?: string) => {
       await this.k.writeItem(w, model, cur!, next, { bump: true });
@@ -672,107 +450,5 @@ export class DbChatBe6 {
         return;
       }
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Read-time hydration
-  // ---------------------------------------------------------------------------
-
-  /** Chat proposals → current status (+ the applied receipt right after the card). */
-  hydrateSync(m: ReadModel, parts: ChatPart[]): ChatPart[] {
-    if (!parts.some((p) => p.type === 'proposal')) return parts;
-    const out: ChatPart[] = [];
-    for (const p of parts) {
-      const plan = p.type === 'proposal' ? this.plan(m, p.proposal.id) : undefined;
-      if (p.type !== 'proposal' || !plan) {
-        out.push(p);
-        continue;
-      }
-      out.push({ ...p, proposal: plan.proposal, status: plan.proposal.status === 'pending' ? 'pending' : plan.proposal.status === 'applied' ? 'applied' : 'dismissed' });
-      if (plan.receipt && !parts.some((x) => x.type === 'receipt' && x.receipt.id === plan.receipt!.id)) out.push({ type: 'receipt', receipt: plan.receipt });
-    }
-    return out;
-  }
-
-  /** hydrateSync plus scan rows refreshed from the job / scan-run tables. */
-  async hydrate(m: ReadModel, parts: ChatPart[]): Promise<ChatPart[]> {
-    const out = this.hydrateSync(m, parts);
-    if (!out.some((p) => scanIdOfPart(p))) return out;
-    return Promise.all(
-      out.map(async (p) => {
-        const scanId = scanIdOfPart(p);
-        if (!scanId || p.type !== 'tool') return p;
-        const scan = await this.scanStatus(scanId).catch(() => null);
-        return scan ? refreshScanPart(p, scan) : p;
-      }),
-    );
-  }
-}
-
-/** Why a staged edit can't land now (closed since, a row logged since): null when it still fits. */
-function editConflict(c: ChatChange, model: ReadModel, now: Date): string | null {
-  const cur = 'itemId' in c ? (model.get('workItems', c.itemId) ?? null) : null;
-  const err = changeError(c, cur, now);
-  if (err) return err;
-  if (c.op === 'edit_activities')
-    for (const id of c.entryIds) {
-      const e = activityError(id, model.get('activity', id), c.patch.oppId ? !!model.get('opps', c.patch.oppId) : null, c.patch, [...model.extra.vocab.taskTypeByName.keys()]);
-      if (e) return e;
-    }
-  return null;
-}
-
-/** A failed edit's line on the receipt: the item or rows it was for. */
-function changeLabel(c: ChatChange, model: ReadModel): string {
-  if ('itemId' in c) return `${c.op} · ${model.get('workItems', c.itemId)?.title ?? c.itemId}`;
-  if (c.op === 'edit_activities') return `Time rows · ${c.entryIds.length} row${c.entryIds.length === 1 ? '' : 's'}`;
-  return c.op.replace(/_/g, ' ');
-}
-
-/** YYYY-MM-DD of `d` in `tz` (the budget day). */
-function localDay(d: Date, tz: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-}
-
-/** Read-only Gmail / Drive search through the devbar Google read-only MCP (allowlist enforced by the client). */
-async function searchGoogle(q: string, sources: Array<'gmail' | 'drive'>, limit: number, signal?: AbortSignal): Promise<{ hits: ChatSourceHit[]; notes: string[] }> {
-  const { GoogleWorkspaceClient } = await import('@/connectors/google/client');
-  const { parseDriveSearch, parseGmailBatch, parseGmailSearch } = await import('@/connectors/google/parse');
-  const g = new GoogleWorkspaceClient({ timeoutMs: 15_000, maxRetries: 0 });
-  const hits: ChatSourceHit[] = [];
-  const notes: string[] = [];
-  const n = Math.max(1, Math.min(10, limit));
-  try {
-    if (sources.includes('gmail')) {
-      try {
-        const page = parseGmailSearch(await g.call('search_gmail_messages', { query: q, page_size: n }, { signal }));
-        const ids = page.hits.slice(0, n).map((h) => h.id);
-        const msgs = ids.length ? parseGmailBatch(await g.call('get_gmail_messages_content_batch', { message_ids: ids, format: 'full' }, { signal })) : [];
-        for (const msg of msgs) hits.push({ source: 'gmail', kind: 'email', title: redactText(msg.subject || '(no subject)').slice(0, 160), excerpt: redactText(`${msg.from}`).slice(0, 160), url: msg.webLink ?? page.hits.find((h) => h.id === msg.id)?.webLink ?? null, externalId: msg.id, at: msg.dateIso ?? null, workItemId: null, workItemTitle: null });
-      } catch (err) {
-        notes.push(`gmail lookup failed (${(err as Error).name})`);
-      }
-    }
-    if (sources.includes('drive')) {
-      try {
-        const safe = q.replace(/['\\]/g, ' ').slice(0, 120);
-        const page = parseDriveSearch(await g.call('search_drive_files', { query: `fullText contains '${safe}' and trashed = false`, detailed: true, page_size: n }, { signal }));
-        for (const f of page.files.slice(0, n)) hits.push({ source: 'drive', kind: f.mimeType.split('.').pop() ?? 'file', title: redactText(f.name).slice(0, 160), excerpt: f.lastEditedByName ? `Last edited by ${f.lastEditedByName}` : '', url: f.link ?? null, externalId: f.id, at: f.modified ?? null, workItemId: null, workItemTitle: null });
-      } catch (err) {
-        notes.push(`drive lookup failed (${(err as Error).name})`);
-      }
-    }
-  } finally {
-    await (g as unknown as { close?: () => Promise<void> }).close?.().catch(() => undefined);
-  }
-  return { hits, notes };
-}
-
-/** The chat skill's `<skill>@<version>` (llm_calls.prompt_version for a turn recorded without one). */
-function chatSkillTag(): string {
-  try {
-    return loadChatSkill().versionTag;
-  } catch {
-    return 'chat-assistant';
   }
 }

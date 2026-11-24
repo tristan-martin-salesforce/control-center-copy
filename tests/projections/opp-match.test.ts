@@ -9,7 +9,8 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_EVIDENCE_CONFIG, NOT_ON_TEAM_FLAG } from '@/engines/activity';
+import { DEFAULT_EVIDENCE_CONFIG } from '@/engines/activity/types';
+import { NOT_ON_TEAM_FLAG } from '@/engines/activity/classify';
 import { ENGINE_STATUSES, planWeek, type FixedEntry, type WeekEvent, type WeekInput } from '@/projections/activity';
 import { GENERIC_MATCH_WORDS, isGenericMatchWord, Matcher, type MatchOpp } from '@/projections/matching';
 import { PROJECTIONS_VERSION } from '@/projections/run';

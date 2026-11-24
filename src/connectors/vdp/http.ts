@@ -26,6 +26,8 @@ export type VdpErrorCode =
   | 'sso_redirect'
   | 'sso_html'
   | 'http_401'
+  /** CONN-11: refused while the gateway cookie is fresh, so the PAT itself was revoked (AUTH.VDP.PAT_REVOKED). */
+  | 'pat_revoked'
   | 'rate_limited'
   | 'server_error'
   | 'http_error'
@@ -241,7 +243,12 @@ async function rpc(method: 'tools/call' | 'tools/list', params: Record<string, u
     const host = /^https?:\/\/([^/?#]+)/i.exec(loc)?.[1] ?? 'the sign-in page';
     throw new VdpAuthError('sso_redirect', `the gateway redirected to ${host} (the Okta cookie lapsed)`);
   }
-  if (res.status === 401 || res.status === 403) throw new VdpAuthError('http_401', `HTTP ${res.status} unauthorized (PAT or gateway cookie refused)`);
+  // CONN-11: a refusal while the cookie still has more than a minute left is the PAT's (revoked, expired): re-auth
+  // can't fix it, an admin's new PAT can. Without a readable expiry it stays ambiguous (http_401).
+  if (res.status === 401 || res.status === 403) {
+    if (exp !== null && exp * 1000 - now > 60_000) throw new VdpAuthError('pat_revoked', `HTTP ${res.status} unauthorized while the gateway cookie is valid (the VDP access token was refused)`);
+    throw new VdpAuthError('http_401', `HTTP ${res.status} unauthorized (PAT or gateway cookie refused)`);
+  }
   if (res.status === 429) throw new VdpError('rate_limited', `VDP rate limited ${label} (429 too many requests; 60 calls a minute)`, true);
   if (res.status >= 500) throw new VdpError('server_error', `VDP server error on ${label} (HTTP ${res.status})`, true);
   if (/text\/html/i.test(ct)) throw new VdpAuthError('sso_html', 'the gateway answered with an HTML sign-in page (the Okta cookie lapsed)');

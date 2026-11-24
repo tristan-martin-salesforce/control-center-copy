@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HomePayload, TodayPayload, TriagePayload, type Evidence, type TriageItem } from '@/contract';
 import { closedBadge, closedForYouSince, closedReasonClass, closedWhy } from '@/engines/home/closed';
-import { buildHome } from '@/engines/home';
+import { buildHome } from '@/engines/home/build';
 import { homeInputFromStore } from '@/server/datasource/mock/home';
 import { withoutTriageItem } from '@/components/lists/cache-patches';
 import { closedDayLabel } from '../../app/triage/_triage/TriageRows';

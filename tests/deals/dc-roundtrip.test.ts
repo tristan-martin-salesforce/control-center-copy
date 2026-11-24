@@ -1,7 +1,7 @@
 /**
  * dc-roundtrip (D-68): the Deals and DC rows of docs/EDGE-CASES.md (DC-01 … DC-33), each a scenario named after its
  * row, on the shared pure rules and the mock DataSource. The Postgres side of the same rows is
- * tests/deals/dc-roundtrip-db.test.ts. Placeholders only.
+ * tests/db/deals/dc-roundtrip-db.test.ts. Placeholders only.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -19,7 +19,7 @@ import { dealsNeedsFor, vdpOppIdsOf } from '@/server/deals/needs';
 import { accountMerges, vdpItemsOutOfScope } from '@/server/deals/scope';
 import { personaOf } from '@/personas';
 
-import { mockWith } from '../bechat/helpers';
+import { mockWith } from '../chat/helpers';
 import { org62Item } from '../projections/fixtures';
 
 const DC_ID = 'a0XXX0000000DC1AAA';

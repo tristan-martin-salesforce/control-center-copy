@@ -11,7 +11,7 @@ import type { Seed } from '@/contract';
 
 import { bigintFor, uuidFor } from './ids';
 
-/** Keys ending in Id that hold external-system ids, never Control Center ids. */
+/** Keys ending in Id that hold external-system ids, never Command Center ids. */
 const EXTERNAL_KEYS = new Set(['externalId', 'sessionId', 'channelId', 'adapterId', 'toolAdapterId', 'answerId', 'choiceId']);
 
 export type IdMap = Map<string, string>;

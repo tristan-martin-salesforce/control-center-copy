@@ -1,21 +1,30 @@
 'use client';
 /**
- * Time ▸ Log hours: the quarter header, the page's focal point (docs/ui/time-redesign.md). It tells the truth
+ * Time ▸ Log hours: the quarter header, the page's focal point (docs/archive/2026-build/time-redesign.md). It tells the truth
  * plainly, in one card:
  *
  *   left   logged in Org62 against the target (verified by read-back as a quiet caption), hours to go, the meter
  *          and the pace; the deadline as a badge only when it is close or past
- *   right  waiting on you this quarter (hours, rows, by stage, each a jump to its section), what is on its way, and
- *          where a canvas's hours went when its rows span quarters ("31.8 h landed in Q3 FY27")
+ *   right  waiting on you this quarter (need you, ready to log: hours, rows, each a jump to its section), and one
+ *          quiet line "N batches in flight ▸ Sending"
+ *
+ * F4 (R2-4, D-102): History owns the past only. A batch's life is told once, on To log ▸ Sending: the card never says
+ * "to apply" or "to send", lists no batch still in flight, and the "landed in" lines live on History ▸ Batches.
+ *
+ * The not-in-Org62 strip moved to To log ▸ Sending (./SendingLane.tsx, C6): a row Org62 lacks sits on its batch.
  *
  * "Human hours only" is a quiet last line, not a headline. A role without a quarter target (the AE) shows the
  * hours alone: no meter, no pace.
  */
+import { usePersona } from '@/client/persona';
 import { StatusBadge } from '@/components/domain';
 import { clock, dayLabel } from '@/components/domain/lib/time';
-import { cn, Icon } from '@/ui';
-import { fmtH, loggingGapLine, ymdIn, type LoggingGap } from './derive';
-import { rowsWord, spillLine, type QuarterPart, type QuarterTruth } from './path-derive';
+import { AppLink } from '@/components/shell/AppLink';
+import { cn } from '@/ui';
+import { fmtH, ymdIn } from './derive';
+import { cardWaiting, inFlightLine } from './history-derive';
+import { rowsWord, type QuarterPart, type QuarterTruth } from './path-derive';
+import { hrefForAnchor, LOG_ANCHORS } from './views';
 
 function dueLabel(due: string | null, nowIso: string, tz?: string): string | null {
   if (!due) return null;
@@ -33,23 +42,35 @@ export interface QuarterHeaderProps {
   tz?: string;
   /** Scroll to the section a part lives in (Needs you, or Log it). */
   onJump: (part: QuarterPart['id']) => void;
-  /** 2026-11-13 audit C3: approved hours Org62 has not confirmed, and rows missing there (derive.ts loggingGap). */
-  gap?: LoggingGap | null;
-  /** Show the gap's rows in the week (Time scrolls to the first). */
-  onShowGap?: (ids: string[]) => void;
   /** DC requests and VDP use cases waiting for a canvas (they are not rows, so they never show as hours). */
   queued?: { dcs: number; useCases: number };
+  /** Batches still in To log ▸ Sending (history-derive `inFlightCount`): one quiet link, never their progress. */
+  inFlight?: number;
 }
 
 /** "55 DC requests and 3 VDP use cases wait for a canvas" (null: none). */
 export function queuedLine(q: { dcs: number; useCases: number } | undefined): string | null {
   if (!q || (!q.dcs && !q.useCases)) return null;
   const parts = [q.dcs ? `${q.dcs} DC ${q.dcs === 1 ? 'request' : 'requests'}` : null, q.useCases ? `${q.useCases} VDP use ${q.useCases === 1 ? 'case' : 'cases'}` : null].filter(Boolean);
-  return `${parts.join(' and ')} ${q.dcs + q.useCases === 1 ? 'waits' : 'wait'} for a canvas`;
+  return `${parts.join(' and ')} ${q.dcs + q.useCases === 1 ? 'waits' : 'wait'} for a batch`;
 }
 
-export function QuarterHeader({ truth: t, due, now, tz, onJump, gap, onShowGap, queued }: QuarterHeaderProps) {
+/**
+ * To log's header line (C7, §3.4): the quarter card in one sentence, the card's own words.
+ * "Q4 FY27 · 27.5 of 60 h in Org62 · on pace · due Thu 12:00". The full card is History's (C8 mounts QuarterHeader).
+ */
+export function quarterSentence(t: Pick<QuarterTruth, 'label' | 'loggedH' | 'targetH' | 'pace' | 'tone'>, due: string | null, now: string, tz?: string): string {
+  const logged = Math.round(t.loggedH * 10) / 10;
+  const dueText = dueLabel(due, now, tz);
+  const pace = t.pace ? (t.pace.state === 'behind' ? `${Math.abs(t.pace.deltaH)} h behind pace` : t.pace.state === 'ahead' ? `${t.pace.deltaH} h ahead of pace` : 'on pace') : null;
+  return [t.label, t.targetH > 0 ? `${logged} of ${t.targetH} h in Org62` : `${logged} h in Org62`, t.targetH > 0 ? pace : null, dueText ? (t.tone === 'danger' ? `past due ${dueText.replace(/^Due /, '')}` : `due ${dueText.replace(/^Due /, '')}`) : null].filter(Boolean).join(' · ');
+}
+
+export function QuarterHeader({ truth: t, due, now, tz, onJump, queued, inFlight }: QuarterHeaderProps) {
+  const persona = usePersona();
   const queuedText = queuedLine(queued);
+  const waiting = cardWaiting(t.waiting);
+  const flight = inFlightLine(inFlight);
   const dueText = dueLabel(due, now, tz);
   const target = t.targetH > 0;
   return (
@@ -80,7 +101,7 @@ export function QuarterHeader({ truth: t, due, now, tz, onJump, gap, onShowGap, 
             </div>
           ) : null}
           <p className="mt-1.5 text-caption text-muted tabular-nums">
-            {[t.verifiedH !== null ? `${fmtH(t.verifiedH)} verified by read-back` : null, target ? (t.leftH > 0 ? `${t.leftH} h to go` : 'Target met') : null].filter(Boolean).join(' · ') || 'Read back from Org62'}
+            {[t.verifiedH !== null ? `${fmtH(t.verifiedH)} checked in Org62` : null, target ? (t.leftH > 0 ? `${t.leftH} h to go` : 'Target met') : null].filter(Boolean).join(' · ') || 'Read back from Org62'}
           </p>
           {t.pace ? (
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted tabular-nums" data-pace={t.pace.state}>
@@ -96,14 +117,14 @@ export function QuarterHeader({ truth: t, due, now, tz, onJump, gap, onShowGap, 
 
         <div className="min-w-0" data-testid="q4-waiting">
           <h3 className="text-caption font-bold text-muted">Waiting on you this quarter</h3>
-          {t.waiting.rows ? (
+          {waiting.rows ? (
             <>
               <div className="mt-1 flex flex-wrap items-baseline gap-x-2 tabular-nums">
-                <span className="text-title font-bold text-fg-heading">{fmtH(t.waiting.hours)}</span>
-                <span className="text-body text-muted">{rowsWord(t.waiting.rows)}</span>
+                <span className="text-title font-bold text-fg-heading">{fmtH(waiting.hours)}</span>
+                <span className="text-body text-muted">{rowsWord(waiting.rows)}</span>
               </div>
               <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-caption tabular-nums" aria-label="Where they wait">
-                {t.waiting.parts.map((p) => (
+                {waiting.parts.map((p) => (
                   <li key={p.id}>
                     <button type="button" onClick={() => onJump(p.id)} data-part={p.id} className="rounded-sm font-bold text-link hover:underline focus-visible:outline-none focus-visible:shadow-focus">
                       {`${fmtH(p.hours)} ${p.label}`}
@@ -122,43 +143,19 @@ export function QuarterHeader({ truth: t, due, now, tz, onJump, gap, onShowGap, 
               <button type="button" onClick={() => onJump('ready')} className="rounded-sm font-bold text-link hover:underline focus-visible:outline-none focus-visible:shadow-focus">
                 {queuedText}
               </button>
-              <span className="text-muted"> · in Log it ▸ Ready to log, for your next canvas</span>
+              <span className="text-muted"> · in To log ▸ Ready to log, for your next batch</span>
             </p>
           ) : null}
-          {t.onItsWay.rows ? <p className="mt-1 text-caption text-muted tabular-nums">{`${fmtH(t.onItsWay.hours)} on its way to Org62 · ${rowsWord(t.onItsWay.rows)}`}</p> : null}
-          {t.spill.length ? (
-            <ul className="mt-3 flex flex-col gap-1.5" aria-label="Canvas hours in other quarters" data-testid="q4-spill">
-              {t.spill.map((s) => (
-                <li key={s.draftId} className="flex min-w-0 items-start gap-2 text-caption text-fg">
-                  <Icon name="info" size="xs" className="mt-0.5 shrink-0 text-muted" />
-                  <span className="min-w-0 break-words">
-                    <span className="font-bold">{`${s.title} (${dayLabel(s.at, tz)}, ${fmtH(s.hours)})`}</span>
-                    {`: ${spillLine(s)}`}
-                    {s.hereH ? `, ${fmtH(s.hereH)} in ${t.label}` : `, none in ${t.label}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
+          {flight ? (
+            <p className="mt-3 text-caption text-muted tabular-nums" data-testid="q4-in-flight">
+              {`${flight} `}
+              <AppLink href={hrefForAnchor(LOG_ANCHORS.runs, persona)} className="font-bold text-link hover:underline">
+                ▸ Sending
+              </AppLink>
+            </p>
           ) : null}
         </div>
       </div>
-      {gap?.show ? (
-        // 2026-11-13 audit C3: the logging gap, drawn where the quarter's truth is told (it was computed and never shown)
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-surface-muted px-3 py-2 text-caption" role="status" data-testid="q4-gap">
-          <StatusBadge tone={gap.missingRows ? 'danger' : 'warning'} icon="warning">
-            {gap.missingRows && !gap.unconfirmedRows ? 'Missing in Org62' : 'Not in Org62 yet'}
-          </StatusBadge>
-          <span className="min-w-0 break-words text-fg tabular-nums">{loggingGapLine(gap)}</span>
-          <span className="text-muted tabular-nums">
-            {[gap.lastReadbackAt ? `last read back from Org62 ${dayLabel(gap.lastReadbackAt, tz)} ${clock(gap.lastReadbackAt, tz)}` : 'nothing read back from Org62 yet', gap.workOrderPending ? 'no read-back since your last canvas' : null].filter(Boolean).join(' · ')}
-          </span>
-          {onShowGap && gap.ids.length ? (
-            <button type="button" onClick={() => onShowGap(gap.ids)} className="ml-auto rounded-sm font-bold text-link hover:underline focus-visible:outline-none focus-visible:shadow-focus" data-testid="q4-gap-show">
-              Show {gap.ids.length === 1 ? 'it' : 'them'}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
       <p className={cn('text-caption text-faint')}>Human hours only; agent time never counts.</p>
     </section>
   );

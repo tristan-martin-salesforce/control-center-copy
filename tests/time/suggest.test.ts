@@ -9,8 +9,16 @@ import { describe, expect, it } from 'vitest';
 import type { ActivityEntry, OppOption } from '../../src/contract';
 import { parseSuggestAnswer, suggestCandidates, suggestRequest } from '../../src/engines/activity/suggest-prompt';
 import { plainIssue, plainIssues } from '../../src/lib/time-issues';
-import { RULES_SETTLE, rowsForModel, ruleSuggestion, storedSuggestion, storedSuggestionsOf, suggestionFor, suggestKey, wantsSuggestion, type SuggestContext } from '../../src/lib/time-suggest';
+import { RULES_SETTLE, rowsForModel, ruleSuggestion, storedSuggestion, storedSuggestionsOf, suggestionFor, suggestKey, wantsSuggestion, withSuggestions, type SuggestContext } from '../../src/lib/time-suggest';
+import { accountTargetWhat, groundworkOf } from '../../src/engines/attribution/target';
+import { classifyMeeting } from '../../src/engines/activity/classify';
+import { eventCreateRule } from '../../src/engines/activity/slackbot';
+import type { ActivityMappings } from '../../src/engines/activity/types';
+import { hasTarget } from '../../src/lib/time-internal';
+import { buildOrg62AccountSearch, org62AccountHit } from '../../src/server/chat/org62';
+import { patchedEntry } from '../../src/server/time/dismiss';
 import { createMockDataSource } from '../../src/server/datasource/mock';
+import { compactHours, compactWhen, whereOf } from '../../src/components/time/compact-derive';
 
 const row = (o: Partial<ActivityEntry> = {}): ActivityEntry => ({
   id: 'r1',
@@ -215,6 +223,98 @@ describe('both DataSources attach the suggestion on read', () => {
     const r = await ds.stageLogBatch({ body: { ids: ['ac_tue_sow'] } } as never);
     expect(r.entity.events).toBe(1);
     expect(r.entity.approved).toBe(0);
+    ds.dispose();
+  });
+});
+
+describe('the compact row: where it goes', () => {
+  const sug = (confidence: number, o: Record<string, unknown> = {}) => ({ kind: 'opp' as const, oppId: '006A', oppName: 'Data 360 Expansion', accountName: 'Globex', taskType: null, confidence, reason: 'the meeting names Globex', basis: 'rules' as const, at: null, ...o });
+
+  it('a suggestion reads "87% likely" with its account · opp, ✓ at or over the settle line', () => {
+    const w = whereOf(row({ suggestion: sug(0.87) }), 0.75);
+    expect(w).toMatchObject({ kind: 'suggested', percent: '87%', target: 'Globex · Data 360 Expansion', sure: true, label: '87 percent likely Globex · Data 360 Expansion' });
+    expect(whereOf(row({ suggestion: sug(0.6) }), 0.75).sure).toBe(false);
+    // a close second keeps it unsure even over the line
+    expect(whereOf(row({ suggestion: sug(0.8), suggestions: [sug(0.8), sug(0.78, { oppId: '006B', oppName: 'Renewal' })] }), 0.75).sure).toBe(false);
+  });
+
+  it('its own opp, Internal, or Pick an opp when there is nothing to go on', () => {
+    expect(whereOf(row({ oppId: '006A', oppName: 'Data 360 Expansion', accountName: 'Globex', suggestion: sug(0.9) }), 0.75)).toMatchObject({ kind: 'set', target: 'Globex · Data 360 Expansion' });
+    expect(whereOf(row({ internal: true }), 0.75)).toMatchObject({ kind: 'internal', target: 'Internal' });
+    expect(whereOf(row(), 0.75)).toMatchObject({ kind: 'pick', target: 'Pick an opp', label: 'Pick an opp' });
+  });
+
+  it('when and hours are short', () => {
+    expect(compactWhen(row(), 'UTC')).toBe('Tue 10 16:00');
+    expect(compactHours(1.5)).toBe('1.5 h');
+    expect(compactHours(0.25)).toBe('0.25 h');
+    expect(compactHours(2)).toBe('2 h');
+  });
+});
+
+describe('D-103 (c): the account target and the sentence that says why', () => {
+  const C = (o: Partial<SuggestContext> = {}) => ctx({ opps: [...ctx().opps, opp('o_old', 'a_hooli', 'Hooli · Renewal FY25', { isOpen: false })], accounts: [...ctx().accounts, acct('a_hooli', 'Hooli')], ...o });
+
+  it('every row says in one sentence why it logs there, from facts only (never split across opps)', () => {
+    const rows = [
+      row({ id: 'only', oppId: 'o_ini', oppName: 'Initech · D360 Pilot', accountName: 'Initech', status: 'proposed', issues: [] }),
+      row({ id: 'acct', accountId: 'a_hooli', accountName: 'Hooli', status: 'proposed', issues: [] }),
+      row({ id: 'pick', oppId: 'o_glx', oppName: 'Globex · Data 360 Expansion', accountName: 'Globex', date: '2026-11-11', status: 'proposed', issues: [] }),
+      row({ id: 'int', internal: true, taskType: 'Asset Creation', meetingType: null, status: 'proposed', issues: [] }),
+    ];
+    const logged = [row({ id: 'l1', oppId: 'o_glx', status: 'logged', durationH: 3, date: '2026-11-03' }), row({ id: 'l2', oppId: 'o_glx', status: 'approved', durationH: 1, date: '2026-11-04' }), row({ id: 'l3', oppId: 'o_glx', status: 'logged', durationH: 5, date: '2026-10-30' })];
+    const by = new Map(withSuggestions(rows, C({ activity: logged })).map((e) => [e.id, e.groundwork] as const));
+    expect(by.get('only')).toEqual({ code: 'opp_single', text: 'Initech’s only open opportunity.' });
+    expect(by.get('acct')).toEqual({ code: 'account_no_open_opp', text: 'No open opportunity on Hooli, so I tied it to the account.' });
+    // this month's hours only (Oct's 5 h are not counted)
+    expect(by.get('pick')).toEqual({ code: 'opp_pick', text: '2 open opps could take this; I think Globex · Data 360 Expansion (you logged 4 h there this month).' });
+    expect(by.get('int')?.code).toBe('internal');
+    expect(groundworkOf({ accountName: 'Acme', openOpps: [{ id: 'x', name: 'Acme · Data 360' }], learnedOn: '2026-11-18T10:00:00.000Z' })).toEqual({ code: 'rule', text: 'Learned Nov 18 from your pick.' });
+    // plain words: none of the internal ones
+    for (const g of by.values()) expect(g?.text ?? '').not.toMatch(/groundwork|WhatId|candidate|attribution/i);
+  });
+
+  it('an account target is settled: no opp question, no suggestion, and the patch sets it (oppId still works)', () => {
+    const cur = row({ issues: ['WhatId = account fallback (no single obvious opp)'] });
+    const { next, newLocks } = patchedEntry(cur, { target: { kind: 'account', id: 'a_hooli' } }, null, { id: 'a_hooli', name: 'Hooli' });
+    expect(next).toMatchObject({ accountId: 'a_hooli', accountName: 'Hooli', oppId: null, issues: [] });
+    expect(newLocks).toContain('oppId');
+    expect(hasTarget(next)).toBe(true);
+    expect(wantsSuggestion(next)).toBe(false);
+    expect(whereOf(next, 0.75)).toMatchObject({ kind: 'set', target: 'Hooli (the account)' });
+    // the opp target is oppId; an opp clears the account
+    const onOpp = patchedEntry(next, { target: { kind: 'opp', id: 'o_ini' } }, { name: 'Initech · D360 Pilot', accountName: 'Initech' }).next;
+    expect(onOpp).toMatchObject({ oppId: 'o_ini' });
+    expect(onOpp).not.toHaveProperty('accountId'); // absent, as the db reads a row with no account target
+    expect(() => patchedEntry(cur, { target: { kind: 'account', id: 'nope' } }, null, null)).toThrow(/not in the app/);
+  });
+
+  it('the account fallback flag asks only when the account has open opps; the WhatId is the Account (001…) through one function', () => {
+    const m = (openOpps: number): ActivityMappings => ({ accounts: [{ key: 'a1', match: '(?<![a-z0-9])customer[\\s\\-_.&/]*1(?![a-z0-9])', domains: [], whatId: '001XX0000000001AAA', whatType: 'Account', whatName: 'CUSTOMER_1', openOpps }], repos: {}, channels: {}, neitherRepos: {}, internalDomains: ['corp.example'], partnerDomains: [], ignoreDomains: [], overrides: [] });
+    const ev = { id: 'c|e1', summary: 'CUSTOMER_1 adoption review', startsAt: '2026-11-02T17:00:00.000Z', endsAt: '2026-11-02T18:00:00.000Z', allDay: false, kind: 'default', selfResponse: 'accepted', organizerSelf: false, recurring: false, attendeeDomains: [] } as never;
+    expect(classifyMeeting(ev, m(0), '2026-11-02').flags.some((f) => /account fallback/.test(f))).toBe(false);
+    expect(classifyMeeting(ev, m(2), '2026-11-02').flags.some((f) => /account fallback/.test(f))).toBe(true);
+    expect(accountTargetWhat('001XX0000000001AAA')).toEqual({ whatType: 'Account', whatId: '001XX0000000001AAA' });
+    expect(accountTargetWhat('006XX0000000001AAA')).toBeNull();
+    expect(eventCreateRule({ ownerName: 'Me', ownerOrg62Id: '005XX', recordTypeId: '012XX' }, false)).toMatch(/Opportunity \(006…\) or an Account \(001…\)/);
+  });
+
+  it('Org62 search reads accounts with one more fixed SELECT (bound words, read only)', () => {
+    expect(buildOrg62AccountSearch("o'hare acme")).toBe("SELECT Id, Name, Type, Owner.Name FROM Account WHERE Name LIKE '%o\\'hare%' AND Name LIKE '%acme%' ORDER BY Name LIMIT 5");
+    expect(org62AccountHit({ org62Id: '001XX0000000001AAA', name: 'Acme', account: null, accountOrg62Id: '001XX0000000001AAA', owner: null, inApp: { accountId: 'a1' } })).toMatchObject({ kind: 'account', accountId: 'a1', oppId: null });
+  });
+
+  it('the mock: search lists accounts; picking one logs the row to the account', async () => {
+    const ds = createMockDataSource({ autoplay: false });
+    ds.resetStore();
+    const s = await ds.searchOrg62Opps({ body: { q: 'globex' } } as never);
+    const hit = s.hits.find((h) => h.kind === 'account' && h.name === 'Globex');
+    expect(hit?.accountId).toBeTruthy();
+    const log = await ds.getActivityLog({ query: {} } as never);
+    const cur = log.entries.find((e) => e.id === 'ac_wed_roadmap')!;
+    const r = await ds.patchActivity({ params: { id: cur.id }, body: { ifVersion: cur.version, patch: { target: { kind: 'account', id: hit!.accountId! } } } } as never);
+    expect(r.entity).toMatchObject({ accountId: hit!.accountId, oppId: null, suggestion: null });
+    expect(r.entity.groundwork?.code).toMatch(/account_no_open_opp|opp_single|opp_pick/);
     ds.dispose();
   });
 });

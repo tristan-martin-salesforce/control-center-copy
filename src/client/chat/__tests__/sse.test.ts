@@ -78,7 +78,9 @@ describe('SSE parser', () => {
     const ac = new AbortController();
     const frames: SseFrame[] = [];
     const p = readSseStream(streamOf([enc.encode(frame({ type: 'text-delta', messageId: 'm', delta: 'one' }))], { hang: true }), (f) => frames.push(f), ac.signal);
-    await new Promise((r) => setTimeout(r, 10));
+    // abort once the first frame is in (the stream then hangs), not after a fixed sleep the reader may not have used
+    for (let i = 0; i < 500 && frames.length === 0; i++) await new Promise((r) => setTimeout(r, 2));
+    expect(frames).toHaveLength(1);
     ac.abort();
     const err = await p.catch((e) => e);
     expect(isAbortError(err)).toBe(true);

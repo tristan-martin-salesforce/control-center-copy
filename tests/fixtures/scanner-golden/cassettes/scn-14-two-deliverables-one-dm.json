@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\"), keyed by the completion pass ledger hash. Re-key offline after a prompt or skill change: npm run eval:record. Replace with live replies: npm run eval:record -- --live --yes-spend (costs money). No model call today: no candidate reaches the model.",
+  "entries": [
+    {
+      "hash": "0489a90ff25039bcb9940ea2e01261b3",
+      "label": "2026-11-12 15:12Z | Share the ACME deck with PERSON_F",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"confidence\": 0.1, \"reason\": \"a second ask about the same deck (review it), not evidence the deck was shared\"}]}"
+    }
+  ]
+}

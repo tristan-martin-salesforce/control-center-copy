@@ -5,7 +5,7 @@
  */
 import fs from 'node:fs';
 
-import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, SDKMessage } from '@/llm/provider';
 
 import { claudeGatewayConfig, scannerEnv } from '@/llm/claude-env';
 import { defaultClaudeExecutable, defaultScannerCwd } from '@/llm/env';
@@ -33,7 +33,7 @@ interface ResultLike {
 
 export function agentSdkCompletionModel(o: AgentSdkModelOptions = {}): CompletionModel {
   return async (req: CompletionModelRequest): Promise<CompletionModelResult> => {
-    const query = o.queryFn ?? (await import('@anthropic-ai/claude-agent-sdk')).query;
+    const query = o.queryFn ?? (await import('@/llm/provider')).agentQuery;
     const gw = o.queryFn ? { env: {} } : claudeGatewayConfig();
     const cwd = defaultScannerCwd();
     if (!o.queryFn) fs.mkdirSync(cwd, { recursive: true });

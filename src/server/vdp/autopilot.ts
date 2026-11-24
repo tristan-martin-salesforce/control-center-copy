@@ -68,7 +68,7 @@ export async function runVdpAutopilot(port: AutopilotPort, opts: { signal?: Abor
   const ledger = await port.ledger();
   // dry run first (no sign-in read needed); then VDP's sign-in
   const auth = sending.dryRun ? 'ok' : await port.auth();
-  const settings = { on: true, dryRun: sending.dryRun, cap: sending.channels.vdp.dailyCap };
+  const settings = { on: true, dryRun: sending.dryRun, cap: sending.channels.vdp.dailyCap, assetHosts: sending.autopilotAssetHosts };
   const plan = await port.plan({ settings, ledger, auth, today, dayOf });
   const st = plan.coverage.autopilot;
   if (st.paused === 'dry_run' || st.paused === 'reauth') {

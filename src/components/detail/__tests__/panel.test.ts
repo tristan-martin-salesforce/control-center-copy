@@ -4,7 +4,7 @@
  * bridged in-process to the route handlers (same harness as tests/p2). Covers the v2 layout (section line,
  * one state badge, Why with evidence chips, Plan with the agent lane, collapsed groups), the ONE filled
  * primary living in the sticky footer (the composer's Send/Push included), quiet footer actions with
- * optimistic Done → Reopen, Not now, and the pure helpers in lib/panel-derive.
+ * optimistic Done → Reopen, Later ▾ ▸ Not now, and the pure helpers in lib/panel-derive.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement as h, type ReactElement } from 'react';
@@ -73,6 +73,12 @@ const item = async (id: string) => (await ds.getItem({ params: { id } } as never
 /** Filled buttons: @/ui Button marks its variant. */
 const filled = (root: ParentNode) => $$('button[data-variant="primary"]', root);
 
+/** Open a footer/header menu (Done ▾, Later ▾) and pick the entry whose label starts with `label`. */
+async function choose(scope: ParentNode, menu: 'done' | 'later', label: string) {
+  await click(await waitFor(() => $(`[data-testid="menu-${menu}"]`, scope)));
+  await click(await waitFor(() => $$('[role="menu"] [role^="menuitem"]').find((m) => m.textContent?.startsWith(label))));
+}
+
 describe('ItemDetail variant="panel"', () => {
   it('renders the v2 head, Why with evidence chips, the Plan and collapsed groups; the one primary sits in the footer', async () => {
     const { container } = await mount(renderItemPanel('w_acme_build'));
@@ -89,7 +95,9 @@ describe('ItemDetail variant="panel"', () => {
     expect(filled(container)).toHaveLength(1);
     expect(filled(footer)).toHaveLength(1);
     expect($('[data-claude-launch] [data-nba-primary]', container)).toBeNull();
-    for (const a of ['snooze', 'done', 'not-now', 'resolve']) expect($(`[data-action="${a}"]`, footer)).not.toBeNull();
+    // The verbs are two menus (01-ui-audit R6): Later ▾ and Done ▾, beside the one primary.
+    for (const m of ['menu-later', 'menu-done']) expect($(`[data-testid="${m}"]`, footer)).not.toBeNull();
+    for (const a of ['snooze', 'not-now', 'resolve']) expect($(`[data-action="${a}"]`, footer)).toBeNull();
   });
 
   it('a draft item hands Send/Push to the footer (the composer draws no primary of its own)', async () => {
@@ -99,7 +107,7 @@ describe('ItemDetail variant="panel"', () => {
     expect($('[data-testid="composer-primary"]', composer)).toBeNull();
     const primary = await waitFor(() => {
       const b = $('[data-panel-footer] [data-panel-primary]', container);
-      return b && /Push as draft|Send/.test(b.textContent ?? '') ? b : null;
+      return b && /Save as (Slack|Gmail) draft|Send/.test(b.textContent ?? '') ? b : null;
     });
     expect(filled(container)).toHaveLength(1);
     expect($('[data-trust-line]', composer)?.textContent).toContain('Nothing sends until you approve');
@@ -111,11 +119,11 @@ describe('ItemDetail variant="panel"', () => {
     await click($('[data-testid="confirm-cancel"]'));
   });
 
-  it('Done from the quiet footer is optimistic; the footer primary turns into Reopen; Reopen restores it', async () => {
+  it('Done ▾ ▸ Done by me is optimistic; the footer primary turns into Reopen; Reopen restores it', async () => {
     const id = 'w_dana_reply';
     const { container } = await mount(h(ItemDetail, { itemId: id, variant: 'panel' }));
     const footer = await waitFor(() => $('[data-panel-footer]', container));
-    await click(await waitFor(() => $('[data-action="done"]', footer)));
+    await choose(footer, 'done', 'Done by me');
     await waitFor(() => $('[data-panel-footer] [data-panel-primary]', container)?.textContent === 'Reopen');
     await waitFor(async () => (await item(id)).state === 'done');
     await click($('[data-panel-footer] [data-panel-primary]', container));
@@ -135,7 +143,7 @@ describe('ItemDetail variant="panel"', () => {
     const root = await waitFor(() => $(`[data-draft-panel="${dana.draft!.id}"]`, container));
     await waitFor(() => $('[data-testid="composer-editor"]', root));
     expect($('[data-testid="composer-primary"]', root)).toBeNull();
-    await waitFor(() => /Push as draft|Send/.test($('[data-panel-footer] [data-panel-primary]', root)?.textContent ?? ''));
+    await waitFor(() => /Save as (Slack|Gmail) draft|Send/.test($('[data-panel-footer] [data-panel-primary]', root)?.textContent ?? ''));
     expect(filled(root)).toHaveLength(1);
     expect($$('[data-panel-footer] button', root).some((b) => b.textContent === 'Open the task')).toBe(true);
   });
@@ -149,13 +157,28 @@ describe('ItemDetail variant="panel"', () => {
     await waitFor(() => $(`[data-draft-panel="${dana.draft!.id}"] [data-testid="composer"]`, container));
   });
 
-  it('Not now (later) snoozes through the menu', async () => {
+  it('Later ▾ ▸ Not now snoozes until the next working day', async () => {
     const id = 'w_dana_reply';
     const { container } = await mount(h(ItemDetail, { itemId: id, variant: 'panel' }));
-    await click(await waitFor(() => $('[data-panel-footer] [data-action="not-now"]', container)));
-    const later = await waitFor(() => $$('[role="menuitem"]').find((m) => m.textContent?.includes('Later')));
-    await click(later);
+    await choose(await waitFor(() => $('[data-panel-footer]', container)), 'later', 'Not now');
     await waitFor(async () => (await item(id)).state === 'snoozed');
+    expect((await item(id)).snoozedUntil).toBeTruthy();
+  });
+
+  it('Later ▾ ▸ Tomorrow snoozes; Done ▾ ▸ Not needed resolves; ⇧D and l open the menus', async () => {
+    const id = 'w_dana_reply';
+    const { container } = await mount(h(ItemDetail, { itemId: id, variant: 'panel' }));
+    const panel = await waitFor(() => $('[data-detail-panel="work_item"]', container));
+    await act(async () => void panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', bubbles: true })));
+    await waitFor(() => $$('[role="menu"] [role^="menuitem"]').find((m) => m.textContent?.startsWith('Tomorrow')));
+    await click($$('[role="menu"] [role^="menuitem"]').find((m) => m.textContent?.startsWith('Tomorrow')));
+    await waitFor(async () => (await item(id)).state === 'snoozed');
+    const other = 'w_globex_sow';
+    const second = await mount(h(ItemDetail, { itemId: other, variant: 'panel' }));
+    const panel2 = await waitFor(() => $(`[data-item-id="${other}"] [data-detail-panel="work_item"]`, second.container));
+    await act(async () => void panel2.dispatchEvent(new KeyboardEvent('keydown', { key: 'D', shiftKey: true, bubbles: true })));
+    await click(await waitFor(() => $$('[role="menu"] [role^="menuitem"]').find((m) => m.textContent?.startsWith('Not needed'))));
+    await waitFor(async () => (await item(other)).resolution === 'not_needed');
   });
 });
 

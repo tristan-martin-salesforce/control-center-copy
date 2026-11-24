@@ -20,7 +20,7 @@ const opt = (n: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 const url = resolveDatabaseUrl();
-const handle = createDb({ url, max: 6, applicationName: 'control-center-settle-pass' });
+const handle = createDb({ url, max: 6, applicationName: 'command-center-settle-pass' });
 let code = 0;
 try {
   const u = (await handle.db.execute<{ id: string }>(sql`select id from users where is_active order by created_at limit 1`)).rows[0];

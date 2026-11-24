@@ -2,7 +2,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { applySignal, describeDecision } from '@/engines/closure';
+import { applySignal } from '@/engines/closure/machine';
+import { describeDecision } from '@/engines/closure/apply';
 import { ROWS, SIGNALS } from './fixtures';
 import { COLUMNS, EXPECTED, renderTable } from './transition-table';
 
@@ -19,8 +20,8 @@ describe('closure transition table (DATA-MODEL §4.1 + R-UI-20/22)', () => {
     });
   }
 
-  it('is rendered verbatim in docs/ui/ENGINES.md §3', () => {
-    const doc = readFileSync(fileURLToPath(new URL('../../../docs/ui/ENGINES.md', import.meta.url)), 'utf8');
+  it('is rendered verbatim in docs/reference/ENGINES.md §3', () => {
+    const doc = readFileSync(fileURLToPath(new URL('../../../docs/reference/ENGINES.md', import.meta.url)), 'utf8');
     expect(doc).toContain(renderTable());
   });
 });

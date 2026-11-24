@@ -21,7 +21,7 @@ function canvas() {
     ownerOrg62Id: '005XX0000000001AAA',
     recordTypeId: '012XX0000000001AAA',
     generatedAt: '2026-11-16T16:57:51.000Z',
-    sourceLabel: 'Control Center · Duration fixes',
+    sourceLabel: 'Command Center · Duration fixes',
     events: [],
     updates: [
       { recordId: BACKFILL, field: 'Duration__c', newValue: '1', currentValue: '(blank)', why: "Time (Hrs) never filled: End − Start of 'Placeholder call'" },
@@ -37,7 +37,7 @@ describe('Event updates survive the canvas preflight', () => {
   it('an update from 0.25 h to 3 h stays while Org62 still has 0.25 h (it used to be dropped as "filled already")', () => {
     const pf = preflightCanvas(canvas(), org62({ [BACKFILL]: null, [UPDATE]: 0.25 }));
     expect(pf.changed).toBe(false);
-    expect(pf.input.markdown).toContain('# UPDATE (2 rows)');
+    expect(pf.input.markdown).toContain('## EVENTS TO UPDATE (2 rows)');
   });
 
   it('it goes once Org62 has 3 h already; a backfill still goes once Org62’s Duration is filled', () => {

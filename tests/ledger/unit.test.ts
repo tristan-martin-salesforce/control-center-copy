@@ -143,6 +143,13 @@ describe('D3 Claude sessions: the model sees meaningful changes only, at most on
     expect(resumed.next.ms).toBe('busy');
     expect(sessionModelDecision({ ...base, prev: { o: 1, i: 1, ...resumed.next }, contentHash: 'c3', meaning: 'm3', status: 'waiting' })).toMatchObject({ to: 'model' });
   });
+  it('R15: an idle unlinked change waits while fresh, then reaches the model once quiet 30 min (once)', () => {
+    const fresh = sessionModelDecision({ ...base, prev: seen, contentHash: 'c2', meaning: 'm2', status: 'idle', quietMs: 60_000 });
+    expect(fresh).toMatchObject({ to: 'quiet', reason: 'unlinked_content', next: { mh: 'm1', p: 1 } });
+    const quiet = sessionModelDecision({ ...base, prev: { o: 10, i: 1, ...fresh.next }, contentHash: 'c2', meaning: 'm2', status: 'idle', quietMs: 31 * 60_000 });
+    expect(quiet).toMatchObject({ to: 'model', reason: 'idle_quiet', next: { mh: 'm2' } });
+    expect(sessionModelDecision({ ...base, prev: { o: 10, i: 1, ...quiet.next }, contentHash: 'c2', meaning: 'm2', status: 'idle', quietMs: 90 * 60_000 }).to).toBe('none');
+  });
   it('a cursor from before D3 starts accounting without a model call', () => {
     expect(sessionModelDecision({ ...base, prev: { o: 10, i: 1, eh: 'c1' } })).toMatchObject({ to: 'none', next: { mh: 'm1', ms: 'busy' } });
   });

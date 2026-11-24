@@ -14,6 +14,18 @@ import { ActionErrorLine } from './parts';
 import { InlineReauth, ItemPopovers } from './popovers';
 import type { DayRow, DaySections } from './rows';
 
+/** Lane 07 R7: the ranking's why in two parts: why now (late, deadline, start-by), then why it matters. */
+function WhyParts({ parts }: { parts: NonNullable<DayRow['whyParts']> }) {
+  const cap = (x: string) => x[0]!.toUpperCase() + x.slice(1);
+  return (
+    <>
+      {parts.now ? <span data-why="now">{cap(parts.now)}</span> : null}
+      {parts.now && parts.matters ? '. ' : null}
+      {parts.matters ? <span data-why="matters">{cap(parts.matters)}</span> : null}
+    </>
+  );
+}
+
 export type RowAction = 'snooze' | 'done' | 'nudge' | 'renegotiate' | 'let_go';
 
 export interface RowHandlers {
@@ -150,7 +162,7 @@ function RowView({ row, h, compact }: { row: DayRow; h: RowHandlers; compact: bo
         </div>
       )}
       <div className={`td-why${row.item?.reevaluating ? ' td-reeval' : ''}`} title={row.whyDetail ?? row.why}>
-        {h.expandedKey === row.key && row.whyDetail ? row.whyDetail : row.why}
+        {h.expandedKey === row.key && row.whyDetail ? row.whyDetail : row.whyParts ? <WhyParts parts={row.whyParts} /> : row.why}
       </div>
       {!compact ? (
         <div className="td-meta">
@@ -278,7 +290,7 @@ export const RunOfDay = forwardRef<HTMLDivElement, RunOfDayProps>(function RunOf
             {run.length && p.state !== 'empty' ? (
               <RowList rows={run} h={p.handlers} label="Run of day" />
             ) : (
-              <p className="py-3 text-body text-muted">Nothing hands-on is due today. Fit something in or pull work forward below.</p>
+              <p className="py-3 text-body text-muted">Nothing hands-on is due today. Work due today joins this list as the scanners find it (you’ll see “N new”); meanwhile, pull work forward below.</p>
             )}
             {fit.length ? (
               <>

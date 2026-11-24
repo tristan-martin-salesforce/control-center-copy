@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "5b280c581a11ccc4251681d2effabc33",
+      "label": "classify | C0SALT001:1794960300.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0SALT001:1794960300.000000\", \"v\": \"ask\", \"kind\": \"deliverable\", \"title\": \"Add a denied-claim handoff scenario to the Saltmere demo\", \"who\": \"PERSON_M\", \"deliverable\": \"demo\", \"due\": null, \"conf\": 0.9, \"cite\": \"can the next demo show a member asking about a denied claim and the agent handing off to a human rep\", \"link\": null, \"why\": \"@-mention ask for a demo scenario\"}]}"
+    },
+    {
+      "hash": "877d31a55b1aa9d24e9cf403836a396f",
+      "label": "classify | FILE_DEMO_SCRIPT_01@2026-11-18T14:50:00.000Z",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"FILE_DEMO_SCRIPT_01@2026-11-18T14:50:00.000Z\", \"v\": \"completion\", \"due\": null, \"conf\": 0.8, \"cite\": \"added 'Scene 2: denied claim handoff'\", \"link\": \"w1\", \"why\": \"the demo script now has the denied-claim handoff scene\"}]}"
+    }
+  ]
+}

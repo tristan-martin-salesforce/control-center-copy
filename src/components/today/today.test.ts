@@ -149,7 +149,26 @@ describe('sections and plan on the mock (placeholder seed)', () => {
     for (const b of t.health.broken) expect(s.fit.some((r) => r.key === `fit:reauth:${b.id}` && r.tone === 'overdue')).toBe(true);
   });
 
-  it('today scope mirrors the engine: due today, pinned start-by, start-by for later work; not tomorrow or overdue', async () => {
+  it('run rows show the ranking\'s two-part why and keep the extractor sentence as the detail (lane 07 R7, R1)', async () => {
+    const t = TodayPayload.parse(await ds.getToday({} as never));
+    const s = buildSections({ data: t, cards: t.nowStack.cards, rows: t.moreToday.items, nowIso: t.now, tz: TZ, slots: t.spine.slots, pinned: new Set(), pullForward: null, workingHours: { start: '08:00', end: '17:30', days: [1, 2, 3, 4, 5] } });
+    expect(s.run.length).toBeGreaterThan(0);
+    for (const r of s.run) {
+      if (!r.whyParts) continue;
+      const sentence = r.card?.nba?.why ?? r.item!.why;
+      expect(r.whyDetail ?? '').toContain(sentence);
+      if (r.whyParts.now) expect(r.why.toLowerCase()).toContain(r.whyParts.now.toLowerCase());
+    }
+    expect(s.run.some((r) => r.whyParts)).toBe(true);
+    // a late item: "N d late · …", never "start by"
+    const late = { ...t.nowStack.cards[0]!.item, state: 'open' as const, due: '2026-11-03T22:00:00.000Z', dueKind: 'soft' as const, startBy: '2026-11-03T20:00:00.000Z', userLockedFields: [], loopedBackIn: null };
+    const s2 = buildSections({ data: t, cards: [], rows: [], extras: [], nowIso: NOW, tz: TZ, slots: [], pinned: new Set([late.id]), pullForward: null, catalog: new Map([[late.id, late]]) });
+    const row = s2.run.find((r) => r.item!.id === late.id)!;
+    expect(row.whyParts!.now).toBe('2 d late · re-date or drop');
+    expect(row.why).not.toMatch(/start by/i);
+  });
+
+  it('today scope mirrors the engine: due today, pinned start-by, start-by today for later work (tomorrow too); not overdue', async () => {
     const t = TodayPayload.parse(await ds.getToday({} as never));
     const base = { ...t.nowStack.cards[0]!.item, state: 'open' as const, startBy: null, due: null, userLockedFields: [], reopened: null, loopedBackIn: null };
     const day = (d: number, h: number) => new Date(Date.UTC(2026, 10, d, h + 7, 0)).toISOString(); // MT wall clock
@@ -159,7 +178,9 @@ describe('sections and plan on the mock (placeholder seed)', () => {
     expect(isTodayScoped({ ...base, due: day(6, 12) }, NOW, TZ, none)).toBe(false); // tomorrow's work
     expect(isTodayScoped({ ...base, due: day(3, 12) }, NOW, TZ, none)).toBe(false); // overdue from an earlier day
     expect(isTodayScoped({ ...base, due: day(9, 12), startBy: day(5, 9) }, NOW, TZ, none)).toBe(true);
-    expect(isTodayScoped({ ...base, due: day(6, 12), startBy: day(5, 9) }, NOW, TZ, none)).toBe(false);
+    // PRIO-3 (lane 07): due tomorrow but its start-by is today, so it must start today: today's load
+    expect(isTodayScoped({ ...base, due: day(6, 12), startBy: day(5, 9) }, NOW, TZ, none)).toBe(true);
+    expect(isTodayScoped({ ...base, due: day(6, 12), startBy: day(6, 9) }, NOW, TZ, none)).toBe(false);
     expect(isTodayScoped({ ...base, due: day(6, 12), startBy: day(5, 15), userLockedFields: ['startBy'] }, NOW, TZ, none)).toBe(true); // Pull in
     expect(isTodayScoped({ ...base, state: 'likely_done', due: day(5, 17) }, NOW, TZ, none)).toBe(false);
     expect(isTodayScoped({ ...base }, NOW, TZ, new Set([base.id]))).toBe(true); // planned today

@@ -20,9 +20,18 @@ export interface LogFilters {
   type: string | null;
   /** A week's Monday (YYYY-MM-DD): the rows of that week (inside the quarter). */
   week: string | null;
+  /** A finished batch's draft id (History ▸ Batches chip, C8): only that batch's rows. Optional so older callers fit. */
+  batch?: string | null;
 }
 
 export const DEFAULT_LOG_FILTERS: LogFilters = { quarter: null, status: [], q: '', account: null, opp: null, type: null, week: null };
+
+/** A batch's rows only (the Batches chip): the route has no batch filter, so the page narrows its rows here. */
+export function filterByBatch<T extends Pick<ActivityLog, 'entries'>>(log: T, rowIds: readonly string[] | null): T {
+  if (!rowIds) return log;
+  const ids = new Set(rowIds);
+  return { ...log, entries: log.entries.filter((e) => ids.has(e.id)) };
+}
 
 /** Every quarter (the quarter picker's last choice). */
 export const ALL_QUARTERS = 'all';
@@ -84,7 +93,7 @@ const QUARTER = /^Q[1-4] FY\d{2}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = new Set<string>(ActivityLogStatus.options);
 
-/** `?view=log&quarter=Q3+FY27&status=logged,verified&q=demo&account=…&opp=…&type=…&week=…` → filters (unknown values dropped). */
+/** `?view=history&quarter=Q3+FY27&status=logged,verified&q=demo&account=…&opp=…&type=…&week=…` → filters (unknown values dropped). */
 export function parseLogFilters(p: URLSearchParams): LogFilters {
   const quarter = p.get('quarter');
   const week = p.get('week');
@@ -100,12 +109,13 @@ export function parseLogFilters(p: URLSearchParams): LogFilters {
     opp: p.get('opp') || null,
     type: p.get('type') || null,
     week: week && DAY.test(week) ? week : null,
+    ...(p.get('batch') ? { batch: p.get('batch') } : {}),
   };
 }
 
-/** Filters → the Ledger's query string (always `view=log` first; defaults are left out). */
+/** Filters → History's query string (always `view=history` first; defaults are left out). */
 export function serializeLogFilters(f: LogFilters): string {
-  const sp = new URLSearchParams({ view: 'log' });
+  const sp = new URLSearchParams({ view: 'history' });
   if (f.quarter) sp.set('quarter', f.quarter);
   if (f.status.length) sp.set('status', LOG_CHIPS.concat('upcoming').filter((s) => f.status.includes(s)).join(','));
   if (f.q.trim()) sp.set('q', f.q);
@@ -113,11 +123,12 @@ export function serializeLogFilters(f: LogFilters): string {
   if (f.opp) sp.set('opp', f.opp);
   if (f.type) sp.set('type', f.type);
   if (f.week) sp.set('week', f.week);
+  if (f.batch) sp.set('batch', f.batch);
   return sp.toString();
 }
 
 export function activeLogFilterCount(f: LogFilters): number {
-  return f.status.length + (f.q.trim() ? 1 : 0) + (f.account ? 1 : 0) + (f.opp ? 1 : 0) + (f.type ? 1 : 0) + (f.week ? 1 : 0);
+  return f.status.length + (f.q.trim() ? 1 : 0) + (f.account ? 1 : 0) + (f.opp ? 1 : 0) + (f.type ? 1 : 0) + (f.week ? 1 : 0) + (f.batch ? 1 : 0);
 }
 
 /** The quarter's days the rows cover: the label's calendar range, the current quarter's (`current`), none for all. */
@@ -155,9 +166,12 @@ export function toggleStatus(list: readonly ActivityLogStatus[], s: ActivityLogS
   return list.includes(s) ? list.filter((x) => x !== s) : [...list, s];
 }
 
-/** Logged, verified and excluded rows are done: compact and read-only in the Log. Every other row stays editable. */
-export function isCompactRow(e: Pick<ActivityEntry, 'status'>): boolean {
-  return e.status === 'logged' || e.status === 'verified' || e.status === 'dismissed';
+/**
+ * History's done rows are compact and read-only: logged, verified and excluded ones, and the ones handed to a batch
+ * (waiting for Apply, or applied and on their way to Org62), which carry their Undo. Every other row stays editable.
+ */
+export function isCompactRow(e: Pick<ActivityEntry, 'status'> & { canvasDraftId?: string | undefined }): boolean {
+  return e.status === 'logged' || e.status === 'verified' || e.status === 'dismissed' || e.status === 'synced_to_canvas' || !!e.canvasDraftId;
 }
 
 /** This week's Sunday (YYYY-MM-DD) for a local day. */

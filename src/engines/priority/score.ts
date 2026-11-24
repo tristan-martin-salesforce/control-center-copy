@@ -1,13 +1,14 @@
 /**
  * Per-item scoring: features → deadline/start-by → weighted components → policy rules.
- * Formula (docs/ui/ENGINES.md §2): total = Σ weight·feature·10 over the weighted components
+ * Formula (docs/reference/ENGINES.md §2): total = Σ weight·feature·10 over the weighted components
  *   + userAdjustment + penalty-rule effects + boost/sla-rule effects. Everything is deterministic.
  */
-import type { Meeting, PersonLite, PriorityItem, PriorityLane, StakeholderTier, TimeWindow } from '@/engines/types';
+import type { Meeting, PersonLite, PriorityItem, PriorityLane, StakeholderTier, TimeWindow, WorkingHours } from '@/engines/types';
 import { estimateYouMin, type EstimateSource, type Estimator } from './estimate';
 import { hashOf } from './hash';
 import { evalPredicate, type FeatureValues, type PolicyRule, type PriorityPolicy } from './policy';
-import { clampToWorking, DAY_MS, formatDuration, formatLocalWhen, HOUR_MS, MINUTE_MS, toMs } from './time';
+import { clampToWorking, DAY_MS, formatDuration, formatLocalWhen, HOUR_MS, MINUTE_MS, toMs, type Interval } from './time';
+import { latePhrase, lateState, mattersFrom, nowPhrase, type LateState, type WhyParts } from './why';
 import type { ComponentKey, Deadline, RankReason, RuleHit, ScoreComponent } from './types';
 
 export const POINTS_PER_WEIGHT = 10;
@@ -74,6 +75,10 @@ export interface ScoreContext {
   utcOffsetMinutes: number;
   /** Hands-on estimate defaults + calibration (estimate.ts). */
   estimator: Estimator;
+  /** The persona's working hours and UTC offset: overdue grace counts working days (R1). */
+  workingHours: WorkingHours;
+  /** Free working intervals from now on (windows minus busy meetings), for "free time before it". */
+  free: Interval[];
 }
 
 /** Everything computed for one item before ordering. */
@@ -90,6 +95,10 @@ export interface Prepared {
   startByMs: number | null;
   slackMinutes: number | null;
   preempt: boolean;
+  /** R1: set once the deadline (due date or SLA) has passed: grace day, late, or re-date. */
+  late: LateState | null;
+  /** Free working minutes between now and the deadline (null when there is none, or it passed). */
+  freeBeforeMin: number | null;
   ageDays: number;
   agentRemainingMin: number;
   components: ScoreComponent[];
@@ -159,7 +168,7 @@ export function computeFeatures(item: PriorityItem, meeting: Meeting | null, ctx
 const enabledRules = (policy: PriorityPolicy): PolicyRule[] => policy.rules.filter((r) => r.enabled);
 
 /** Deadline = earliest of the item's due date, the upcoming meeting it serves, and any SLA rule. */
-function effectiveDeadline(
+export function effectiveDeadline(
   item: PriorityItem,
   meeting: Meeting | null,
   features: FeatureValues,
@@ -171,7 +180,7 @@ function effectiveDeadline(
   const dueIso = item.due ?? (item.kind === 'training' ? (item.training?.requiredBy ?? null) : null);
   if (dueIso) {
     const ms = toMs(dueIso);
-    cands.push({ ms, d: { at: dueIso, source: 'due', label: ms <= now ? `overdue since ${formatLocalWhen(ms, now, off)}` : `due ${formatLocalWhen(ms, now, off)}` } });
+    cands.push({ ms, d: { at: dueIso, source: 'due', label: ms <= now ? lateState(ms, now, item.dueKind ?? null, ctx.workingHours)!.label : `due ${formatLocalWhen(ms, now, off)}` } });
   }
   if (meeting) {
     const ms = toMs(meeting.start);
@@ -185,7 +194,13 @@ function effectiveDeadline(
     if (!evalPredicate(rule.condition, features)) continue;
     const ms = askedMs + rule.slaHours * HOUR_MS;
     slaHits.push({ rule, dueMs: ms });
-    cands.push({ ms, d: { at: new Date(ms).toISOString(), source: 'sla', label: `by ${formatLocalWhen(ms, now, off)} (your ${rule.slaHours}h rule)` } });
+    const label = ms <= now ? `${lateState(ms, now, 'hard', ctx.workingHours)!.label} (your ${rule.slaHours}h rule)` : `by ${formatLocalWhen(ms, now, off)} (your ${rule.slaHours}h rule)`;
+    cands.push({ ms, d: { at: new Date(ms).toISOString(), source: 'sla', label } });
+  }
+  // R1/PRIO-9: a passed SLA does not make an item "late" while its own due date or meeting is still ahead (a manager's
+  // Saturday ask due at Wednesday's 10:00 sync is due 10:00, not "3 d late"); the SLA hit still counts as a rule.
+  if (cands.some((c) => c.d.source !== 'sla' && c.ms > now)) {
+    for (let i = cands.length - 1; i >= 0; i--) if (cands[i]!.d.source === 'sla' && cands[i]!.ms <= now) cands.splice(i, 1);
   }
   if (cands.length === 0) return { deadline: null, ms: null, slaHits };
   // Earliest wins; on a tie prefer the meeting, then the due date, then the SLA (most concrete first).
@@ -217,9 +232,14 @@ export function prepare(item: PriorityItem, ctx: ScoreContext): Prepared {
   const { deadline, ms: deadlineMs, slaHits } = effectiveDeadline(item, meeting, features, ctx);
 
   const agentRemainingMin = item.agentStarted ? 0 : item.effort.agentMin;
+  // R1: a passed deadline (due or SLA; a meeting deadline is always ahead) is late, not "start by Mon".
+  const late =
+    deadlineMs !== null && deadlineMs <= now && deadline
+      ? lateState(deadlineMs, now, deadline.source === 'due' ? (item.dueKind ?? null) : 'hard', ctx.workingHours)
+      : null;
   let startByMs: number | null = null;
   let slackMinutes: number | null = null;
-  if (deadlineMs !== null) {
+  if (deadlineMs !== null && !late) {
     const raw = deadlineMs - (t.bufferMin + agentRemainingMin + youMin) * MINUTE_MS;
     startByMs = clampToWorking(raw, youMin, ctx.windows);
     slackMinutes = Math.round((startByMs - now) / MINUTE_MS);
@@ -233,29 +253,34 @@ export function prepare(item: PriorityItem, ctx: ScoreContext): Prepared {
     startByMs <= now + t.preemptGraceMin * MINUTE_MS;
 
   const hoursLeft = deadlineMs === null ? null : (deadlineMs - now) / HOUR_MS;
-  const dueKindFactor = deadline?.source === 'due' ? (item.dueKind === 'soft' ? 0.8 : item.dueKind === 'inferred' ? 0.6 : 1) : 1;
+  // Soft and inferred dates weigh less while ahead; once passed, the late state sets the urgency instead.
+  const dueKindFactor = !late && deadline?.source === 'due' ? (item.dueKind === 'soft' ? 0.8 : item.dueKind === 'inferred' ? 0.6 : 1) : 1;
 
-  // deadline proximity: 1 when overdue, ½ at 8 h, ¼ at 24 h.
+  // deadline proximity: ½ at 8 h, ¼ at 24 h; once passed, the late urgency (1 in the grace day, then 0.6; 0.4 soft).
   let deadlineReason: string | null = null;
   if (deadline && hoursLeft !== null) {
-    if (deadline.source === 'meeting') {
+    if (late) deadlineReason = late.label;
+    else if (deadline.source === 'meeting') {
       deadlineReason = hoursLeft <= 24 && meeting ? `${meeting.title} in ${formatDuration(hoursLeft * 60)}` : deadline.label;
     } else deadlineReason = deadline.label;
   }
-  const deadlineF = hoursLeft === null ? 0 : hoursLeft <= 0 ? 1 : 1 / (1 + hoursLeft / 8);
+  const deadlineF = hoursLeft === null ? 0 : late ? late.urgency : 1 / (1 + hoursLeft / 8);
 
-  // calendar pressure (least slack first): 1 when late unless started now, ½ at 90 min of slack.
-  const pressureF = slackMinutes === null ? 0 : slackMinutes <= 0 ? 1 : 1 / (1 + slackMinutes / 90);
-  const pressureReason =
-    startByMs === null
+  // calendar pressure (least slack first): 1 when late unless started now, ½ at 90 min of slack; late → its urgency.
+  const pressureF = late ? late.urgency : slackMinutes === null ? 0 : slackMinutes <= 0 ? 1 : 1 / (1 + slackMinutes / 90);
+  const pressureReason = late
+    ? late.verb
+      ? late.verb.toLowerCase()
+      : 'late: do it now'
+    : startByMs === null
       ? null
       : slackMinutes !== null && slackMinutes <= 0
         ? `late unless started now (start by ${formatLocalWhen(startByMs, now, off)})`
         : `start by ${formatLocalWhen(startByMs, now, off)}`;
 
-  // lead time: long agent runs that serve a near deadline should be kicked off early.
+  // lead time: long agent runs that serve a near deadline should be kicked off early (never once it has passed).
   const leadF =
-    agentRemainingMin > 0 && hoursLeft !== null
+    agentRemainingMin > 0 && hoursLeft !== null && !late
       ? Math.min(1, agentRemainingMin / 180) * (hoursLeft <= 24 ? 1 : 24 / hoursLeft)
       : 0;
   const leadReason = `agent needs ~${formatDuration(agentRemainingMin)}: kick off early`;
@@ -265,12 +290,13 @@ export function prepare(item: PriorityItem, ctx: ScoreContext): Prepared {
   const tierF = best ? TIER_SCORE[best.tier] : 0;
   const impF = IMPORTANCE_SCORE[importance];
   const stakeF = Math.max(tierF, impF);
+  // "importance: normal" says nothing (PRIO-13): only a high or critical importance is named
   const stakeReason =
-    best && tierF >= impF ? `${best.person.name} (${TIER_LABEL[best.tier]})` : `importance: ${importance}`;
+    best && tierF >= impF ? `${best.person.name} (${TIER_LABEL[best.tier]})` : importance === 'critical' || importance === 'high' ? `importance: ${importance}` : null;
 
   const amount = item.oppAmount ?? 0;
-  const dealF = amount > 0 ? Math.sqrt(Math.min(1, amount / 500_000)) : 0;
-  const dealReason = amount > 0 ? `opp $${Math.round(amount / 1000)}k` : null;
+  const dealF = dealValueFeature(amount);
+  const dealReason = amount > 0 ? `opp ${usdShort(amount)}` : null;
 
   const ageDays = features.age_days as number;
   const staleF = Math.min(1, ageDays / 45);
@@ -314,7 +340,7 @@ export function prepare(item: PriorityItem, ctx: ScoreContext): Prepared {
       kind: 'sla',
       label: rule.label,
       effect,
-      explanation: `${rule.explanation}: ${breached ? `overdue since ${when}` : `by ${when}`}`,
+      explanation: `${rule.explanation}: ${breached ? `${lateState(dueMs, now, 'hard', ctx.workingHours)!.label} (since ${when})` : `by ${when}`}`,
     });
   }
   for (const rule of enabledRules(policy)) {
@@ -369,6 +395,8 @@ export function prepare(item: PriorityItem, ctx: ScoreContext): Prepared {
     startByMs,
     slackMinutes,
     preempt,
+    late,
+    freeBeforeMin: deadlineMs !== null && deadlineMs > now ? freeMinutesBefore(ctx.free, now, deadlineMs) : null,
     ageDays,
     agentRemainingMin,
     components,
@@ -403,4 +431,58 @@ export function reasonsOf(p: Prepared): RankReason[] {
     out.push({ key: `rule:${h.ruleKey}`, label: h.explanation, contribution: h.effect ?? 0 });
   }
   return out.sort((a, b) => b.contribution - a.contribution || a.key.localeCompare(b.key));
+}
+
+/**
+ * Deal value (R2, PRIO-10): a monotone tier table, so a $2M deal weighs more than a $500k one (the old √(amount/$500k)
+ * saturated at $500k). The tiers are lane 07 §4.1's (< $100k .3, < $500k .5, < $1M .7, < $3M .9, ≥ $3M 1); the
+ * priority@2 weights and the stage factor come later.
+ */
+export const DEAL_TIERS: ReadonlyArray<readonly [number, number]> = [
+  [3_000_000, 1],
+  [1_000_000, 0.9],
+  [500_000, 0.7],
+  [100_000, 0.5],
+  [0, 0.3],
+];
+
+export function dealValueFeature(amount: number): number {
+  if (!(amount > 0)) return 0;
+  for (const [min, f] of DEAL_TIERS) if (amount >= min) return f;
+  return 0;
+}
+
+/** "$780k", "$1.25M". */
+export function usdShort(amount: number): string {
+  if (amount >= 1_000_000) return `$${Math.round(amount / 10_000) / 100}M`;
+  return `$${Math.round(amount / 1000)}k`;
+}
+
+function freeMinutesBefore(free: readonly Interval[], fromMs: number, toMsValue: number): number {
+  let total = 0;
+  for (const i of free) {
+    const s = Math.max(i.startMs, fromMs);
+    const e = Math.min(i.endMs, toMsValue);
+    if (e > s) total += (e - s) / MINUTE_MS;
+  }
+  return Math.round(total);
+}
+
+/** The two-part why for a prepared item, from the same terms that scored it (R7). */
+export function whyOf(p: Prepared, ctx: Pick<ScoreContext, 'nowMs' | 'utcOffsetMinutes'>): WhyParts {
+  const matters = mattersFrom(p.components.map((c) => ({ key: c.key, label: c.reason ?? '', contribution: c.points })));
+  const now = p.late
+    ? latePhrase(p.late)
+    : nowPhrase({
+        nowMs: ctx.nowMs,
+        utcOffsetMinutes: ctx.utcOffsetMinutes,
+        late: null,
+        deadlineLabel: p.deadline?.label ?? null,
+        deadlineMs: p.deadlineMs,
+        startByMs: p.startByMs,
+        youMin: p.youMin,
+        freeBeforeMin: p.freeBeforeMin,
+        ageDays: p.ageDays,
+      });
+  return { matters, now };
 }

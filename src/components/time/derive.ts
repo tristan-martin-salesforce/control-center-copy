@@ -6,7 +6,7 @@ import type { ActivityEntry, ActivityLog, LogCanvas, TimelineBlock, TimelineLane
 import { ymd } from '@/components/domain/lib/time';
 import { logCanvasPrompt } from '@/lib/canvas/prompt';
 import { org62CheckOf } from '@/engines/activity/org62-check';
-import { plainIssue } from '@/lib/time-issues';
+import { plainIssue } from './plain';
 
 const fmtCache = new Map<string, Intl.DateTimeFormat>();
 function parts(iso: string, tz?: string) {
@@ -261,7 +261,7 @@ export function readbackState(e: Pick<ActivityEntry, 'status' | 'end'> & { issue
 
 /** The row's read-back note on Time (D-65): "Not in Org62" (TL-20), "Deleted in Org62" (TL-14), "Differs from Org62". */
 export const READBACK_LABEL: Record<NonNullable<ReadbackState>, string> = {
-  missing: 'Not in Org62: the canvas ran without it',
+  missing: 'Not in Org62: the batch ran without it',
   deleted: 'Deleted in Org62',
   differs: 'Differs from Org62',
   unconfirmed: 'Unconfirmed in Org62',
@@ -283,8 +283,6 @@ export interface LoggingGap {
   ids: string[];
   /** Last time Org62 read-back confirmed anything: the newest of the payload's and the rows' own read-backs. */
   lastReadbackAt: string | null;
-  /** The Slackbot work order has pending rows and no read-back since the last canvas sync. */
-  workOrderPending: boolean;
 }
 
 /**
@@ -311,18 +309,7 @@ export function loggingGap(week: Pick<TimeWeek, 'entries' | 'org62' | 'canvas'>,
     }
   }
   const lastReadbackAt = lastSeen ?? null;
-  const workOrderPending = unconfirmedRows > 0 && (!lastReadbackAt || (week.canvas.lastSyncedAt !== null && lastReadbackAt < week.canvas.lastSyncedAt));
-  return { show: unconfirmedRows > 0 || missingRows > 0, unconfirmedH: Math.round(unconfirmedH * 100) / 100, unconfirmedRows, missingRows, ids, lastReadbackAt, workOrderPending };
-}
-
-/** The header's one line for a gap: "6.5 h approved, not in Org62 yet (4 rows) · 2 missing in Org62". */
-export function loggingGapLine(g: Pick<LoggingGap, 'unconfirmedH' | 'unconfirmedRows' | 'missingRows'>): string {
-  return [
-    g.unconfirmedRows ? `${fmtH(g.unconfirmedH)} approved, not in Org62 yet (${g.unconfirmedRows} ${g.unconfirmedRows === 1 ? 'row' : 'rows'} ended over 12 h ago)` : null,
-    g.missingRows ? `${g.missingRows} ${g.missingRows === 1 ? 'row' : 'rows'} missing in Org62` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  return { show: unconfirmedRows > 0 || missingRows > 0, unconfirmedH: Math.round(unconfirmedH * 100) / 100, unconfirmedRows, missingRows, ids, lastReadbackAt };
 }
 
 export const fmtH = (h: number) => `${Math.round(h * 100) / 100} h`;
@@ -523,21 +510,21 @@ export function q4Steps({ rows, week, nowIso, confirmCopiedFor, dcPending = 0, u
   const along = [dcs ? dcWord(dcs) : null, ucPending > 0 ? ucWord(ucPending) : null].filter(Boolean).join(' · ');
   steps.push(
     ready.length
-      ? { id: 'submit', state: 'later', title: `${rowsWord(ready.length)} ready for Slackbot${along ? ` · ${along} ride along` : ''}`, why: `${fmtH(sumH(ready))} · a new private canvas to Apply here, then tell Slackbot "Execute this canvas"`, verb: `Log the ${rowsWord(ready.length)} ready to Slackbot`, ids: ready.map((e) => e.id), hours: sumH(ready) }
+      ? { id: 'submit', state: 'later', title: `${rowsWord(ready.length)} ready for Slackbot${along ? ` · ${along} ride along` : ''}`, why: `${fmtH(sumH(ready))} · a new batch to Apply here, then send it to Org62 via Slackbot`, verb: `Log the ${rowsWord(ready.length)} ready to Slackbot`, ids: ready.map((e) => e.id), hours: sumH(ready) }
       : { id: 'submit', state: 'done', title: held.length || pendingOnly.length ? 'Nothing new to log' : 'Nothing ready to log', why: `Rows that have ended, with ${taskTypeRequired ? 'a task type and ' : ''}an opportunity, land here`, verb: `Log to Slackbot`, ids: [], hours: 0 },
   );
   if (dcs && !ready.length)
-    steps.push({ id: 'dcs', state: 'later', title: `${dcWord(dcs)} ride on your next canvas`, why: 'They wait for the next canvas with rows. Log DCs now puts them on a canvas of their own (Deals ▸ DCs lists them)', verb: 'Log DCs now', ids: [], hours: 0 });
+    steps.push({ id: 'dcs', state: 'later', title: `${dcWord(dcs)} ride in your next batch`, why: 'They wait for the next batch with rows. Log DCs now puts them in a batch of their own (Deals ▸ DCs lists them)', verb: 'Log DCs now', ids: [], hours: 0 });
   if (held.length || pendingOnly.length) {
     const items = [...heldIds, ...pendingOnly.map((c) => c.draftId)];
-    const canvasWord = items.length === 1 ? 'a new private canvas' : `${items.length} canvases`;
+    const canvasWord = items.length === 1 ? 'a new batch' : `${items.length} batches`;
     // B3: an Apply that got no answer may have made the canvas already: check Slack first (never a blind second one)
     const maybe = canvases.filter((c) => c.maybeCreated && items.includes(c.draftId)).length;
     steps.push({
       id: 'outbox',
       state: 'later',
-      title: held.length ? `${rowsWord(held.length)} waiting for your Apply` : `${items.length === 1 ? '1 canvas' : `${items.length} canvases`} waiting for your Apply`,
-      why: `${maybe ? `${maybe === 1 ? '1 may' : `${maybe} may`} already be in Slack (no answer to the last Apply): check Slack before you Apply again · ` : ''}${held.length ? `${fmtH(sumH(held))} · ` : ''}${canvasWord} to Apply, then tell Slackbot "Execute this canvas"`,
+      title: held.length ? `${rowsWord(held.length)} waiting for your Apply` : `${items.length === 1 ? '1 batch' : `${items.length} batches`} waiting for your Apply`,
+      why: `${maybe ? `${maybe === 1 ? '1 may' : `${maybe} may`} already be in Slack (no answer to the last Apply): check Slack before you Apply again · ` : ''}${held.length ? `${fmtH(sumH(held))} · ` : ''}${canvasWord} to Apply, then send it to Org62 via Slackbot`,
       verb: items.length === 1 ? 'Review & apply' : `Review & apply ${items.length}`,
       ids: held.map((e) => e.id),
       hours: sumH(held),
@@ -554,8 +541,8 @@ export function q4Steps({ rows, week, nowIso, confirmCopiedFor, dcPending = 0, u
       state: copied ? 'waiting' : 'later',
       title: copied ? `${rowsWord(handed.length)} waiting for Org62` : `${rowsWord(handed.length)} handed off, not in Org62 yet`,
       why: copied
-        ? `Prompt copied · Org62 read-back verifies ${fmtH(sumH(handed))}`
-        : `${fmtH(sumH(handed))}${n ? ` on ${n === 1 ? '1 canvas' : `${n} canvases`}` : ''} · confirming copies the Slackbot prompt that runs ${n > 1 ? 'them' : 'it'}`,
+        ? `Prompt copied · the Org62 check confirms ${fmtH(sumH(handed))}`
+        : `${fmtH(sumH(handed))}${n ? ` on ${n === 1 ? '1 batch' : `${n} batches`}` : ''} · confirming copies the Slackbot prompt that runs ${n > 1 ? 'them' : 'it'}`,
       verb: `Confirm ${rowsWord(handed.length)}`,
       ids: handed.map((e) => e.id),
       hours: sumH(handed),

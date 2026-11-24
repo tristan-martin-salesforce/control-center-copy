@@ -1,5 +1,5 @@
 /*
- * Settings v2 (docs/ui/DESIGN-V2.md "Settings: three panes"): section nav · one section · effect preview.
+ * Settings v2 (docs/archive/2026-build/DESIGN-V2.md "Settings: three panes"): section nav · one section · effect preview.
  * Tokens from src/styles/brand.css only. Names V2-TOKENS adds (surface-raised, surface-input, on-accent,
  * accent-hover, disabled) carry a fallback to today's names so this renders before and after that lane lands.
  * Layout condenses with container queries on the page's own width (the panel pushes #cc-main), never the viewport.
@@ -87,7 +87,8 @@
   border-top: 1px solid var(--color-line);
   background: var(--color-surface);
 }
-@container settings (min-width: 1000px) {
+/* keep in step with EFFECT_RAIL_MIN (SettingsPage.tsx) */
+@container settings (min-width: 1360px) {
   .grid {
     grid-template-columns: 208px minmax(0, 1fr) 340px;
   }
@@ -98,9 +99,12 @@
     display: none;
   }
 }
-@container settings (min-width: 1180px) {
+/* 1180-1359: a wider nav, still two columns. This rule came after the 1360 one and gave every frame from 1180 px a
+   third, empty 380 px column while the effect pane was still hidden (it shows from 1360), squeezing the form to
+   ~550 px at 1440 with the sidebar open: Connectors' actions clipped to "S", Autonomy's ladder cut off (UI-32). */
+@container settings (min-width: 1180px) and (max-width: 1359px) {
   .grid {
-    grid-template-columns: 224px minmax(0, 1fr) 380px;
+    grid-template-columns: 224px minmax(0, 1fr);
   }
 }
 @container settings (min-width: 1368px) {
@@ -226,6 +230,18 @@
 .sec {
   padding: 0 32px 64px;
 }
+/* A block that follows a section on its page (Budgets ▸ What the Assistant remembers and Receipts, Profile ▸ AEs I
+   cover) keeps the section's gutter, so it lines up with the blocks above it instead of touching the pane's edge. */
+.spane > .block {
+  padding-left: 32px;
+  padding-right: 32px;
+}
+.spane > .sec + .block {
+  margin-top: -32px;
+}
+.spane > .block:last-child {
+  padding-bottom: 64px;
+}
 .secHead {
   position: sticky;
   top: 0;
@@ -323,6 +339,7 @@
   flex-wrap: wrap;
   padding-bottom: 8px;
 }
+.blockHead h2,
 .blockHead h3 {
   font-size: var(--text-title);
   line-height: var(--text-title--line-height);
@@ -1028,6 +1045,7 @@ textarea.in {
   padding: 16px 20px;
   min-width: 0;
 }
+.card h3,
 .card h4 {
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
@@ -1040,15 +1058,16 @@ textarea.in {
   gap: 4px 12px;
   margin-bottom: 8px;
 }
+.cardHead h3,
 .cardHead h4 {
   white-space: nowrap;
 }
-.cardHead > :not(h4) {
+.cardHead > :not(h3):not(h4) {
   margin-left: auto;
   font-size: var(--text-caption);
   text-align: right;
 }
-.cardHead > :not(h4) ~ :not(h4) {
+.cardHead > :not(h3):not(h4) ~ :not(h3):not(h4) {
   margin-left: 0;
 }
 .linkBtn {
@@ -1546,9 +1565,13 @@ textarea.in {
   font-size: var(--text-caption);
   align-items: center;
 }
+.keys h4,
 .keys h5 {
   grid-column: 1 / -1;
   font-size: var(--text-caption);
+  line-height: inherit;
+  font-weight: inherit;
+  text-wrap: wrap;
   color: var(--color-muted);
   margin: 8px 0 0;
 }

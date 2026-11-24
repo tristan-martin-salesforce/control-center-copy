@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "9d74e648deaec2c295dda25e58fbf716",
+      "label": "classify | gm-wi-006-reply-pending-s1",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"gm-wi-006-reply-pending-s1\", \"v\": \"fyi\", \"due\": null, \"conf\": 0.65, \"cite\": \"Pat is aware, I am asking here as well so it is not lost\", \"link\": null, \"why\": \"a question to the team, not to me by name\"}]}"
+    },
+    {
+      "hash": "dc595968809eecdac4e310c021a382f5",
+      "label": "classify | C0SALT001:1794867120.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0SALT001:1794867120.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Confirm which IdP groups map to Agentforce permission sets, in writing\", \"who\": \"PERSON_S\", \"deliverable\": \"answer\", \"due\": \"2026-11-19\", \"conf\": 0.95, \"cite\": \"can you confirm which of our IdP groups the POC needs to map to Agentforce permission sets?\", \"link\": null, \"why\": \"@-mention ask, wanted in writing before Thursday\"}]}"
+    },
+    {
+      "hash": "7c2ddb7e0cd9058735378a4de313332c",
+      "label": "classify | C0SALT001:1794868800.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0SALT001:1794868800.000000\", \"v\": \"progress\", \"due\": null, \"conf\": 0.8, \"cite\": \"I'll confirm the mapping in writing before Thursday's sync\", \"link\": \"w1\", \"why\": \"my promise to answer in writing before Thursday\"}]}"
+    }
+  ]
+}

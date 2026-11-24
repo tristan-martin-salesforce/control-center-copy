@@ -53,16 +53,16 @@ describe('the quarter log range', () => {
 });
 
 describe('Log filters', () => {
-  it('parses the URL, dropping unknown values, and writes it back with view=log first', () => {
-    const f = parseLogFilters(new URLSearchParams('view=log&quarter=Q3+FY27&status=logged,bogus,verified,logged&q=demo&account=ACCOUNT_1&opp=o1'));
+  it('parses the URL, dropping unknown values, and writes it back with view=history first', () => {
+    const f = parseLogFilters(new URLSearchParams('view=history&quarter=Q3+FY27&status=logged,bogus,verified,logged&q=demo&account=ACCOUNT_1&opp=o1'));
     expect(f).toEqual({ quarter: 'Q3 FY27', status: ['logged', 'verified'], q: 'demo', account: 'ACCOUNT_1', opp: 'o1', type: null, week: null });
-    expect(serializeLogFilters(f)).toBe('view=log&quarter=Q3+FY27&status=logged%2Cverified&q=demo&account=ACCOUNT_1&opp=o1');
+    expect(serializeLogFilters(f)).toBe('view=history&quarter=Q3+FY27&status=logged%2Cverified&q=demo&account=ACCOUNT_1&opp=o1');
     expect(parseLogFilters(new URLSearchParams('quarter=Q9 FY27&week=monday'))).toEqual(DEFAULT_LOG_FILTERS);
-    expect(serializeLogFilters(DEFAULT_LOG_FILTERS)).toBe('view=log');
+    expect(serializeLogFilters(DEFAULT_LOG_FILTERS)).toBe('view=history');
     // the Ledger's drill-down: every quarter, a task type, a week
-    const d = parseLogFilters(new URLSearchParams('view=log&quarter=all&type=Demo&week=2026-11-02&opp=internal'));
+    const d = parseLogFilters(new URLSearchParams('view=history&quarter=all&type=Demo&week=2026-11-02&opp=internal'));
     expect(d).toMatchObject({ quarter: 'all', type: 'Demo', week: '2026-11-02', opp: 'internal' });
-    expect(serializeLogFilters(d)).toBe('view=log&quarter=all&opp=internal&type=Demo&week=2026-11-02');
+    expect(serializeLogFilters(d)).toBe('view=history&quarter=all&opp=internal&type=Demo&week=2026-11-02');
   });
 
   it('a quarter becomes its calendar range (FY starts 1 Feb); the rest maps one to one', () => {

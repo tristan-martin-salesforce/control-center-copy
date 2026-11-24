@@ -6,11 +6,12 @@
  */
 import type { Db } from '@/db/client';
 import { loadModel } from '@/server/datasource/db/model';
+import { everything } from '@/server/datasource/db/reads/scope';
 import { loadLandingWorld, syncLandingsDb } from '@/server/datasource/db/store/landings';
 
 export async function syncLandingsForUser(db: Db, userId: string, now: Date): Promise<{ ok: boolean; error?: string }> {
   try {
-    const model = await loadModel(db, userId, now);
+    const model = await loadModel(db, userId, now, { scope: everything('landings sync') });
     const world = await loadLandingWorld(db, userId, model, now);
     await syncLandingsDb(db, userId, world);
     return { ok: true };

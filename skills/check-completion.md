@@ -1,6 +1,6 @@
 ---
 skill: check-completion
-version: 1.3.0
+version: 1.4.0
 kind: judge
 model: claude-haiku-5-5
 effort: medium
@@ -16,7 +16,7 @@ sure_min_confidence: 0.8
 likely_min_confidence: 0.7
 partial_min_confidence: 0.6
 output: json ({"verdicts": [...]}, src/scanner/completion/prompt.ts)
-used_by: completion.check job (src/jobs/handlers/completion.ts, docs/ui/SCANNER.md §4.9)
+used_by: completion.check job (src/jobs/handlers/completion.ts, docs/reference/SCANNER.md §4.9)
 ---
 
 # check-completion: is it done yet?
@@ -31,7 +31,7 @@ One JSON object: `now`, `me`, and `items`. Each item has:
 - `title`: **the thing to finish**. Optional `purpose` and `due`;
 - `asker`: who asked me, or whom I promised;
 - `ask`: the original message (`askBy` says who wrote it, `askedAt` when);
-- `candidates`: the new messages that may finish it. Each has `id` (`s1`, `s2`…), `at`, `by` (`me`, a name, or `someone`), `where` (how it relates: same thread, same DM, same email thread, to the asker, the item's file, calendar event…), `text` and maybe `files`.
+- `candidates`: the new messages that may finish it. Each has `id` (`s1`, `s2`…), `at`, `by` (`me`, a name, or `someone`), `where` (how it relates: same thread, same DM, same email thread, to the asker, the item's file, a revision of the item's file, calendar event, meeting notes, a Claude session, the asker acknowledging my line…), `text` and maybe `files`.
 
 ## Step 1: what does the title need?
 
@@ -53,7 +53,8 @@ Rules:
 4. **One message, one item.** The same message can appear under several items (with a different id each time). It finishes only the item whose title it matches.
 5. **Every part the title or ask lists.** When they list several things ("the sizing and the deck"), done needs all of them; otherwise partial. Detail in `purpose` is background, not extra parts. A link to the built thing working ("it's live here: <link>") delivers a build.
 6. **Settled by the asker or the group** (1.3.0): for an ask or a decision, a clear resolution without me finishes it: the asker cancels ("I'll go ahead and cancel the prep"), says it is no longer needed ("no need", "never mind"), decides it themselves, will get it from someone else ("PERSON_C mentioned she has something, I'll follow up with her"), or someone else does it and says so ("invite sent", "I sent it"). → done, basis `resolved` (cancelled, decided, not needed) or `done_by_other` (someone else did it), and cite the asker's message. A maybe ("let's see", "might not need it") is not_done.
-7. **When unsure, not_done.** A wrong "done" closes the user's item for him; a miss only waits for him to close it.
+7. **Other kinds of candidate** (1.4.0). "the asker acknowledging my line" is their short "got it, thanks" right after something I sent in that conversation: it confirms receipt of what my earlier line delivered (basis `confirmed`, cite it only when that earlier line delivers the outcome). "meeting notes" are the notes of a meeting with the asker: done only when they say the outcome happened, never for a next step still to do. "a Claude session" is my coding session's status and last line: a finished PR or link that is the outcome can be done; work in progress is partial at most. "a revision of the item's file" alone is never done (example 8).
+8. **When unsure, not_done.** A wrong "done" closes the user's item for him; a miss only waits for him to close it.
 
 ## Basis and confidence
 

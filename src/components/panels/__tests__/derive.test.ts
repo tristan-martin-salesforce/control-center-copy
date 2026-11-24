@@ -120,7 +120,8 @@ describe('connector', () => {
   });
 
   it('re-auth is the action only when broken and startable; otherwise Rescan', () => {
-    expect(connectorPrimary(conn({ state: 'auth_needed' }))).toEqual({ kind: 'reauth', label: 'Run refresh' });
+    expect(connectorPrimary(conn({ state: 'auth_needed' }))).toEqual({ kind: 'reauth', label: 'Refresh VDP' });
+    expect(connectorPrimary(conn({ state: 'auth_needed', reauth: { kind: 'refresh_script', label: '', command: '~/refresh.py', instructions: null } }))).toEqual({ kind: 'reauth', label: 'Run refresh' });
     expect(connectorPrimary(conn({ state: 'error', reauth: { kind: 'terminal_command', label: 'Re-auth Slack', command: 'claude mcp login slack', instructions: null } }))).toEqual({ kind: 'reauth', label: 'Open Terminal' });
     expect(connectorPrimary(conn({ state: 'auth_needed', reauth: { kind: 'instructions', label: 'Ask IT', command: null, instructions: 'Ask IT' } }))).toEqual({ kind: 'rescan', label: 'Rescan' });
     expect(connectorPrimary(conn({ state: 'ok' }))).toEqual({ kind: 'rescan', label: 'Rescan' });

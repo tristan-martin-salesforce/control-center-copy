@@ -265,6 +265,17 @@ const app = (fix: Omit<AppFix, 'kind' | 'options' | 'values' | 'current' | 'know
 /** D-69 (VD-32): a tool that now requires an argument the app never sends turns its items off, whatever else holds. */
 const blockedBy = (caps: VdpCapabilities, fix: AppFix): AppFix => (caps.blocked?.[fix.op] && !fix.unsupported ? { ...fix, unsupported: caps.blocked[fix.op]! } : fix);
 
+/**
+ * Caps audit 2026-11-21: create_vdp carries at most VDP_MAX_OPPORTUNITIES ids (VDP's own limit). An opp past them is
+ * not silently left off: its gap says why instead of pointing at a create that would not include it.
+ */
+const pastVdpLimit = (fix: AppFix, o: { org62OpportunityId?: string | null }): AppFix => {
+  const ids = (fix.values as { salesforce_opportunity_ids?: string[] }).salesforce_opportunity_ids ?? [];
+  return o.org62OpportunityId && ids.length >= VDP_MAX_OPPORTUNITIES && !ids.includes(o.org62OpportunityId) && !fix.unsupported
+    ? { ...fix, unsupported: `A VDP links at most ${VDP_MAX_OPPORTUNITIES} opportunities (VDP's limit); this one is past them: add it to another VDP` }
+    : fix;
+};
+
 /** D-69: why a company node's items can't be pushed yet (its identity is not settled), else null. */
 export function identityBlock(id: Pick<VdpCompanyIdentity, 'state' | 'reason'> | null | undefined): string | null {
   if (!id) return null;
@@ -455,7 +466,7 @@ export function computeVdpGaps(input: GapInput): GapResult {
         });
         // the VDP under the new company: its id comes from the create_company item (D-63)
         const fix = createVdp(null, os, { underNewCompany: true, known: id.deterministic, blocked });
-        for (const o of os) unlinked.push({ ...base, id: `opp:${o.id}:opp_without_vdp`, code: 'opp_without_vdp', severity: 'medium', title: `${o.name} is not on a VDP`, opportunityId: o.id, fix });
+        for (const o of os) unlinked.push({ ...base, id: `opp:${o.id}:opp_without_vdp`, code: 'opp_without_vdp', severity: 'medium', title: `${o.name} is not on a VDP`, opportunityId: o.id, fix: pastVdpLimit(fix, o) });
       }
       newVdpNeeds(a, os, { ...base, opportunityId: first.id });
       continue;
@@ -494,7 +505,7 @@ export function computeVdpGaps(input: GapInput): GapResult {
     // Only past VDPs: a new VDP for the loose opps (VDP knows the company: its old VDPs name it).
     const company = [...vdps].sort((x, y) => periodRank(y) - periodRank(x))[0]!.company;
     const fix = createVdp(company.id, loose);
-    for (const o of loose) unlinked.push({ ...base, id: `opp:${o.id}:opp_without_vdp`, code: 'opp_without_vdp', severity: 'medium', title: `${o.name} is not on a VDP`, opportunityId: o.id, fix });
+    for (const o of loose) unlinked.push({ ...base, id: `opp:${o.id}:opp_without_vdp`, code: 'opp_without_vdp', severity: 'medium', title: `${o.name} is not on a VDP`, opportunityId: o.id, fix: pastVdpLimit(fix, o) });
     newVdpNeeds(a, loose, { ...base, opportunityId: loose[0]!.id });
   }
 

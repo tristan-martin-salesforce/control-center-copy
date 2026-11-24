@@ -2,6 +2,7 @@
  * Pure time helpers for the planning horizon. No timezone database: the caller passes a fixed
  * UTC offset for the horizon (today + 3 days), which the data layer computes from the IANA zone.
  */
+import { localDay, zonedToMs } from '@/engines/activity/time';
 import type { Meeting, TimeWindow, WorkingHours } from '@/engines/types';
 
 export const MINUTE_MS = 60_000;
@@ -58,11 +59,25 @@ export function formatDuration(minutes: number): string {
   return r === 0 ? `${h}h` : `${h}h${String(r).padStart(2, '0')}m`;
 }
 
-/** Working windows for `days` local days starting with the day that contains `nowMs`. */
+const validZone = (tz: string | undefined): tz is string => {
+  if (!tz) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Working windows for `days` local days starting with the day that contains `nowMs`. With `hours.timeZone`, each
+ * day's start and end are wall-clock times in that zone (DST-safe, W0-11); otherwise the fixed `utcOffsetMinutes`.
+ */
 export function workingWindows(hours: WorkingHours, nowMs: number, days: number): TimeWindow[] {
   const startMin = parseHHMM(hours.start);
   const endMin = parseHHMM(hours.end);
   if (endMin <= startMin) return [];
+  if (validZone(hours.timeZone)) return zonedWorkingWindows(hours, hours.timeZone, nowMs, days);
   const first = localDayStart(nowMs, hours.utcOffsetMinutes);
   const out: TimeWindow[] = [];
   for (let d = 0; d < days; d++) {
@@ -70,6 +85,19 @@ export function workingWindows(hours: WorkingHours, nowMs: number, days: number)
     const weekday = new Date(dayStart + hours.utcOffsetMinutes * MINUTE_MS).getUTCDay();
     if (!hours.days.includes(weekday)) continue;
     out.push({ start: toIso(dayStart + startMin * MINUTE_MS), end: toIso(dayStart + endMin * MINUTE_MS) });
+  }
+  return out;
+}
+
+function zonedWorkingWindows(hours: WorkingHours, tz: string, nowMs: number, days: number): TimeWindow[] {
+  // local noon of today, then +24 h a day: noon never leaves its own calendar day across a one-hour DST change
+  const noon = zonedToMs(localDay(nowMs, tz), '12:00', tz);
+  const out: TimeWindow[] = [];
+  for (let d = 0; d < days; d++) {
+    const day = localDay(noon + d * DAY_MS, tz);
+    const [y, m, dd] = day.split('-').map(Number) as [number, number, number];
+    if (!hours.days.includes(new Date(Date.UTC(y, m - 1, dd)).getUTCDay())) continue;
+    out.push({ start: toIso(zonedToMs(day, hours.start, tz)), end: toIso(zonedToMs(day, hours.end, tz)) });
   }
   return out;
 }
@@ -127,4 +155,27 @@ export function clampToWorking(latestMs: number, handsOnMin: number, windows: Ti
     if (candidate >= ws && (best === null || candidate > best)) best = candidate;
   }
   return best ?? latestMs;
+}
+
+/** Minutes in one working day of `hours` (end − start); 8 h when the hours are degenerate. */
+export function workdayMinutes(hours: WorkingHours): number {
+  const m = parseHHMM(hours.end) - parseHHMM(hours.start);
+  return m > 0 ? m : 8 * 60;
+}
+
+/**
+ * Working minutes (inside `hours`, in its UTC offset and working days) between two instants. Stops counting
+ * at `capMin` when given (callers only need to know whether a threshold was crossed).
+ */
+export function workingMinutesBetween(fromMs: number, toMsValue: number, hours: WorkingHours, capMin = Infinity): number {
+  if (toMsValue <= fromMs) return 0;
+  const days = Math.min(60, Math.ceil((toMsValue - fromMs) / DAY_MS) + 1);
+  let total = 0;
+  for (const w of workingWindows(hours, fromMs, days)) {
+    const s = Math.max(toMs(w.start), fromMs);
+    const e = Math.min(toMs(w.end), toMsValue);
+    if (e > s) total += (e - s) / MINUTE_MS;
+    if (total >= capMin) return total;
+  }
+  return total;
 }

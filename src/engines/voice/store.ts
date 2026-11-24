@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { homeStateDir } from '@/lib/state-folder';
 import { voiceProfileSchema, type VoiceProfile } from './types';
 
 /**
@@ -9,7 +9,7 @@ import { voiceProfileSchema, type VoiceProfile } from './types';
  */
 
 export function stateDir(): string {
-  return process.env.CC_STATE_DIR ?? join(homedir(), 'Library', 'Application Support', 'control-center');
+  return process.env.CC_STATE_DIR ?? homeStateDir();
 }
 
 export function voiceProfilePath(): string {

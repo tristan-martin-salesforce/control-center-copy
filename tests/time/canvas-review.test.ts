@@ -61,15 +61,19 @@ describe('the review rows of a work order', () => {
     const { input, removed } = withoutRows(i, ['event:act-2', 'dcchange:a0XXX0000000DC1', `uc:${uc(2).vdpUseCaseId}`, 'update:Use_Case__c:a1XXX0000000UC1:Stage__c']);
     expect(removed).toHaveLength(4);
     const md = input.markdown;
-    expect(md).toContain('# ADD (2 rows · 1.00 h of activities · 1 deal contribution)');
-    expect(md).toContain('# UPDATE (1 rows)');
-    expect(md).toContain('# USE CASES (1 row)');
+    // WO-1: each table recounted on its own; a table with nothing left leaves the canvas
+    expect(md).toContain('## EVENTS TO CREATE (1 row · 1.00 h of activities)');
+    expect(md).toContain('## DEAL CONTRIBUTIONS TO CREATE (1 row)');
+    expect(md).toContain('## USE CASES TO CREATE (1 row)');
+    expect(md).toContain('## EVENTS TO UPDATE (1 row)');
+    expect(md).not.toContain('## DEAL CONTRIBUTIONS TO UPDATE');
+    expect(md).not.toContain('## USE CASES TO UPDATE');
     expect(md).not.toContain('CC#act-2');
-    expect(md).not.toContain('|Deal_Contribution__c|a0XXX0000000DC1AAA|');
+    expect(md).not.toContain('|a0XXX0000000DC1AAA|');
     expect(input).toMatchObject({ eventIds: ['act-1'], hours: 1, updates: 1, updateIds: ['00UXX0000000EV1AAA'] });
     expect(input.title).toBe('Activity log · Nov 11–Nov 12 · 1 row · 1 DC · 1 use case');
     // every table numbered from 1 again
-    expect(canvasRowsOf(md).map((r) => `${r.section}:${r.cells[0]}`)).toEqual(['add:1', 'add:2', 'use_cases:1', 'update:1']);
+    expect(canvasRowsOf(md).map((r) => `${r.section}:${r.cells[0]}`)).toEqual(['add:1', 'add:1', 'use_cases:1', 'update:1']);
     expect(() => withoutRows(i, reviewRowsOf(i.markdown).map((r) => r.key))).toThrow(/Reject the canvas instead/);
     expect(() => withoutRows(i, ['event:act-9'])).toThrow(/no longer on this canvas/);
   });
@@ -79,10 +83,10 @@ describe('the review rows of a work order', () => {
     const r = reviewRowsOf(i.markdown).find((x) => x.key === 'update:Event:00UXX0000000EV1:Duration__c')!;
     expect(checkedUpdateValue(r.rows[0]!, '2.25')).toBe('2.25');
     const next = withRowReplaced(i, r.key, [updateLineWith(r.rows[0]!, '2.25')]);
-    expect(next.markdown).toContain('|1|Event|00UXX0000000EV1AAA|Duration__c|2.25|(blank)|Time never filled|');
-    const one = withRowReplaced(i, 'dcchange:a0XXX0000000DC1', ['|9|Deal_Contribution__c|a0XXX0000000DC1AAA|Split_Percentage__c|25|100|Change|']);
-    expect(one.markdown).toMatch(/# UPDATE \(3 rows · 1 DC change · 1 use-case fix\)/);
-    expect(one.markdown).not.toContain('|Opportunity_Role__c|');
+    expect(next.markdown).toContain('|1|00UXX0000000EV1AAA|Duration__c|2.25|(blank)|Time never filled|');
+    const one = withRowReplaced(i, 'dcchange:a0XXX0000000DC1', ['|9|a0XXX0000000DC1AAA|Split_Percentage__c|25|100|Change|']);
+    expect(one.markdown).toMatch(/## DEAL CONTRIBUTIONS TO UPDATE \(1 row · 1 DC change\)/);
+    expect(one.markdown).not.toContain('|Opportunity_Role__c|Solution Engineer|');
   });
 
   it('a use case reads back from its row, and an edit keeps the source line and CC-UC# key last', () => {

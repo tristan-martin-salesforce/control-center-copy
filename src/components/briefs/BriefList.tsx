@@ -40,7 +40,7 @@ function Row({ b, open, cursor, onOpen }: { b: BriefSummaryVm; open: boolean; cu
         open ? 'bg-selected' : 'hover:bg-surface-muted',
       )}
     >
-      <span className={cn('mt-2 size-2 shrink-0 rounded-full', b.unread ? 'bg-accent' : 'bg-transparent')} aria-label={b.unread ? 'Unread' : undefined} />
+      <span className={cn('mt-2 size-2 shrink-0 rounded-full', b.unread ? 'bg-accent' : 'bg-transparent')} role={b.unread ? 'img' : undefined} aria-label={b.unread ? 'Unread' : undefined} aria-hidden={b.unread ? undefined : true} />
       <Icon name={KIND_ICON[b.kind] ?? 'search'} size="sm" className="mt-1.5 shrink-0 text-muted" />
       <span className="min-w-0 flex-1">
         <span className={cn('block truncate text-body', b.unread ? 'font-bold text-fg-heading' : 'text-fg')}>{b.title}</span>

@@ -7,13 +7,15 @@ import { sql } from 'drizzle-orm';
 
 import type { Evidence } from '@/contract';
 import type { Db } from '@/db/client';
-import { loadVoiceProfile, renderVoiceForPrompt } from '@/engines/voice';
+import { loadVoiceProfile } from '@/engines/voice/store';
+import { renderVoiceForPrompt } from '@/engines/voice/render';
 import type { ReadInRecords } from '@/llm/readin/context';
 
 import { loadModel } from './model';
+import { everything } from './reads/scope';
 
 export async function loadReadInRecords(db: Db, userId: string, now: Date, opts: { voiceChannel?: 'slack' | 'email' } = {}): Promise<ReadInRecords> {
-  const model = await loadModel(db, userId, now);
+  const model = await loadModel(db, userId, now, { scope: everything('read-in records') });
   const gens = new Map(
     ((await db.execute(sql`select id, reeval_generation as g from work_items where owner_user_id = ${userId}`)).rows as Array<{ id: string; g: string }>).map((r) => [r.id, Number(r.g)]),
   );

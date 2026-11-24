@@ -49,7 +49,7 @@ describe('Health: a worker waiting for the database (E1)', () => {
     expect(render(health({ blocked: null }))).toBe('');
     expect(render(health({}))).toBe('');
     const down = render(health({ alive: false, blocked: { message: 'x', fix: null, since: NOW } }));
-    expect(down).toContain('The background worker isn’t running');
+    expect(down).toContain('The background worker stopped');
     expect(down).not.toContain('waiting for the database');
   });
 });

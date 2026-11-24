@@ -39,6 +39,14 @@ export interface CadenceConfig {
   maxQuietLevel: number;
   /** Per-scope multiplier (e.g. Slack channels ×5 vs the inbox). */
   scopeMultiplier: (connector: ConnectorId, scope: string) => number;
+  /**
+   * Signal-driven cadence (review 04 §4.1 #6): the level a run with new or changed items sets. 0 (the default) resets
+   * to the base interval, as before; -1 tightens to half of it until a quiet run relaxes it again (FTI mode, where a
+   * quiet poll is a few relay reads and an active conversation is checked again sooner).
+   */
+  activeLevel?: number;
+  /** The shortest interval a tightened scope polls at. Default 60 s. */
+  minIntervalMs?: number;
 }
 
 /**
@@ -83,9 +91,20 @@ export const MAX_SLOWDOWN_MS = 4 * 60 * MIN;
 export function intervalMs(cfg: CadenceConfig, connector: ConnectorId, scope: string, now: Date, quietLevel: number): number {
   const base = (cfg.baseMs[connector] ?? DEFAULT_BASE_CADENCE_MS[connector] ?? 10 * MIN) * cfg.scopeMultiplier(connector, scope);
   const off = isWorkHours(now, cfg.workHours) ? 1 : cfg.offHoursMultiplier;
-  const quiet = 2 ** Math.max(0, Math.min(quietLevel, cfg.maxQuietLevel));
-  return Math.min(base * off * quiet, Math.max(base, MAX_SLOWDOWN_MS));
+  const floor = Math.min(0, cfg.activeLevel ?? 0);
+  const level = Math.max(floor, Math.min(quietLevel, cfg.maxQuietLevel));
+  const ms = Math.min(base * off * 2 ** level, Math.max(base, MAX_SLOWDOWN_MS));
+  // a tightened scope never polls faster than the floor (nor than its base when the base is already shorter)
+  return level < 0 ? Math.max(ms, Math.min(base, cfg.minIntervalMs ?? MIN)) : ms;
 }
+
+/** The quiet level after a successful run: activity sets the active level (signal-driven), a quiet run relaxes it. */
+export function nextQuietLevel(cfg: Pick<CadenceConfig, 'activeLevel' | 'maxQuietLevel'>, level: number, active: boolean): number {
+  return active ? Math.min(0, cfg.activeLevel ?? 0) : Math.min(level + 1, cfg.maxQuietLevel);
+}
+
+/** Signal-driven cadence for FTI (review 04 §4.1 #6): activity halves the interval (≥ 1 min), quiet doubles it to ×8. */
+export const SIGNAL_CADENCE: Partial<CadenceConfig> = { activeLevel: -1, minIntervalMs: MIN };
 
 /** Retry delay after a failed run. `null` = do not retry automatically (needs the user). */
 export function failureDelayMs(errorClass: ConnectorHealthProbe['errorClass'], consecutiveFailures: number): number | null {

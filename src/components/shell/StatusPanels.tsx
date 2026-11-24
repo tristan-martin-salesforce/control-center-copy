@@ -213,7 +213,7 @@ export function SpendPopover({ spend, trigger }: { spend?: HealthPayload['spend'
   const shell = useShell();
   const pct = spend ? Math.min(100, Math.round(spend.today.pct)) : 0;
   return (
-    <UtilityPanel id="spend" title="LLM spend today" width={360} trigger={trigger}>
+    <UtilityPanel id="spend" title="AI spend today" width={360} trigger={trigger}>
       {spend ? (
         <div className="space-y-3 p-4 text-body">
           <div>

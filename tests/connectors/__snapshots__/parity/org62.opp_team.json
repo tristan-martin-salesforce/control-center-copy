@@ -1,0 +1,60 @@
+[
+  {
+    "kind": "record_snapshot",
+    "externalId": "Opportunity:006XX0000000001AAA@2026-11-05T14:00:00.000+0000",
+    "occurredAt": "2026-11-05T14:00:00.000+0000",
+    "title": "ACME – Data 360 Expansion",
+    "excerpt": "stage=03 - Validating Benefits & Value; close=2026-12-15; amount=250000; forecast=Pipeline; closed=false; won=false; next=SE demo of zero copy before 12/1; team_role=Solutions Engineer",
+    "oppHints": [
+      "006XX0000000001AAA"
+    ],
+    "accountHints": [
+      "001XX0000000001AAA",
+      "ACME Corp"
+    ],
+    "payload": {
+      "Id": "006XX0000000001AAA",
+      "AccountId": "001XX0000000001AAA",
+      "AccountName": "ACME Corp",
+      "StageName": "03 - Validating Benefits & Value",
+      "CloseDate": "2026-12-15",
+      "Amount": 250000,
+      "ForecastCategoryName": "Pipeline",
+      "Type": null,
+      "IsClosed": false,
+      "IsWon": false,
+      "TeamMemberRole": "Solutions Engineer",
+      "TeamMemberSystemModstamp": "2026-09-02T17:10:00.000+0000",
+      "rec": "auto"
+    }
+  },
+  {
+    "kind": "record_snapshot",
+    "externalId": "Opportunity:006XX0000000004AAA@2026-11-05T14:30:00.000+0000",
+    "occurredAt": "2026-11-05T14:30:00.000+0000",
+    "title": "GLOBEX – Agentforce Pilot",
+    "excerpt": "stage=01 - Discovery; close=2027-03-31; amount=120000; forecast=Pipeline; closed=false; won=false; next=; team_role=Solutions Engineer",
+    "oppHints": [
+      "006XX0000000004AAA"
+    ],
+    "accountHints": [
+      "001XX0000000002AAA",
+      "GLOBEX Inc"
+    ],
+    "payload": {
+      "Id": "006XX0000000004AAA",
+      "AccountId": "001XX0000000002AAA",
+      "AccountName": "GLOBEX Inc",
+      "StageName": "01 - Discovery",
+      "CloseDate": "2027-03-31",
+      "Amount": 120000,
+      "ForecastCategoryName": "Pipeline",
+      "Type": null,
+      "IsClosed": false,
+      "IsWon": false,
+      "TeamMemberRole": "Solutions Engineer",
+      "TeamMemberSystemModstamp": "2026-11-05T14:30:00.000+0000",
+      "rec": "auto"
+    }
+  }
+]

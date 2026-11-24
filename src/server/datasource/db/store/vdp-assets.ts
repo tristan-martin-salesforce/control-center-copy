@@ -24,6 +24,7 @@ import { assetTargets, type DetailTarget } from '@/server/vdp/detail';
 import { loadGapEntities, loadVdpRecords } from './vdp';
 import { loadPersona } from './persona';
 import { upsertCandidates } from './vdp-candidates';
+import { projectionStore } from './projections.run';
 
 /** The mirror, my book and the asset targets (my VDPs by account, and engaged accounts without a VDP). */
 export async function loadAssetState(db: Db, userId: string): Promise<{ snaps: VdpSnapshot[]; cov: { vdps: ReturnType<typeof computeVdpGaps>['vdps']; unlinked: ReturnType<typeof computeVdpGaps>['unlinked'] }; targets: DetailTarget[]; accounts: Array<{ id: string; name: string }> }> {
@@ -132,7 +133,7 @@ export function itemsFromRows(
       label,
       mapped: ch ? { accountId: ch.accountId, confidence: ch.confidence, via: `the channel is ${ctx.companyOf(ch.accountId)}'s` } : null,
       domains: r.source === 'slack' ? [] : domainsOf(),
-      links: links.slice(0, 20),
+      links, // every link of the source (caps audit 2026-11-21: was the first 20); the screen drops what is not an asset
     });
   }
   return out;
@@ -194,7 +195,7 @@ export async function runVdpAssetMatch(db: Db, userId: string, o: { since: Date;
      order by m.confidence desc`);
   const channels = new Map<string, { accountId: string; confidence: number }>();
   for (const x of ch.rows) if (!channels.has(x.channel_id)) channels.set(x.channel_id, { accountId: x.account_id, confidence: x.confidence === null ? 0.8 : Number(x.confidence) });
-  const { matcher, rules } = await accountMatcher(db, userId);
+  const { matcher, rules } = await accountMatcher(projectionStore(db), userId);
   const names = new Map(st.accounts.map((a) => [a.id, a.name]));
   const items = itemsFromRows(rows, { drive, channels, external: (dom) => domainClass(dom, rules) === 'external', companyOf: (id) => st.targets.find((t) => t.accountId === id)?.companyName ?? names.get(id) ?? 'the account' });
   const drafts = matchAssetItems(items, st.targets, (text, domains) => matcher.resolve(text, domains));

@@ -9,7 +9,7 @@ import { sql } from 'drizzle-orm';
 import { budgetsForDay, type Draft, type ForecastPayload, type ForecastRecordDetail, type ForecastRow, type PatchForecastRequest, type RouteInput, type RouteOutput } from '@/contract';
 import type { Db } from '@/db/client';
 import { enqueueJob } from '@/db/queue';
-import { buildForecastView, CHECK_FOLLOW_UP_MS, DRAFT_CAP_USD, withForecast } from '@/engines/forecast';
+import { buildForecastView, CHECK_FOLLOW_UP_MS, DRAFT_CAP_USD, withForecast } from '@/engines/forecast/view';
 import { localDay } from '@/engines/activity/time';
 import { personaOf } from '@/personas';
 import { draftTargets, patchedPending, stagePlan } from '@/server/forecast/service';
@@ -97,7 +97,6 @@ export class DbForecast {
           .all('events')
           .filter((e) => e.accountId === rec.accountId && e.start >= since && e.start <= nowIso)
           .sort((a, b) => b.start.localeCompare(a.start) || a.id.localeCompare(b.id))
-          .slice(0, 12)
           .map((e) => ({ id: e.id, title: e.title, start: e.start }))
       : [];
     return { row, record: rec, opportunity: opp ? { id: opp.id, name: opp.name, stage: opp.stage, nextStep: opp.nextStep, products: opp.products, url: opp.org62Url } : null, meetingsSince, thresholds: v.thresholds };
@@ -185,7 +184,7 @@ export class DbForecast {
     this.active(v);
     const owner = await ownerOrg62Of(this.host.db, m.ctx.userId);
     const nowIso = this.host.now().toISOString();
-    const plan = stagePlan(v, { ownerName: owner?.name ?? 'me', ownerOrg62Id: owner?.org62Id ?? '', nowIso, sourceLabel: 'Control Center · forecast notes', ...(i.body.ids ? { ids: i.body.ids } : {}) });
+    const plan = stagePlan(v, { ownerName: owner?.name ?? 'me', ownerOrg62Id: owner?.org62Id ?? '', nowIso, sourceLabel: 'Command Center · forecast notes', ...(i.body.ids ? { ids: i.body.ids } : {}) });
     if (!plan.destination) {
       if (plan.deferred.length) throw invalid('These notes are too long for one canvas: shorten them, then try again');
       return { entity: { draftId: null, title: null, notes: 0, roles: 0, waiting: plan.waiting, deferred: plan.deferred }, auditId: null };

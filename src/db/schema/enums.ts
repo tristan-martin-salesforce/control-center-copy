@@ -132,6 +132,8 @@ export const mappingRuleKind = pgEnum('mapping_rule_kind', [
   'domain_to_account', 'channel_to_account', 'repo_path_to_account', 'title_token_to_account',
   'sender_to_person', 'keyword_to_task_type', 'meeting_to_opportunity', 'ignore_sender',
   'ignore_channel',
+  // 0032 (attribution engine): a contact's email -> account, a distinctive word -> opportunity
+  'person_to_account', 'keyword_to_opportunity',
 ]);
 
 export const teamRuleKind = pgEnum('team_rule_kind', [

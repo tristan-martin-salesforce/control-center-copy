@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "7f48f7023e9a1c4748f9a9a01aaf86de",
+      "label": "classify | C0SALT002:1792600200.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0SALT002:1792600200.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Send PERSON_G the expected volumes for the Saltmere consumption model\", \"who\": \"PERSON_G\", \"deliverable\": \"volumes\", \"due\": null, \"conf\": 0.95, \"cite\": \"can you send me the expected volumes (member interactions, profiles unified)?\", \"link\": null, \"why\": \"@-mention ask for volumes\"}]}"
+    },
+    {
+      "hash": "ac56b2515a80bb4d7494f1d402a697fe",
+      "label": "classify | C0SALT002:1792602300.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0SALT002:1792602300.000000\", \"v\": \"completion\", \"due\": null, \"conf\": 0.9, \"cite\": \"Rough volumes: 1.8M members, about 420k monthly contact-center interactions\", \"link\": \"w1\", \"why\": \"my reply in the thread gives the volumes asked for\"}]}"
+    }
+  ]
+}

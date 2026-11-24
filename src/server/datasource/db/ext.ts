@@ -13,10 +13,12 @@
  *
  * Singletons (meta, spend projection, spine slots, mapping questions, app runs) live under `cc.*` keys.
  */
-import { and, asc, eq, like, sql } from 'drizzle-orm';
+import { and, asc, eq, like, or, sql } from 'drizzle-orm';
 
 import type { DbOrTx, Tx } from '@/db/client';
 import { userSettings } from '@/db/schema';
+
+import { overlaySidecar } from './store/sidecar-overlay';
 
 export const EXT_PREFIX = 'cc.ext/';
 
@@ -50,7 +52,27 @@ export async function loadKv(db: DbOrTx, userId: string): Promise<Map<string, un
     .from(userSettings)
     .where(and(eq(userSettings.ownerUserId, userId), like(userSettings.key, 'cc.%')))
     .orderBy(asc(userSettings.key)); // app runs and mapping questions are listed in this order (no physical-order reads)
-  return new Map(rows.map((r) => [r.key, r.value]));
+  // D-98: the promoted columns and need_decisions rows, read into the same map (column first, kv fallback)
+  return overlaySidecar(db, userId, new Map(rows.map((r) => [r.key, r.value])));
+}
+
+/**
+ * The read model's base (post-2.0 read profile): the `cc.*` kv map exactly as `loadKv` builds it, and the `settings.*`
+ * sections, in ONE read of user_settings (they were two: the kv, then every row of the user for the sections).
+ */
+export async function loadKvAndSections(db: DbOrTx, userId: string): Promise<{ kv: Map<string, unknown>; sections: Record<string, unknown> }> {
+  const rows = await db
+    .select({ key: userSettings.key, value: userSettings.value })
+    .from(userSettings)
+    .where(and(eq(userSettings.ownerUserId, userId), or(like(userSettings.key, 'cc.%'), like(userSettings.key, 'settings.%'))))
+    .orderBy(asc(userSettings.key)); // the kv keeps loadKv's key order
+  const kv = new Map<string, unknown>();
+  const sections: Record<string, unknown> = {};
+  for (const r of rows) {
+    if (r.key.startsWith('cc.')) kv.set(r.key, r.value);
+    else if (r.key.startsWith('settings.')) sections[r.key.slice('settings.'.length)] = r.value;
+  }
+  return { kv: await overlaySidecar(db, userId, kv), sections };
 }
 
 /** Upsert (or delete, for null/empty) one kv row inside the caller's change set. No-op when unchanged. */

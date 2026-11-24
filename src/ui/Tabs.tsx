@@ -6,7 +6,7 @@
  * - SegmentedToggle: an input-well group; the checked segment is the selected tint with a 1 px accent ring.
  * Tabs render the tablist only; pair panels with `tabPanelProps(baseId, value)`.
  */
-import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { cn } from './cn';
 import { Icon } from './Icon';
 
@@ -53,6 +53,10 @@ export function Tabs<V extends string>({ tabs, value, onChange, size = 'md', var
   const base = idBase ?? auto;
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const pill = variant === 'pill';
+  // aria-controls only names a panel that is on the page (tabPanelProps): a tab row that switches the route has none,
+  // and an id that points nowhere is invalid ARIA (axe aria-valid-attr-value).
+  const [panelShown, setPanelShown] = useState(false);
+  useEffect(() => setPanelShown(!!document.getElementById(`${base}-panel-${value}`)), [base, value]);
   return (
     <div
       data-variant={variant}
@@ -80,7 +84,7 @@ export function Tabs<V extends string>({ tabs, value, onChange, size = 'md', var
               role="tab"
               id={`${base}-tab-${t.value}`}
               aria-selected={selected}
-              aria-controls={`${base}-panel-${t.value}`}
+              aria-controls={panelShown ? `${base}-panel-${t.value}` : undefined}
               tabIndex={selected ? 0 : -1}
               disabled={t.disabled}
               onClick={() => onChange(t.value)}

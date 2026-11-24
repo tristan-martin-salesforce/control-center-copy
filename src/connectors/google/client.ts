@@ -12,6 +12,7 @@ import { execFile } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { ConnectorHealthProbe } from '@/scanner/types';
+import { reasonOf } from '@/errors/render';
 import { Mutex, sleep, throwIfAborted, withTimeout, type Clock, systemClock } from '../util';
 import { GATEWAY_DOWN, GATEWAY_DOWN_WORDS, GATEWAY_ERROR, GATEWAY_ERROR_WORDS, htmlPageText } from './gateway';
 
@@ -96,11 +97,15 @@ export interface GoogleErrorInfo {
   objectScoped?: boolean;
   /** The daemon itself is unreachable. */
   daemonDown?: boolean;
+  /** CONN-5: the devbar program is not installed (not the same as its daemon being down). */
+  devbarMissing?: boolean;
 }
 
 const SIGS: Array<{ re: RegExp; info: Omit<GoogleErrorInfo, 'signature'>; sig: string }> = [
   // first: a maintenance page can carry any words (a status code, "authentication" in a footer)
   { re: GATEWAY_DOWN, info: { errorClass: 'transient' }, sig: 'gateway_down' },
+  // CONN-5: the program itself is missing (spawn ENOENT): installing it is the fix, not restarting a daemon
+  { re: /spawn devbar ENOENT|devbar: (?:command )?not found|\[devbar_missing\]/i, info: { errorClass: 'config', devbarMissing: true }, sig: 'devbar_missing' },
   { re: /invalid_grant|does not have a valid token|not authenticated|unauthenticated|authentication (?:is )?required|re-?authenticat|token (?:has )?expired|unauthorized_client|\b401\b|Request had invalid authentication credentials/i, info: { errorClass: 'auth' }, sig: 'auth' },
   // E5: any other failed POST to the gateway is its outage (after the sign-in signature: a sign-in failure stays auth)
   { re: GATEWAY_ERROR, info: { errorClass: 'transient' }, sig: 'gateway_error' },
@@ -167,6 +172,8 @@ export function googleReauthAction(reason: GoogleReauthReason): NonNullable<Conn
 // ---------------------------------------------------------------------------------------------
 
 export interface DevbarDiagnosis {
+  /** CONN-5: false when the devbar program is not on this Mac (ENOENT); null when unknown. */
+  installed?: boolean | null;
   daemonUp: boolean | null;
   devbarAuthenticated: boolean | null;
   connectorState: string | null;
@@ -187,12 +194,25 @@ const defaultExecJson: ExecJson = (args, timeoutMs) =>
     });
   });
 
+/** The exec failed because the program is not installed (spawn ENOENT), not because it answered badly. */
+export const isMissingProgram = (err: unknown): boolean => {
+  const e = err as { code?: unknown; message?: unknown } | null;
+  return e?.code === 'ENOENT' || (typeof e?.message === 'string' && /\bENOENT\b|command not found/.test(e.message));
+};
+
 export async function diagnoseDevbar(exec: ExecJson = defaultExecJson): Promise<DevbarDiagnosis> {
-  const d: DevbarDiagnosis = { daemonUp: null, devbarAuthenticated: null, connectorState: null };
+  const d: DevbarDiagnosis = { installed: null, daemonUp: null, devbarAuthenticated: null, connectorState: null };
   try {
     const s = (await exec(['mcpgw', 'status', '--json'], 8000)) as { listener_ok?: boolean; status?: string };
+    d.installed = true;
     d.daemonUp = Boolean(s.listener_ok) && s.status === 'running';
-  } catch {
+  } catch (err) {
+    // CONN-5: "not installed" is not "daemon not listening" (the Restart button cannot fix a missing program)
+    if (isMissingProgram(err)) {
+      d.installed = false;
+      return d;
+    }
+    d.installed = true;
     d.daemonUp = false;
   }
   try {
@@ -217,14 +237,18 @@ export async function diagnoseDevbar(exec: ExecJson = defaultExecJson): Promise<
 
 export function probeFromDiagnosis(d: DevbarDiagnosis, now: Date): ConnectorHealthProbe {
   const checkedAt = now.toISOString();
+  // the details are the error catalog's phrases (DEP.DEVBAR.*, AUTH.GOOGLE.*), so Health reads them back as codes
+  if (d.installed === false) {
+    return { state: 'down', errorClass: 'config', detail: reasonOf('DEP.DEVBAR.MISSING'), reauth: { kind: 'instructions', instructions: 'Install devbar from the internal developer portal, then run devbar auth login (README ▸ Troubleshooting: Google (devbar)).' }, checkedAt };
+  }
   if (d.daemonUp === false) {
-    return { state: 'down', errorClass: 'transient', detail: 'devbar daemon is not listening on :13316', reauth: googleReauthAction('daemon_down'), checkedAt };
+    return { state: 'down', errorClass: 'transient', detail: reasonOf('DEP.DEVBAR.DAEMON_DOWN'), reauth: googleReauthAction('daemon_down'), checkedAt };
   }
   if (d.devbarAuthenticated === false) {
-    return { state: 'auth_required', errorClass: 'auth', detail: 'devbar is signed out', reauth: googleReauthAction('devbar_signed_out'), checkedAt };
+    return { state: 'auth_required', errorClass: 'auth', detail: reasonOf('AUTH.GOOGLE.DEVBAR_SIGNED_OUT'), reauth: googleReauthAction('devbar_signed_out'), checkedAt };
   }
   if (d.connectorState && d.connectorState !== 'connected') {
-    return { state: 'auth_required', errorClass: 'auth', detail: `google-workspace-readonly connector is ${d.connectorState}`, reauth: googleReauthAction('connector_disconnected'), checkedAt };
+    return { state: 'auth_required', errorClass: 'auth', detail: reasonOf('AUTH.GOOGLE.CONNECTOR_MISSING'), reauth: googleReauthAction('connector_disconnected'), checkedAt };
   }
   return { state: 'degraded', errorClass: 'unknown', detail: 'Google call failed but devbar looks healthy', checkedAt };
 }
@@ -265,7 +289,7 @@ export class GoogleWorkspaceClient implements GoogleTools {
 
   private newClient() {
     if (this.o.clientFactory) return this.o.clientFactory().client;
-    const c = new Client({ name: 'control-center-scanner', version: '0.1.0' });
+    const c = new Client({ name: 'command-center-scanner', version: '0.1.0' });
     // The transport is attached in connect().
     return c;
   }
@@ -341,10 +365,10 @@ export class GoogleWorkspaceClient implements GoogleTools {
       const detail = `${info.signature}`;
       // the gateway's outage, not devbar or your sign-in: say so, and offer no re-auth
       if (info.signature === 'gateway_down' || info.signature === 'gateway_error') return { state: 'degraded', errorClass: 'transient', detail: info.signature === 'gateway_down' ? GATEWAY_DOWN_WORDS : GATEWAY_ERROR_WORDS, checkedAt: clock().toISOString() };
-      if (info.errorClass === 'auth' || info.daemonDown || info.errorClass === 'transient') {
+      if (info.errorClass === 'auth' || info.daemonDown || info.devbarMissing || info.errorClass === 'transient') {
         const diag = await diagnoseDevbar(this.o.exec);
         const probe = probeFromDiagnosis(diag, clock());
-        if (probe.state !== 'degraded') return { ...probe, detail: `${probe.detail} (${detail})` };
+        if (probe.state !== 'degraded') return probe;
         return { state: info.errorClass === 'auth' ? 'auth_required' : 'degraded', errorClass: info.errorClass, detail, reauth: info.errorClass === 'auth' ? googleReauthAction('connector_disconnected') : undefined, checkedAt: clock().toISOString() };
       }
       return { state: 'degraded', errorClass: info.errorClass, detail, checkedAt: clock().toISOString() };

@@ -18,7 +18,7 @@ import { cell } from '@/engines/activity/slackbot';
 import { UC_AGENT_TYPES, UC_ENTITLEMENTS, UC_PRODUCTS, UC_STAGES, ucNotesText, type UseCaseCreate } from '@/engines/activity/use-cases';
 import { ucRowKey, updateRowKey } from '@/lib/canvas/overrides';
 import { CANVAS_MAX_BYTES, canvasInputOf, maybeDelivered, utf8Bytes, type CanvasActionInput } from '@/lib/canvas/payload';
-import { canvasRowsOf, rerenderCanvas, type CanvasRow } from '@/lib/canvas/preflight';
+import { canvasRowsOf, lineForRow, rerenderCanvas, rowLine, type CanvasRow } from '@/lib/canvas/preflight';
 import { AppError, invalid } from '@/server/errors';
 
 import { isPendingLogCanvas } from './canvas-preflight';
@@ -212,7 +212,7 @@ export function withRowReplaced(input: CanvasActionInput, key: string, lines: re
   const md = input.markdown.split('\n');
   const out: string[] = [];
   md.forEach((ln, i) => {
-    if (i === at[0]) out.push(...lines);
+    if (i === at[0]) out.push(...lines.map((l) => lineForRow(row.rows[0]!, l)));
     else if (!at.includes(i)) out.push(ln);
   });
   const next = { ...input, markdown: out.join('\n') };
@@ -223,7 +223,7 @@ export function withRowReplaced(input: CanvasActionInput, key: string, lines: re
 export function updateLineWith(r: CanvasRow, newValue: string): string {
   const c = [...r.cells];
   c[4] = cell(newValue);
-  return `|${c.join('|')}|`;
+  return rowLine(r, c);
 }
 
 /** The new value an editable UPDATE row takes, checked against what the field holds in Org62. */

@@ -2,7 +2,7 @@
  * Wraps the cc handlers as an in-process MCP server for the Agent SDK (`createSdkMcpServer` + `tool()`).
  * Tool names on the wire are `mcp__cc__<name>`.
  */
-import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@/llm/provider';
 import { callCcTool, type CcHandlers, type CcRunState } from './handlers';
 import { CC_TOOL_DESCRIPTIONS, CC_TOOL_NAMES, shapes, type CcToolName } from './schemas';
 

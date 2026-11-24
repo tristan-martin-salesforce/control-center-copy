@@ -12,3 +12,11 @@ function formatThreshold(key: string, v: number | string): string {
   return String(v);
 }
 
+
+/**
+ * "SE (Solutions Engineer)", or one name when the level and the role read the same ("Specialist AE", not
+ * "Specialist AE (Specialist AE)"): the role's title in Settings and the prompts' Persona block.
+ */
+export function roleTitle(p: { levelLabel: string; label: string }): string {
+  return p.levelLabel === p.label ? p.label : `${p.levelLabel} (${p.label})`;
+}

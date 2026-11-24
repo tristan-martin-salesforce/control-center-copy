@@ -8,9 +8,9 @@
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import type { Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { Options, SDKMessage } from '@/llm/provider';
 import type { ChatQueryFn } from './runner';
-import { CHAT_SERVER_NAME, chatToolFullName } from './tools';
+import { CHAT_SERVER_NAME, CHAT_TOOL_NAMES, chatToolFullName, withoutUntrustedHeader } from './tools';
 
 export interface FakeChatOptions {
   /** Pause between steps (ms): lets tests stop a turn midway. */
@@ -23,13 +23,16 @@ export interface FakeChatOptions {
   inject?: Array<{ tool: string; input: Record<string, unknown> }>;
   /** Cost the result reports (default 0). */
   resultCostUsd?: number;
+  /** The session id the CLI reports (default: the resumed or requested one). */
+  sessionId?: string;
 }
 
 type Call = { tool: string; input: Record<string, unknown> };
 
+/** A step: a tool call, text, or a function that decides the next steps from earlier tool results. */
+type Step = Call | { text: string } | ((r: ToolResults) => Step[]);
 interface Plan {
-  /** Steps: tool calls and text, in order; a function step decides from earlier tool results. */
-  steps: Array<Call | { text: string } | ((r: ToolResults) => Array<Call | { text: string }>)>;
+  steps: Step[];
 }
 
 type ToolResults = Array<{ tool: string; ok: boolean; json: unknown; text: string }>;
@@ -43,8 +46,11 @@ export function messageOf(prompt: string): string {
 }
 
 /** "2026-11-05T09:12:00-08:00 (America/Los_Angeles)" from the system prompt's Now section. */
-function nowOf(options: Options): { iso: string; date: string; offset: string } {
-  const sp = Array.isArray(options.systemPrompt) ? options.systemPrompt.join('\n') : String(options.systemPrompt ?? '');
+/** The system prompt and the user prompt together (v2: the per-turn header rides in the user prompt). */
+const allText = (options: Options, prompt = ''): string => `${Array.isArray(options.systemPrompt) ? options.systemPrompt.join('\n') : String(options.systemPrompt ?? '')}\n${prompt}`;
+
+function nowOf(options: Options, prompt = ''): { iso: string; date: string; offset: string } {
+  const sp = allText(options, prompt);
   const m = /## Now\n(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})([+-]\d{2}:\d{2})/.exec(sp);
   if (!m) {
     const iso = new Date().toISOString();
@@ -53,8 +59,8 @@ function nowOf(options: Options): { iso: string; date: string; offset: string } 
   return { iso: `${m[1]}T${m[2]}${m[3]}`, date: m[1]!, offset: m[3]! };
 }
 
-function packOf(options: Options): Record<string, unknown> | null {
-  const sp = Array.isArray(options.systemPrompt) ? options.systemPrompt.join('\n') : '';
+function packOf(options: Options, prompt = ''): Record<string, unknown> | null {
+  const sp = allText(options, prompt);
   const i = sp.indexOf('## Context pack (JSON)\n');
   if (i < 0) return null;
   try {
@@ -93,20 +99,20 @@ function phraseAfter(text: string, verb: RegExp): string {
 }
 
 function firstHit(r: ToolResults): { id: string; title: string } | null {
-  const last = [...r].reverse().find((x) => x.tool === 'chat_app_read' && (x.json as { page?: string } | undefined)?.page === 'find_items');
+  const last = [...r].reverse().find((x) => x.tool === 'read' && (x.json as { page?: string } | undefined)?.page === 'find_items');
   const hits = (last?.json as { data?: { hits?: Array<{ id: string; title: string }> } } | undefined)?.data?.hits ?? [];
   return hits[0] ?? null;
 }
 
 function brokenConnector(pack: Record<string, unknown> | null, text: string): { id: string; label: string } | null {
-  const broken = ((pack?.health as { broken?: Array<{ id: string; label: string }> } | undefined)?.broken ?? []);
+  const broken = (pack?.broken as Array<{ id: string; label: string }> | undefined) ?? (pack?.health as { broken?: Array<{ id: string; label: string }> } | undefined)?.broken ?? [];
   const t = text.toLowerCase();
   return broken.find((c) => t.includes(c.id.toLowerCase()) || t.includes(c.label.toLowerCase())) ?? null;
 }
 
 /** The VDP the user has open ("Looking at: vdp <key>: …"), from the system prompt. */
-export function lookingAtVdp(options: Options): { key: string; label: string } | null {
-  const sp = Array.isArray(options.systemPrompt) ? options.systemPrompt.join('\n') : String(options.systemPrompt ?? '');
+export function lookingAtVdp(options: Options, prompt = ''): { key: string; label: string } | null {
+  const sp = allText(options, prompt);
   const m = /^- vdp (\S+): (.+?)(?: \(looking at\))?$/m.exec(sp);
   return m ? { key: m[1]!, label: m[2]! } : null;
 }
@@ -136,19 +142,64 @@ function vdpAnswer(d: VdpDetailView, tl: string): string {
   return lines.join('\n\n');
 }
 
+/** The text after an `act`: done (a receipt came back) or staged (a card waits for Apply). */
+function actText(r: ToolResults, done: string, staged: string): string {
+  const j = r.at(-1)?.json as { done?: boolean; staged?: boolean } | null | undefined;
+  if (j?.done) return `${done} Undo is on the receipt.`;
+  if (j?.staged) return `${staged} Nothing changes until you do.`;
+  return `I couldn't do that: ${r.at(-1)?.text.slice(0, 200) ?? 'no result'}`;
+}
+
+/** Did the user say Run to the last plan? */
+const planRan = (r: ToolResults) => (r.filter((x) => x.tool === 'plan').at(-1)?.json as { answer?: string } | null | undefined)?.answer === 'run';
+
+/**
+ * One item action: `act` (it runs; Undo on the receipt), or, when the user asked to propose / suggest it, ONE card
+ * through `propose` (the old summary line), the way the skill says to stage when unsure.
+ */
+function doOrStage(staging: boolean, change: Record<string, unknown>, summary: string, done: string, staged: string): Step[] {
+  if (staging) return [{ tool: 'propose', input: { kind: 'changes', changes: [change], summary } }, { text: `${staged} Nothing changes until you do.` }];
+  const { op, ...rest } = change;
+  const act: Record<string, unknown> = { op, ...('itemId' in rest ? { itemId: rest.itemId } : {}), ...('until' in rest ? { until: rest.until } : {}) };
+  return [{ tool: 'act', input: act }, (r2: ToolResults) => [{ text: actText(r2, done, staged) }]];
+}
+
 /** Keyword intents → a plan of tool calls and text. */
-export function planFor(text: string, options: Options): Plan {
-  const now = nowOf(options);
-  const pack = packOf(options);
+export function planFor(text: string, options: Options, prompt = ''): Plan {
+  const now = nowOf(options, prompt);
+  const pack = packOf(options, prompt);
   const t = text.trim();
   const tl = t.toLowerCase();
+  const staging = /\b(propose|suggest|stage)\b/.test(tl);
 
+  if (/^remember\b|\bremember that\b/.test(tl)) {
+    const note = t.replace(/^.*?\bremember( that)?\b[:,]?\s*/i, '');
+    const pref = /\b(always|never|i prefer|i like|from now on)\b/i.test(note);
+    return { steps: [{ tool: 'remember', input: { text: note || t, scope: pref ? 'preference' : 'thread' } }, { text: pref ? "Got it: I'll keep that for every thread." : "Noted for this thread." }] };
+  }
+  if (/\bwhy\b/.test(tl) && !/\btop (3|three)\b/.test(tl)) {
+    return {
+      steps: [
+        { tool: 'query', input: { view: 'work_items', limit: 1 } },
+        (r) => {
+          const row = (r.at(-1)?.json as { rows?: unknown[][]; fields?: string[] } | null)?.rows?.[0];
+          const id = typeof row?.[0] === 'string' ? row[0] : null;
+          return id ? [{ tool: 'explain', input: { id, what: 'rank' } }] : [{ text: 'Nothing is ranked yet.' }];
+        },
+        (r) => {
+          const j = r.at(-1)?.json as { title?: string; rank?: { why?: string; rank?: number } } | null;
+          if (r.at(-1)?.tool !== 'explain') return [];
+          return [{ text: j?.title ? `**${j.title}** is #${j.rank?.rank ?? '?'}: ${j.rank?.why ?? 'no reason recorded'}.` : "I couldn't explain that." }];
+        },
+      ],
+    };
+  }
   if (/\bsnooze\b/.test(tl)) {
     const until = untilOf(t, now) ?? isoAt(now, 9, 0, 1);
     const phrase = phraseAfter(t, /\bsnooze\b/i) || t;
     return {
       steps: [
-        { tool: 'chat_app_read', input: { route: 'find_items', query: { q: phrase, limit: 5 } } },
+        { tool: 'read', input: { route: 'find_items', query: { q: phrase, limit: 5 } } },
         (r) => {
           const hit = firstHit(r);
           const conn = brokenConnector(pack, phrase);
@@ -156,15 +207,12 @@ export function planFor(text: string, options: Options): Plan {
           if (conn && (reauth || !hit)) {
             return [
               { text: `${conn.label} re-auth is a connector alert, not a task, so there is nothing to snooze directly. I can track it as a task that stays snoozed until ${hhmm(until)}.` },
-              { tool: 'chat_propose_changes', input: { changes: [{ op: 'create_item', title: `Re-auth ${conn.label}`, snoozeUntil: until }], summary: `Track the ${conn.label} re-auth, snoozed until ${hhmm(until)}?` } },
+              { tool: 'propose', input: { kind: 'changes', changes: [{ op: 'create_item', title: `Re-auth ${conn.label}`, snoozeUntil: until }], summary: `Track the ${conn.label} re-auth, snoozed until ${hhmm(until)}?` } },
               { text: `\n\nApply to add it; nothing changes until you do.` },
             ];
           }
           if (!hit) return [{ text: `I couldn't find an item matching "${phrase}".` }];
-          return [
-            { tool: 'chat_propose_changes', input: { changes: [{ op: 'snooze', itemId: hit.id, until }], summary: `Snooze "${hit.title}" until ${hhmm(until)}?` } },
-            { text: `Apply to snooze **${hit.title}** until ${hhmm(until)}. Nothing changes until you do.` },
-          ];
+          return doOrStage(staging, { op: 'snooze', itemId: hit.id, until }, `Snooze "${hit.title}" until ${hhmm(until)}?`, `Snoozed **${hit.title}** until ${hhmm(until)}.`, `Apply to snooze **${hit.title}** until ${hhmm(until)}.`);
         },
       ],
     };
@@ -173,10 +221,10 @@ export function planFor(text: string, options: Options): Plan {
     const phrase = phraseAfter(t, /\breopen\b/i);
     return {
       steps: [
-        { tool: 'chat_app_read', input: { route: 'find_items', query: { q: phrase, tab: 'done', limit: 5 } } },
+        { tool: 'read', input: { route: 'find_items', query: { q: phrase, tab: 'done', limit: 5 } } },
         (r) => {
           const hit = firstHit(r);
-          return hit ? [{ tool: 'chat_propose_changes', input: { changes: [{ op: 'reopen', itemId: hit.id, reason: 'Asked in chat' }], summary: `Reopen "${hit.title}"?` } }, { text: `Apply to reopen **${hit.title}**.` }] : [{ text: `No closed item matches "${phrase}".` }];
+          return hit ? doOrStage(staging, { op: 'reopen', itemId: hit.id, reason: 'Asked in chat' }, `Reopen "${hit.title}"?`, `Reopened **${hit.title}**.`, `Apply to reopen **${hit.title}**.`) : [{ text: `No closed item matches "${phrase}".` }];
         },
       ],
     };
@@ -185,10 +233,10 @@ export function planFor(text: string, options: Options): Plan {
     const phrase = phraseAfter(t, /\b(?:mark|set|done with|i did)\b/i).replace(/\b(as )?done\b/i, '').trim();
     return {
       steps: [
-        { tool: 'chat_app_read', input: { route: 'find_items', query: { q: phrase, limit: 5 } } },
+        { tool: 'read', input: { route: 'find_items', query: { q: phrase, limit: 5 } } },
         (r) => {
           const hit = firstHit(r);
-          return hit ? [{ tool: 'chat_propose_changes', input: { changes: [{ op: 'done', itemId: hit.id }], summary: `Mark "${hit.title}" done?` } }, { text: `Apply to close **${hit.title}** as done by you.` }] : [{ text: `I couldn't find "${phrase}".` }];
+          return hit ? doOrStage(staging, { op: 'done', itemId: hit.id }, `Mark "${hit.title}" done?`, `Closed **${hit.title}** as done by you.`, `Apply to close **${hit.title}** as done by you.`) : [{ text: `I couldn't find "${phrase}".` }];
         },
       ],
     };
@@ -197,10 +245,10 @@ export function planFor(text: string, options: Options): Plan {
     const phrase = phraseAfter(t, /\b(?:pin|move)\b/i).replace(/\bto the top\b|\bto #?1\b/i, '').trim();
     return {
       steps: [
-        { tool: 'chat_app_read', input: { route: 'find_items', query: { q: phrase, limit: 5 } } },
+        { tool: 'read', input: { route: 'find_items', query: { q: phrase, limit: 5 } } },
         (r) => {
           const hit = firstHit(r);
-          return hit ? [{ tool: 'chat_propose_changes', input: { changes: [{ op: 'pin', itemId: hit.id, reason: 'Asked in chat' }], summary: `Move "${hit.title}" to #1?` } }, { text: `Apply to move **${hit.title}** to #1 and re-rank the rest.` }] : [{ text: `I couldn't find "${phrase}".` }];
+          return hit ? doOrStage(staging, { op: 'pin', itemId: hit.id, reason: 'Asked in chat' }, `Move "${hit.title}" to #1?`, `Moved **${hit.title}** to #1 and re-ranked the rest.`, `Apply to move **${hit.title}** to #1 and re-rank the rest.`) : [{ text: `I couldn't find "${phrase}".` }];
         },
       ],
     };
@@ -209,7 +257,7 @@ export function planFor(text: string, options: Options): Plan {
     const connector = CONNECTORS.find((c) => new RegExp(`\\b${c}\\b`).test(tl)) ?? 'slack';
     const w = /(\d+)\s*(h|hrs?|hours?|d|days?)\b/.exec(tl);
     const hours = w ? Number(w[1]) * (w[2]!.startsWith('d') ? 24 : 1) : 24;
-    return { steps: [{ tool: 'chat_rescan', input: { connector, windowHours: Math.max(1, Math.min(720, hours)) } }, { text: `Queued a ${connector} scan over the last ${hours} h; the card shows its progress.` }] };
+    return { steps: [{ tool: 'run', input: { kind: 'rescan', connector, windowHours: Math.max(1, Math.min(720, hours)) } }, { text: `Queued a ${connector} scan over the last ${hours} h; the card shows its progress.` }] };
   }
   if (/\bdraft\b/.test(tl)) {
     const email = /\b(e-?mail|mail)\b/.test(tl) || /[\w.+-]+@[\w-]+\.[\w.]+/.test(t);
@@ -218,25 +266,27 @@ export function planFor(text: string, options: Options): Plan {
     const body = `Hi${to.startsWith('@') ? ` ${to.slice(1)}` : ''}, ${intent.replace(/^\w/, (c) => c.toLowerCase())}`;
     return {
       steps: [
-        { tool: 'chat_draft', input: { channel: email ? 'email' : 'slack', to, intent: intent.slice(0, 280), body, ...(email ? { subject: intent.slice(0, 60) } : {}) } },
+        { tool: 'propose', input: { kind: 'draft', draft: { channel: email ? 'email' : 'slack', to, intent: intent.slice(0, 280), body, ...(email ? { subject: intent.slice(0, 60) } : {}) } } },
         { text: `Here's a draft for ${to}. Edit it or add it to the Outbox; nothing was sent.` },
       ],
     };
   }
   if (/\b(session|claude code)\b/.test(tl)) {
-    const repo = /\bin\s+(~?[\w./-]+)/.exec(t)?.[1] ?? 'control-center';
+    const repo = /\bin\s+(~?[\w./-]+)/.exec(t)?.[1] ?? 'command-center';
     const prompt = /:\s*(.+)$/.exec(t)?.[1] ?? (/\bto\s+(.+)$/.exec(t)?.[1] ?? t);
-    return { steps: [{ tool: 'chat_start_session', input: { repo, prompt } }, { text: `A session is ready in ${repo}. Open it from the card when you want to start; nothing has been opened.` }] };
+    return { steps: [{ tool: 'propose', input: { kind: 'session', session: { repo, prompt } } }, { text: `A session is ready in ${repo}. Open it from the card when you want to start; nothing has been opened.` }] };
   }
   // VDP: the open VDP's use cases, assets, steps; "go back and find everything" starts Find assets.
-  const vdpOpen = lookingAtVdp(options);
+  const vdpOpen = lookingAtVdp(options, prompt);
   const vdpFind = !!vdpOpen && /\b(find|look (back|through)|go back|backfill|search|dig)\b/.test(tl) && /\b(vdp|assets?|decks?|demos?|recordings?|everything|content|history|historically)\b/.test(tl);
   if (vdpFind || (/\bvdp\b|\buse cases?\b|\bassets?\b|\bmissing\b|\bsteps?\b/.test(tl) && vdpOpen)) {
     if (vdpFind && vdpOpen) {
       return {
         steps: [
-          { tool: 'chat_vdp_find_assets', input: { key: vdpOpen.key } },
+          { tool: 'plan', input: { steps: [{ tool: 'run', run: 'vdp_find_assets', what: `Look back through Drive, Slack, Gmail and Calendar for ${vdpOpen.label}'s assets` }] } },
+          (r) => (planRan(r) ? [{ tool: 'run', input: { kind: 'vdp_find_assets', key: vdpOpen.key } }] : [{ text: 'Not started: say Run on the plan when you want it.' }]),
           (r) => {
+            if (r.at(-1)?.tool !== 'run') return [];
             const j = r.at(-1)?.json as { started?: boolean; estimateUsd?: number; note?: string | null; skipped?: Array<{ why: string }> } | undefined;
             if (!j?.started) return [{ text: `I couldn't start it: ${j?.note ?? j?.skipped?.[0]?.why ?? 'nothing to run'}.` }];
             return [{ text: `I'm looking back through Drive, Slack, Gmail and Calendar for ${vdpOpen.label}'s assets (up to $${(j.estimateUsd ?? 0).toFixed(2)}). The finds show under Assets to add on the VDP, each with where it was shared and the text to paste in VDP. Nothing is written to VDP.` }];
@@ -247,7 +297,7 @@ export function planFor(text: string, options: Options): Plan {
     if (vdpOpen) {
       return {
         steps: [
-          { tool: 'chat_app_read', input: { route: 'vdp_detail', query: { key: vdpOpen.key } } },
+          { tool: 'read', input: { route: 'vdp_detail', query: { key: vdpOpen.key } } },
           (r) => {
             const d = (r.at(-1)?.json as { data?: VdpDetailView } | undefined)?.data;
             return [{ text: d ? vdpAnswer(d, tl) : `I couldn't read ${vdpOpen.label}.` }];
@@ -260,9 +310,11 @@ export function planFor(text: string, options: Options): Plan {
     const name = /\bfor\s+([A-Z][\w&.-]*(?:\s+[A-Z][\w&.-]*)*)/.exec(t)?.[1];
     return {
       steps: [
-        { tool: 'chat_research', input: { question: t, ...(name ? { names: [name] } : {}) } },
+        { tool: 'plan', input: { steps: [{ tool: 'query', what: 'Check what the app already has' }, { tool: 'run', run: 'research', what: `Research live: ${t.slice(0, 120)}` }] } },
+        (r) => (planRan(r) ? [{ tool: 'run', input: { kind: 'research', question: t, ...(name ? { names: [name] } : {}) } }] : [{ text: "I didn't run the research: say Run on the plan card when you want it, and I'll look live." }]),
         (r) => {
           const res = r.at(-1);
+          if (res?.tool !== 'run') return [];
           const j = res?.json as { answer?: string; findings?: Array<{ text: string; permalink?: string }>; note?: string } | undefined;
           if (!res?.ok || !j?.answer) return [{ text: `I couldn't research that live here. ${j?.note ?? ''}`.trim() }];
           return [{ text: `${j.answer}${j.findings?.length ? `\n\n${j.findings.map((f) => `- ${f.permalink ? `[${f.text}](${f.permalink})` : f.text}`).join('\n')}` : ''}` }];
@@ -273,7 +325,7 @@ export function planFor(text: string, options: Options): Plan {
   if (/\b(log|logged|logging|timesheet)\b/.test(tl)) {
     return {
       steps: [
-        { tool: 'chat_app_read', input: { route: 'time' } },
+        { tool: 'read', input: { route: 'time' } },
         (r) => {
           type Since = { lastLogged: { date: string } | null; searchedBackTo: string | null; notLogged: { count: number; hours: number; from: string | null; to: string | null } };
           const s = (r.at(-1)?.json as { data?: { sinceLastLogged?: Since } } | undefined)?.data?.sinceLastLogged;
@@ -289,7 +341,7 @@ export function planFor(text: string, options: Options): Plan {
     const query = t.replace(/^.*?\b(?:find|look ?up|where is|where's|search(?: for)?)\b/i, '').replace(/[?]/g, '').trim() || t;
     return {
       steps: [
-        { tool: 'chat_search_sources', input: { query, sources: ['ledger'], limit: 5 } },
+        { tool: 'search', input: { source: 'ledger', query, limit: 5 } },
         (r) => {
           const hits = ((r.at(-1)?.json as { hits?: Array<{ title: string; url: string | null }> } | undefined)?.hits ?? []);
           return [{ text: hits.length ? `Found ${hits.length}: ${hits.slice(0, 3).map((h) => (h.url ? `[${h.title}](${h.url})` : h.title)).join(', ')}.` : `Nothing in the ledger matches "${query}".` }];
@@ -300,7 +352,7 @@ export function planFor(text: string, options: Options): Plan {
   // Default: the day. "What are my top 3 today and why?"
   return {
     steps: [
-      { tool: 'chat_app_read', input: { route: 'today' } },
+      { tool: 'read', input: { route: 'today' } },
       (r) => {
         const p = (r.at(-1)?.json as { data?: { today?: { top3?: Array<{ title: string; topReasons: string[]; rank: number | null }> } } } | undefined)?.data ?? pack;
         const top = (p as { today?: { top3?: Array<{ title: string; topReasons: string[] }> } } | null)?.today?.top3 ?? [];
@@ -332,9 +384,10 @@ export function createFakeChatQuery(fo: FakeChatOptions = {}): ChatQueryFn {
         if (signal.aborted) throw aborted();
       };
       try {
-        yield { type: 'system', subtype: 'init', mcp_servers: [{ name: CHAT_SERVER_NAME, status: 'connected' }], tools: [...(options.allowedTools ?? [])] } as unknown as SDKMessage;
+        const sessionId = fo.sessionId ?? options.resume ?? options.sessionId ?? 'fake-session';
+        yield { type: 'system', subtype: 'init', session_id: sessionId, mcp_servers: [{ name: CHAT_SERVER_NAME, status: 'connected' }], tools: [...(options.allowedTools ?? [])] } as unknown as SDKMessage;
         const text = messageOf(prompt);
-        const plan = planFor(text, options);
+        const plan = planFor(text, options, prompt);
         const queue: Plan['steps'] = [...(fo.inject ?? []), ...plan.steps];
         while (queue.length) {
           const step = queue.shift()!;
@@ -354,7 +407,7 @@ export function createFakeChatQuery(fo: FakeChatOptions = {}): ChatQueryFn {
             continue;
           }
           turns += 1;
-          const full = step.tool.startsWith('mcp__') || !step.tool.startsWith('chat_') ? step.tool : chatToolFullName(step.tool);
+          const full = (CHAT_TOOL_NAMES as string[]).includes(step.tool) ? chatToolFullName(step.tool) : step.tool;
           yield { type: 'assistant', message: { id, model, content: [{ type: 'tool_use', id: `tu_${n}`, name: full, input: step.input }], usage }, parent_tool_use_id: null } as unknown as SDKMessage;
           if (signal.aborted) throw aborted();
           const hook = options.hooks?.PreToolUse?.[0]?.hooks[0];
@@ -368,7 +421,7 @@ export function createFakeChatQuery(fo: FakeChatOptions = {}): ChatQueryFn {
           const out = r.content?.[0]?.text ?? '';
           let json: unknown = null;
           try {
-            json = JSON.parse(out);
+            json = JSON.parse(withoutUntrustedHeader(out));
           } catch {
             /* plain text */
           }

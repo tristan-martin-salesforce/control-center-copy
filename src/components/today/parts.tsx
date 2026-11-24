@@ -118,16 +118,25 @@ export function SnoozeMenu({ now, tz, onPick, onCancel }: { now: string; tz?: st
 
 type Field = { key: string; label: string; type: 'string' | 'number' | 'boolean' | 'enum'; options?: string[]; required: boolean };
 
-function fieldsOf(adapter: ToolAdapter | undefined, prefill: Record<string, unknown>): Field[] {
+/** Every input the tool's schema names (never cut: a required 7th field must show, caps audit F-13). */
+export function fieldsOf(adapter: ToolAdapter | undefined, prefill: Record<string, unknown>): Field[] {
   const schema = (adapter?.manifest.input.schema ?? {}) as { properties?: Record<string, { type?: string; title?: string; enum?: unknown[] }>; required?: string[] };
   const props = schema.properties ?? {};
   const required = new Set(schema.required ?? []);
   const keys = Object.keys(props).length ? Object.keys(props) : Object.keys(prefill);
-  return keys.slice(0, 6).map((key) => {
+  return keys.map((key) => {
     const p = props[key] ?? {};
     const type = p.enum ? 'enum' : p.type === 'number' || p.type === 'integer' ? 'number' : p.type === 'boolean' ? 'boolean' : 'string';
     return { key, label: p.title ?? key.replace(/([A-Z])/g, ' $1').replace(/[_-]/g, ' ').replace(/^\w/, (c) => c.toUpperCase()), type, options: p.enum?.map(String), required: required.has(key) };
   });
+}
+
+/** A long form keeps its first six fields in view plus every required one; "More" folds the rest (optional only). */
+export const FORM_FIRST = 6;
+export function splitFields(fields: Field[]): { shown: Field[]; more: Field[] } {
+  if (fields.length <= FORM_FIRST + 1) return { shown: fields, more: [] }; // one extra row is not worth a fold
+  const shown = fields.filter((f, i) => i < FORM_FIRST || f.required);
+  return { shown, more: fields.filter((f) => !shown.includes(f)) };
 }
 
 /** Short input form for a ToolAdapter run (R-UI-13). Explicit Run; errors stay inline. */
@@ -151,6 +160,40 @@ export function ToolRunForm({ nba, onRun, onCancel }: { nba: NbaCardVm; onRun: (
     if (err) setError(err);
   };
 
+  const { shown, more } = splitFields(fields);
+  const fieldRow = (f: Field, i: number) => (
+    <label key={f.key} className="block">
+      <span className="text-caption text-muted">
+        {f.label}
+        {f.required ? <span className="text-danger-700"> *</span> : null}
+      </span>
+      {f.type === 'boolean' ? (
+        <input type="checkbox" className="ml-2 align-middle" checked={Boolean(values[f.key])} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked })} />
+      ) : f.type === 'enum' ? (
+        <select
+          value={String(values[f.key] ?? '')}
+          onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+          className="mt-0.5 h-8 w-full rounded-md border border-line-input bg-surface px-2 text-body focus:border-brand-600 focus:outline-none"
+        >
+          <option value="">Choose…</option>
+          {f.options?.map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          data-autofocus={i === 0 ? '' : undefined}
+          type={f.type === 'number' ? 'number' : 'text'}
+          value={values[f.key] === undefined || values[f.key] === null ? '' : String(values[f.key])}
+          onChange={(e) => setValues({ ...values, [f.key]: f.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value })}
+          className="mt-0.5 h-8 w-full rounded-md border border-line-input bg-surface px-2 text-body placeholder:text-faint focus:border-brand-600 focus:outline-none"
+        />
+      )}
+    </label>
+  );
+
   return (
     <form
       className="p-3"
@@ -168,38 +211,13 @@ export function ToolRunForm({ nba, onRun, onCancel }: { nba: NbaCardVm; onRun: (
       {adapter ? <p className="mt-0.5 line-clamp-2 text-caption text-muted">{adapter.manifest.description}</p> : null}
       {tools.isLoading ? <Skeleton count={3} className="mt-3" /> : null}
       <div className="mt-3 space-y-2">
-        {fields.map((f, i) => (
-          <label key={f.key} className="block">
-            <span className="text-caption text-muted">
-              {f.label}
-              {f.required ? <span className="text-danger-700"> *</span> : null}
-            </span>
-            {f.type === 'boolean' ? (
-              <input type="checkbox" className="ml-2 align-middle" checked={Boolean(values[f.key])} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked })} />
-            ) : f.type === 'enum' ? (
-              <select
-                value={String(values[f.key] ?? '')}
-                onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
-                className="mt-0.5 h-8 w-full rounded-md border border-line-input bg-surface px-2 text-body focus:border-brand-600 focus:outline-none"
-              >
-                <option value="">Choose…</option>
-                {f.options?.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                data-autofocus={i === 0 ? '' : undefined}
-                type={f.type === 'number' ? 'number' : 'text'}
-                value={values[f.key] === undefined || values[f.key] === null ? '' : String(values[f.key])}
-                onChange={(e) => setValues({ ...values, [f.key]: f.type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value })}
-                className="mt-0.5 h-8 w-full rounded-md border border-line-input bg-surface px-2 text-body placeholder:text-faint focus:border-brand-600 focus:outline-none"
-              />
-            )}
-          </label>
-        ))}
+        {shown.map((f, i) => fieldRow(f, i))}
+        {more.length ? (
+          <details className="rounded-md border border-line px-2 py-1" data-testid="tool-form-more">
+            <summary className="cursor-pointer text-caption text-muted">More ({more.length} optional)</summary>
+            <div className="mt-2 space-y-2">{more.map((f) => fieldRow(f, -1))}</div>
+          </details>
+        ) : null}
         {!fields.length && !tools.isLoading ? <p className="text-caption text-muted">This tool takes no inputs.</p> : null}
       </div>
       {error ? (

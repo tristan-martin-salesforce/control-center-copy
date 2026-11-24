@@ -1,0 +1,169 @@
+{
+  "items": [
+    {
+      "connector": "gemini_notes",
+      "kind": "meeting_notes",
+      "externalId": "1GeminiNotesDocId0000000000000",
+      "dedupeKey": "gemini:1GeminiNotesDocId0000000000000",
+      "contentHash": "5d62e54a3a2a436f",
+      "occurredAt": "2026-03-10T15:30:00.000Z",
+      "participants": [
+        {
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "email": "se.two@example.com",
+          "isMe": false,
+          "isExternal": false
+        },
+        {
+          "email": "ae.one@example.com",
+          "isMe": false,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://docs.google.com/document/d/1GeminiNotesDocId0000000000000/edit",
+      "title": "INT: ACME_CORP deal planning",
+      "excerpt": "Team aligned on the workshop scope and the Private Connect question. Scope The workshop will cover zero-copy and Private Connect. Owners Deck, demo org and customer answer were assigned.",
+      "redacted": false,
+      "threadRef": "calendar:evt_declined",
+      "fileRefs": [
+        "1GeminiNotesDocId0000000000000"
+      ],
+      "payload": {
+        "eventId": "evt_declined",
+        "eventStart": "2026-03-10T15:00:00.000Z",
+        "eventEnd": "2026-03-10T15:30:00.000Z",
+        "attendance": "missed",
+        "attendanceReason": "declined",
+        "missedMeeting": true,
+        "myResponse": "declined",
+        "summary": "Team aligned on the workshop scope and the Private Connect question.\nScope\nThe workshop will cover zero-copy and Private Connect.\nOwners\nDeck, demo org and customer answer were assigned.",
+        "decisions": [
+          "Workshop scope Zero-copy and Private Connect are both in scope.",
+          "Pricing for Private Connect Unclear whether it is a paid add-on."
+        ],
+        "nextSteps": [
+          {
+            "assignees": [
+              "Alex Seller"
+            ],
+            "title": "Confirm the customer attendee list",
+            "description": "before Tuesday.",
+            "done": false,
+            "isMine": false
+          },
+          {
+            "assignees": [
+              "Pat Example"
+            ],
+            "title": "Send the updated workshop deck",
+            "description": "with the refreshed architecture slide.",
+            "done": false,
+            "isMine": true
+          },
+          {
+            "assignees": [
+              "Sam Planner",
+              "Pat Example"
+            ],
+            "title": "Draft the Private Connect answer",
+            "description": "for the customer follow-up.",
+            "done": false,
+            "isMine": true
+          },
+          {
+            "assignees": [
+              "Sam Planner"
+            ],
+            "title": "Book the demo org",
+            "description": "for Wednesday.",
+            "done": false,
+            "isMine": false
+          }
+        ],
+        "myNextSteps": [
+          {
+            "assignees": [
+              "Pat Example"
+            ],
+            "title": "Send the updated workshop deck",
+            "description": "with the refreshed architecture slide.",
+            "done": false,
+            "isMine": true
+          },
+          {
+            "assignees": [
+              "Sam Planner",
+              "Pat Example"
+            ],
+            "title": "Draft the Private Connect answer",
+            "description": "for the customer follow-up.",
+            "done": false,
+            "isMine": true
+          }
+        ],
+        "othersNextSteps": [
+          {
+            "assignees": [
+              "Alex Seller"
+            ],
+            "title": "Confirm the customer attendee list",
+            "description": "before Tuesday.",
+            "done": false,
+            "isMine": false
+          },
+          {
+            "assignees": [
+              "Sam Planner"
+            ],
+            "title": "Book the demo org",
+            "description": "for Wednesday.",
+            "done": false,
+            "isMine": false
+          }
+        ],
+        "transcriptUrl": "https://docs.google.com/document/d/1GeminiNotesDocId0000000000000/edit?usp=drive_web&tab=t.abc",
+        "notesAgeMinutes": 20
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "kind": "calendar_range",
+      "ref": "notes-poll",
+      "from": "2026-03-10T13:50:00.000Z",
+      "to": "2026-03-10T15:50:00.000Z",
+      "meta": {
+        "candidates": 2
+      }
+    },
+    {
+      "kind": "file",
+      "ref": "1GeminiNotesDocId0000000000000",
+      "meta": {
+        "eventId": "evt_declined",
+        "found": true,
+        "nextSteps": 4
+      }
+    },
+    {
+      "kind": "calendar_range",
+      "ref": "notes-poll:evt_noresp",
+      "from": "2026-03-10T14:00:00.000Z",
+      "to": "2026-03-10T14:30:00.000Z",
+      "meta": {
+        "found": false,
+        "polls": 1,
+        "giveUp": false
+      }
+    }
+  ],
+  "nextCursor": {
+    "value": "{\"found\":{\"evt_declined\":{\"doc\":\"1GeminiNotesDocId0000000000000\",\"h\":\"5d62e54a3a2a436f\"}},\"polls\":{\"evt_noresp\":1}}",
+    "at": "2026-03-10T15:50:00.000Z"
+  },
+  "complete": true
+}

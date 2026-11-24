@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "1e02a2f00dca478616e153e2876150f9",
+      "label": "classify | C0ACME0001:1794322800.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0ACME0001:1794322800.000000\", \"v\": \"fyi\", \"due\": null, \"conf\": 0.85, \"cite\": \"Shared the v1 sizing for ACME in the deal folder\", \"link\": null, \"why\": \"I shared the v1 sizing; nothing is asked of me\"}]}"
+    },
+    {
+      "hash": "73c72e97b5be6718998c03a46171f5d5",
+      "label": "classify | C0ACME0001:1794327600.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0ACME0001:1794327600.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Send PERSON_B the v2 ACME sizing with the EMEA numbers\", \"who\": \"PERSON_B\", \"deliverable\": \"v2 sizing\", \"due\": \"2026-11-13\", \"conf\": 0.94, \"cite\": \"can you send me the v2 with the EMEA numbers before Friday?\", \"link\": null, \"why\": \"thread reply to my post asks me for a deliverable with a day\"}]}"
+    }
+  ]
+}

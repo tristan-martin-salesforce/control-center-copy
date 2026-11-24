@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "c5a4eee308e21cf7a0765e504ad3234c",
+      "label": "classify | D0PERSONK1:1794848400.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0PERSONK1:1794848400.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Write the Halvergate data migration script\", \"who\": \"PERSON_K\", \"deliverable\": \"script\", \"due\": null, \"conf\": 0.94, \"cite\": \"Can you write the data migration script for the Halvergate sandbox?\", \"link\": null, \"why\": \"direct ask in a DM for a deliverable\"}]}"
+    }
+  ]
+}

@@ -78,7 +78,7 @@ async function truncateAll(db: Db) {
 }
 
 export async function ensureExtractor(db: Db): Promise<string> {
-  await db.insert(extractors).values({ key: SEED_EXTRACTOR.key, version: SEED_EXTRACTOR.version, kind: 'user', description: 'Control Center app writes (DataSource, seeds)' }).onConflictDoNothing();
+  await db.insert(extractors).values({ key: SEED_EXTRACTOR.key, version: SEED_EXTRACTOR.version, kind: 'user', description: 'Command Center app writes (DataSource, seeds)' }).onConflictDoNothing();
   const [row] = await db.select({ id: extractors.id }).from(extractors).where(sql`${extractors.key} = ${SEED_EXTRACTOR.key} and ${extractors.version} = ${SEED_EXTRACTOR.version}`);
   return row!.id;
 }
@@ -310,8 +310,8 @@ export async function loadSeedIntoDb(rawSeed: Seed, opts: LoadSeedOptions): Prom
     for (const q of seed.mappings) await writeMapping(w, q);
     await writeSlots(w, seed.calendar.slots);
 
-    // ---- settings, policy versions, meta, spend
-    for (const s of ['profile', 'agentBehavior', 'sending', 'budgets', 'display', 'chat'] as const) if (seed.settings[s]) await writeSection(w, s, seed.settings[s]);
+    // ---- settings, policy versions, meta, spend (time too: DC1's covered AEs live there, and both sides read the same coverage)
+    for (const s of ['profile', 'agentBehavior', 'sending', 'budgets', 'display', 'chat', 'time'] as const) if (seed.settings[s]) await writeSection(w, s, seed.settings[s]);
     const versions = [...seed.policyVersions].sort((a, b) => a.version - b.version);
     const current = seed.settings.policy;
     if (!versions.some((v) => v.version === current.version)) versions.push({ version: current.version, at: current.updatedAt, by: 'system', note: current.note ?? 'Seeded policy', policy: current });

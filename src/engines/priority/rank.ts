@@ -1,8 +1,8 @@
 /**
  * rankWork: the deterministic priority engine (R-UI-2, 4, 8, 16).
  *
- * Pipeline (docs/ui/ENGINES.md §2):
- *  1. filter rankable statuses (open, in_progress, waiting_on_me, likely_done);
+ * Pipeline (docs/reference/ENGINES.md §2):
+ *  1. filter rankable statuses (open, in_progress, waiting_on_me); likely-done items wait in Looks done (R1);
  *  2. score each item (score.ts): deadline, start-by, components, policy rules;
  *  3. split off rule-excluded (hidden) and background promises (old, low-priority commitments);
  *  4. sort by score; 5. kick-off-first sequencing (R-UI-4); 6. never_above constraints;
@@ -13,8 +13,8 @@ import { computeCapacity, nextWorkdayCapacity, planChores, todayScope } from './
 import { makeEstimator } from './estimate';
 import { evalPredicate, type Predicate, type PriorityPolicy } from './policy';
 import { planDay } from './plan';
-import { laneOrder, prepare, reasonsOf, type Prepared, type ScoreContext } from './score';
-import { DAY_MS, formatDuration, formatLocalWhen, HOUR_MS, localDayStart, MINUTE_MS, toMs, workingWindows } from './time';
+import { laneOrder, prepare, reasonsOf, whyOf, type Prepared, type ScoreContext } from './score';
+import { DAY_MS, formatDuration, formatLocalWhen, freeIntervals, HOUR_MS, isBusy, localDayStart, MINUTE_MS, toMs, workingWindows } from './time';
 import {
   PRIORITY_ENGINE_VERSION,
   type BackgroundEntry,
@@ -25,9 +25,11 @@ import {
   type ScoredItem,
 } from './types';
 
-export const RANKABLE_STATUSES: readonly WorkItemStatus[] = ['open', 'in_progress', 'waiting_on_me', 'likely_done'];
+/** R1 (priority@1.1): likely-done items are not ranked; they wait for one click in Looks done. */
+export const RANKABLE_STATUSES: readonly WorkItemStatus[] = ['open', 'in_progress', 'waiting_on_me'];
 
 const EXCLUDED_REASON: Partial<Record<WorkItemStatus, string>> = {
+  likely_done: 'Looks done: waiting for your confirm',
   waiting_on_others: 'Waiting on others: shown in the rail',
   suggested: 'Suggested: lives in Triage',
   snoozed: 'Snoozed',
@@ -77,11 +79,11 @@ interface SeqMove {
  * own start-by (projected in rank order, your minutes only; agent time runs in parallel).
  * It never jumps an item that is "late unless started now".
  */
-function sequenceKickoffs(order: Prepared[], nowMs: number, policy: PriorityPolicy): { order: Prepared[]; moves: Map<string, SeqMove> } {
+function sequenceKickoffs(order: Prepared[], nowMs: number, policy: PriorityPolicy, allow: (p: Prepared) => boolean = () => true): { order: Prepared[]; moves: Map<string, SeqMove> } {
   const moves = new Map<string, SeqMove>();
   let list = order.slice();
   const kickoffs = list
-    .filter((p) => isKickoff(p, nowMs, policy))
+    .filter((p) => isKickoff(p, nowMs, policy) && allow(p))
     .sort((a, b) => (a.startByMs ?? Infinity) - (b.startByMs ?? Infinity) || a.item.id.localeCompare(b.item.id));
   for (const a of kickoffs) {
     const idx = list.indexOf(a);
@@ -206,11 +208,37 @@ function baseLane(p: Prepared, nowMs: number, todayEndMs: number, policy: Priori
   return lane;
 }
 
+/**
+ * The seam priority@2 plugs into (src/engines/priority/v2/rank.ts): the same pipeline (rules, sequencing, never_above,
+ * Top N, lanes, day plan, capacity), with the scores and start-bys rewritten after `prepare` and the admin batch kept
+ * out of the Top N. Without an engine, rankWork is priority@1.1 exactly.
+ */
+export interface RankEngine {
+  version: string;
+  /** Runs once every rankable item is prepared: may rewrite `total`, `startByMs`, `slackMinutes`, `preempt`. */
+  afterPrepare?(prepared: Prepared[], ctx: ScoreContext, inputs: PriorityInputs): void;
+  /**
+   * Tail sections after every lane, in order (0 = the main list): priority@2 puts re-date rows (1) and then the admin
+   * batch (2) there. Tail items are never fit-ins or pull-forward suggestions.
+   */
+  tail?(p: Prepared): number;
+  /** Whether an item may take a Top N slot at all (the admin batch never does). Default: yes. */
+  topNEligible?(p: Prepared): boolean;
+  /** The lane an item takes after the shared rules (late items that only need re-dating move down). */
+  lane?(p: Prepared, base: PriorityLane): PriorityLane;
+  /** Which items kick-off-first sequencing may move up (default: every kick-off). */
+  canKickOff?(p: Prepared): boolean;
+  /** Items that are today's load whatever their dates (the promoted admin block). */
+  extraToday?(): ReadonlySet<string>;
+  decorate?(s: ScoredItem, p: Prepared): ScoredItem;
+  finish?(r: RankingResult, state: { prepared: Prepared[]; today: Prepared[]; ctx: ScoreContext }): RankingResult;
+}
+
 function emptyLanes(): Record<PriorityLane, string[]> {
   return { top3: [], now: [], next: [], later: [], background: [], hidden: [] };
 }
 
-export function rankWork(inputs: PriorityInputs): RankingResult {
+export function rankWork(inputs: PriorityInputs, engine: RankEngine | null = null): RankingResult {
   const policy = inputs.policy;
   const nowMs = toMs(inputs.now);
   const off = inputs.workingHours.utcOffsetMinutes;
@@ -223,7 +251,9 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
     for (const id of m.prepItemIds ?? []) if (!prepFor.has(id)) prepFor.set(id, m.id);
   }
   const estimator = makeEstimator(inputs.estimates);
-  const ctx: ScoreContext = { nowMs, policy, meetingsById, prepFor, windows, utcOffsetMinutes: off, estimator };
+  const busy = meetings.filter(isBusy).map((m) => ({ startMs: toMs(m.start), endMs: toMs(m.end) }));
+  const free = freeIntervals(windows, busy, nowMs, 5);
+  const ctx: ScoreContext = { nowMs, policy, meetingsById, prepFor, windows, utcOffsetMinutes: off, estimator, workingHours: inputs.workingHours, free };
 
   const items = [...inputs.items].sort((a, b) => a.id.localeCompare(b.id));
   const excluded: RankingResult['excluded'] = [];
@@ -235,6 +265,9 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
     }
     prepared.push(prepare(item, ctx));
   }
+  engine?.afterPrepare?.(prepared, ctx, inputs);
+  const tailOf = (p: Prepared): number => engine?.tail?.(p) ?? 0;
+  const isTail = (p: Prepared): boolean => tailOf(p) > 0;
 
   const hidden = prepared.filter((p) => p.excluded);
   for (const p of hidden) excluded.push({ workItemId: p.item.id, reason: p.ruleHits.find((h) => h.kind === 'exclude')?.explanation ?? 'Excluded by policy' });
@@ -243,18 +276,23 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
   const active = visible.filter((p) => !background.includes(p)).sort(compareByScore);
   const scoreRank = new Map(active.map((p, i) => [p.item.id, i + 1]));
 
-  const { order: sequenced, moves } = sequenceKickoffs(active, nowMs, policy);
+  const { order: sequenced, moves } = sequenceKickoffs(active, nowMs, policy, engine?.canKickOff);
   const extraHits = new Map<string, RuleHit[]>();
-  const ordered = applyNeverAbove(sequenced, policy, extraHits);
+  const neverAbove = applyNeverAbove(sequenced, policy, extraHits);
+  const ordered = engine?.tail ? neverAbove.map((p, i) => ({ p, i, t: tailOf(p) })).sort((a, b) => a.t - b.t || a.i - b.i).map((x) => x.p) : neverAbove;
 
   // Top 3 (lane_floor top3 first), then lanes.
-  const eligible = (p: Prepared): boolean => top3Eligible(p, policy) && !blockedByNeverAbove(p, ordered, policy);
+  const eligible = (p: Prepared): boolean => (engine?.topNEligible ? engine.topNEligible(p) : true) && top3Eligible(p, policy) && !blockedByNeverAbove(p, ordered, policy);
   const floorTop = ordered.filter((p) => p.laneFloor === 'top3' && eligible(p));
   const top3Prepared = [...floorTop, ...ordered.filter((p) => !floorTop.includes(p) && eligible(p))].slice(0, policy.top3Size);
   const top3Set = new Set(top3Prepared.map((p) => p.item.id));
   const todayEndMs = localDayStart(nowMs, off) + DAY_MS;
   const laneOf = new Map<string, PriorityLane>();
-  for (const p of ordered) laneOf.set(p.item.id, top3Set.has(p.item.id) ? 'top3' : baseLane(p, nowMs, todayEndMs, policy));
+  const laneFor = (p: Prepared): PriorityLane => {
+    const base = baseLane(p, nowMs, todayEndMs, policy);
+    return engine?.lane ? engine.lane(p, base) : base;
+  };
+  for (const p of ordered) laneOf.set(p.item.id, top3Set.has(p.item.id) ? 'top3' : isTail(p) ? 'later' : laneFor(p));
   // A kick-off sequenced above an item shows above it: promote it to that item's lane (never_above still wins).
   for (const [id, move] of moves) {
     for (const x of move.movedAbove) {
@@ -265,7 +303,8 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
   demoteNeverAboveLanes(ordered, laneOf, policy, extraHits);
   const finalOrder = [
     ...top3Prepared,
-    ...(['now', 'next', 'later'] as const).flatMap((l) => ordered.filter((p) => !top3Set.has(p.item.id) && laneOf.get(p.item.id) === l)),
+    ...(['now', 'next', 'later'] as const).flatMap((l) => ordered.filter((p) => !top3Set.has(p.item.id) && !isTail(p) && laneOf.get(p.item.id) === l)),
+    ...ordered.filter(isTail),
   ];
 
   const finalRank = new Map(finalOrder.map((p, i) => [p.item.id, i + 1]));
@@ -291,7 +330,7 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
       .slice(0, 3)
       .map((r) => r.label)
       .join(' · ');
-    return {
+    const scored: ScoredItem = {
       workItemId: p.item.id,
       title: p.item.title,
       kind: p.item.kind,
@@ -303,6 +342,8 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
       ruleHits,
       reasons,
       explanation,
+      why: whyOf(p, ctx),
+      late: p.late,
       lane,
       rank,
       scoreRank: scoreRank.get(p.item.id) ?? null,
@@ -318,6 +359,7 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
       sequencing,
       inputsHash: p.inputsHash,
     };
+    return engine?.decorate ? engine.decorate(scored, p) : scored;
   };
 
   const ranked = finalOrder.map((p, i) => toScored(p, laneOf.get(p.item.id)!, i + 1));
@@ -350,11 +392,11 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
   // Day plan (DESIGN-V2 capacity): only today-scoped, hands-on work is load; fit-ins are suggestions.
   const dayStartMs = localDayStart(nowMs, off);
   const day = { startMs: dayStartMs, endMs: dayStartMs + DAY_MS };
-  const pinned = new Set(inputs.pinnedToday ?? []);
+  const pinned = new Set([...(inputs.pinnedToday ?? []), ...(engine?.extraToday?.() ?? [])]);
   const todayItems = [...finalOrder, ...bgSorted].filter((p) => todayScope(p, day, pinned) !== null);
   const todayIds = new Set(todayItems.map((p) => p.item.id));
   const isFitIn = (p: Prepared): boolean => {
-    if (top3Set.has(p.item.id) || todayIds.has(p.item.id)) return false;
+    if (top3Set.has(p.item.id) || todayIds.has(p.item.id) || isTail(p)) return false;
     if (p.youMin <= 0 || p.youMin > policy.tuning.fitIn.maxYouMin) return false;
     if (p.item.status !== 'open' && p.item.status !== 'in_progress') return false;
     if (p.item.kind === 'training') return true;
@@ -374,16 +416,16 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
   });
   // MIN-22: after today's working hours the capacity counts the next working day (today's plan stays as it is)
   const capacity =
-    nextWorkdayCapacity({ nowMs, utcOffsetMinutes: off, windows, meetings, candidates: [...finalOrder, ...bgSorted], ordered: finalOrder, pinned, chores: inputs.chores ?? [], estimator, runningAgents: inputs.runningAgents ?? [] }) ??
-    computeCapacity({ freeMin: plan.freeMin, ordered: finalOrder, today: todayItems, chores, runningAgents: inputs.runningAgents ?? [] });
+    nextWorkdayCapacity({ nowMs, utcOffsetMinutes: off, windows, meetings, candidates: [...finalOrder, ...bgSorted], ordered: finalOrder.filter((p) => !isTail(p)), pinned, chores: inputs.chores ?? [], estimator, runningAgents: inputs.runningAgents ?? [] }) ??
+    computeCapacity({ freeMin: plan.freeMin, ordered: finalOrder.filter((p) => !isTail(p)), today: todayItems, chores, runningAgents: inputs.runningAgents ?? [] });
 
   const next = meetings.find((m) => toMs(m.start) > nowMs && m.status !== 'cancelled' && m.myResponse !== 'declined' && !m.isAllDay);
   const nextMeeting = next
     ? { eventId: next.id, title: next.title, start: next.start, minutesUntil: Math.round((toMs(next.start) - nowMs) / MINUTE_MS) }
     : null;
 
-  return {
-    engineVersion: PRIORITY_ENGINE_VERSION,
+  const result: RankingResult = {
+    engineVersion: engine?.version ?? PRIORITY_ENGINE_VERSION,
     policyId: policy.id,
     policyVersion: policy.version,
     computedAt: inputs.now,
@@ -403,4 +445,5 @@ export function rankWork(inputs: PriorityInputs): RankingResult {
     excluded: excluded.sort((a, b) => a.workItemId.localeCompare(b.workItemId)),
     scores,
   };
+  return engine?.finish ? engine.finish(result, { prepared, today: todayItems, ctx }) : result;
 }

@@ -18,6 +18,7 @@ import { EntityType, Id, IsoDate, IsoDateTime, Minutes, Progress, SourceKind, Ve
 import { NeedResolve } from './needs';
 import { ReadInState } from './readin';
 import { NowCard, TodayHeader } from './views';
+import { MakeRoom } from './priority';
 
 // ---------------------------------------------------------------------------
 // Shared bits
@@ -161,7 +162,12 @@ export const HomeCard = z.object({
   /** Neutral tag: the account, the initiative, or "Outbox". */
   tag: z.string().nullable(),
   title: z.string(),
+  /** The extractor's (or the NBA's) sentence: the card's detail line under the ranking's two-part why. */
   why: z.string().nullable(),
+  /** Lane 07 R7: why it matters, from the ranking's top value terms (who, deal, kind): "Brendan (customer) · opp $780k". */
+  whyMatters: z.string().nullable().default(null),
+  /** Lane 07 R7: why now, from its time terms (late, deadline, start-by, free time): "due Thu 09:30 · start by 13:00". */
+  whyNow: z.string().nullable().default(null),
   state: HomeState.nullable(),
   /** "Start by 08:35", "Due 13:00" */
   stateLabel: z.string().nullable(),
@@ -349,6 +355,96 @@ export type HomeLooksDone = z.infer<typeof HomeLooksDone>;
 export const HomeClosedForYou = z.object({ count: z.number().int().min(1), since: IsoDateTime, href: z.string() });
 export type HomeClosedForYou = z.infer<typeof HomeClosedForYou>;
 
+// ---------------------------------------------------------------------------
+// The briefing (phase 3, 01 R2/R3, 07 R6): Respond chips, Coming builds, the Admin row, "what to move", closed now
+// ---------------------------------------------------------------------------
+
+/**
+ * A reply the app drafted or can draft, as one chip ("Reply to Dana · Send", "Draft ready", "Retry"). A chip only
+ * opens: the Outbox row (a draft, with its own preview, confirm and undo window) or the item (to draft it). Nothing
+ * sends from Home.
+ */
+export const HomeRespondChip = z.object({
+  id: Id,
+  kind: z.enum(['draft', 'reply']),
+  /** "Dana", "#team-updates" */
+  who: z.string(),
+  /** Email subject, a Slack line or the item title (the tooltip). */
+  text: z.string(),
+  /** ready: waiting for your approval · failed: the send failed (Retry) · drafting: being written · can_draft: no draft yet. */
+  state: z.enum(['ready', 'failed', 'drafting', 'can_draft']),
+  /** The chip's verb word: "Send" (a ready draft), "Retry", "Drafting", "Draft". */
+  verb: z.string(),
+  /** Where the click lands: `/outbox?draft=<id>` or the item page. */
+  href: z.string(),
+  entity: HomeEntity,
+});
+export type HomeRespondChip = z.infer<typeof HomeRespondChip>;
+
+export const HomeRespond = z.object({
+  /** Everything the strip stands for (drafts waiting or failed, replies to write), not just the chips shown. */
+  count: z.number().int().min(0),
+  ready: z.number().int().min(0),
+  failed: z.number().int().min(0),
+  chips: z.array(HomeRespondChip),
+  /** "Review N" (the Outbox); null when no draft waits. */
+  review: z.object({ label: z.string(), href: z.string() }).nullable(),
+});
+export type HomeRespond = z.infer<typeof HomeRespond>;
+
+/** An agent run in flight (a demo-org build, a dataset), one row each: its ETA and "Open in Claude". */
+export const HomeBuild = z.object({
+  id: Id,
+  title: z.string(),
+  state: z.enum(['queued', 'running', 'waiting_on_you']),
+  /** "ETA 10:40", "Needs your answer", "Queued". */
+  etaLabel: z.string(),
+  eta: IsoDateTime.nullable(),
+  /** "2 of 6 · Loading profiles" (null without progress). */
+  progressLabel: z.string().nullable(),
+  workItemId: Id.nullable(),
+  /** The session's claude:// link; opened only on an explicit click. */
+  deepLink: z.string().nullable(),
+});
+export type HomeBuild = z.infer<typeof HomeBuild>;
+
+/**
+ * Admin as one quiet row (07 R6): "Admin: 4 items · ~25m · next due Fri 16:00", expanding to its items. `batch` with
+ * priority@2 shown (its batch math: promoted, minutes, next due); `rule` with priority@1.1 (the persona's admin rules
+ * list the items, no batch math).
+ */
+export const HomeAdmin = z.object({
+  mode: z.enum(['batch', 'rule']),
+  label: z.string(),
+  count: z.number().int().min(1),
+  /** Today's load (due within the persona's window, late, or must start today). Batch mode only. */
+  promoted: z.boolean(),
+  rows: z.array(z.object({ id: Id, title: z.string(), kind: z.string(), dueLabel: z.string().nullable(), href: z.string(), item: HomeItemRef })),
+  href: z.string(),
+});
+export type HomeAdmin = z.infer<typeof HomeAdmin>;
+
+/**
+ * Overbooked → what to move (07 §4.2): the briefing sentence names the first makeRoom row ("Move the Umbrella deck to
+ * Monday to fit") and "Move it" runs the existing snooze verb to `to.startsAt` (audited, Undo). `item` null: nothing
+ * can move (everything left is pinned or due today), and the sentence says so.
+ */
+export const HomeMoveIt = z.object({
+  label: z.string(),
+  sentence: z.string(),
+  item: HomeItemRef.nullable(),
+  title: z.string().nullable(),
+  to: HomeDayRef.nullable(),
+  /** Minutes moving it frees, and whether that covers the overflow. */
+  freesMin: z.number().int().min(0),
+  covers: z.boolean(),
+});
+export type HomeMoveIt = z.infer<typeof HomeMoveIt>;
+
+/** Closed for you in the last few hours: a card that leaves this way stays in place with its tag and Undo. */
+export const HomeClosedNow = z.object({ id: Id, title: z.string(), badge: z.string(), why: z.string(), version: Version });
+export type HomeClosedNow = z.infer<typeof HomeClosedNow>;
+
 export const HomePayload = z.object({
   now: IsoDateTime,
   wide: z.boolean(),
@@ -380,5 +476,22 @@ export const HomePayload = z.object({
   closedForYou: HomeClosedForYou.nullable().default(null),
   aheadStrip: z.array(HomeAheadDay).length(14),
   footer: HomeFooter,
+  /**
+   * priority@2 capacity honesty: when today is overbooked, what to move (lowest value × latest deadline first) and the
+   * one wording ("Overbooked by 45 min"). Null when the day fits. Data only: the Home briefing chunk draws the card.
+   */
+  makeRoom: MakeRoom.nullable().default(null),
+  /** The briefing (phase 3): drafts and replies as chips. */
+  respond: HomeRespond.default({ count: 0, ready: 0, failed: 0, chips: [], review: null }),
+  /** Agent runs in flight (empty: the row is collapsed). */
+  builds: z.array(HomeBuild).default([]),
+  /** Admin as one quiet row (null: no admin open). */
+  admin: HomeAdmin.nullable().default(null),
+  /** Overbooked: what to move, drawn in the briefing (null: the day fits). */
+  moveIt: HomeMoveIt.nullable().default(null),
+  /** Closed for you in the last few hours (the in-place tag on a card that just left). */
+  closedNow: z.array(HomeClosedNow).default([]),
+  /** What the app is watching (the empty-day line): source names, e.g. ["Slack", "Gmail", "Calendar"]. */
+  watching: z.array(z.string()).default([]),
 });
 export type HomePayload = z.infer<typeof HomePayload>;

@@ -3,7 +3,7 @@
  * held the confirm dialog 4½ minutes before the worker started. The worker now stages each item right before it
  * pushes it, under a fixed id (a push resumed after a restart never stages one twice), counts what it applied before
  * a restart as applied (never sent again), saves its progress as items land, and a push whose job ended reads as
- * stopped. VDP takes one push at a time (the route refuses a second while one runs: tests/vdp/push-db.test.ts).
+ * stopped. VDP takes one push at a time (the route refuses a second while one runs: tests/db/vdp/push-db.test.ts).
  */
 import { describe, expect, it } from 'vitest';
 

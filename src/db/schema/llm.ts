@@ -76,6 +76,31 @@ export const llmCalls = pgTable(
     outcome: text('outcome'),
     startedAt: tstz('started_at').notNull().defaultNow(),
     finishedAt: tstz('finished_at'),
+    /*
+     * Measurement (0027, holistic review 04 §4.5, COST-12). All nullable: rows from before 0027, and calls that do
+     * not measure a field, leave it null. Ids, counts and hashes only, never content.
+     */
+    /** Prompt tokens (uncached + cache read + cache write) of the call's first model request. */
+    firstPromptTokens: integer('first_prompt_tokens'),
+    /** The largest prompt of any one request in the call: what the per-request long-prompt price tier counts. */
+    maxPromptTokens: integer('max_prompt_tokens'),
+    /** Requests whose prompt passed the model's long-prompt threshold (Haiku 5.5: 100K, priced 5×). */
+    longTierRequests: integer('long_tier_requests'),
+    /** Model requests in the call (each one re-reads the prompt). */
+    turns: integer('turns'),
+    /** Tools loaded into the model's context (the SDK init message), and their schema tokens (getContextUsage). */
+    toolCount: integer('tool_count'),
+    toolSchemaTokens: integer('tool_schema_tokens'),
+    /** ledgerHash of everything before the cache boundary (model, tool names, static system prompt): cache identity. */
+    prefixHash: text('prefix_hash'),
+    /** Items the call was given or read; items rules settled with no model; items it proposed or linked. */
+    itemsIn: integer('items_in'),
+    itemsDecidedByRules: integer('items_decided_by_rules'),
+    itemsOut: integer('items_out'),
+    /** A stronger-model escalation: the cheaper call it re-did. */
+    escalatedFromCallId: bigint('escalated_from_call_id', { mode: 'number' }).references((): AnyPgColumn => llmCalls.id, { onDelete: 'set null' }),
+    /** D4 on escalations: how many of the escalated items the stronger model gave a different verdict (null: not an escalation). */
+    escalationChangedItems: integer('escalation_changed_items'),
   },
   (t) => [
     index('llm_calls_owner_day_idx').on(t.ownerUserId, t.budgetDay),

@@ -109,7 +109,8 @@ export async function upsertCandidates(db: DbOrTx, userId: string, drafts: reado
     }
     ids.push(cur.id);
     const prev = recordOf(cur);
-    const sources = [...prev.sources, ...d.sources.filter((s) => !prev.sources.some((x) => x.url === s.url && x.label === s.label))].slice(0, 8);
+    // every sighting stays (tenet *Provenance on everything*; caps audit 2026-11-21: was 8 sources and 20 items)
+    const sources = [...prev.sources, ...d.sources.filter((s) => !prev.sources.some((x) => x.url === s.url && x.label === s.label))];
     const stronger = d.confidence > prev.confidence;
     const open = prev.status === 'unsure' || prev.status === 'suggested';
     const patch: Partial<typeof vdpAssetCandidates.$inferInsert> = {};
@@ -120,7 +121,7 @@ export async function upsertCandidates(db: DbOrTx, userId: string, drafts: reado
       if (prev.status === 'unsure' && d.status === 'suggested') patch.status = 'suggested';
     }
     if (!cur.vdpSlug && d.vdpSlug) patch.vdpSlug = d.vdpSlug;
-    const ids2 = [...new Set([...(cur.sourceItemIds ?? []), ...d.sourceItemIds])].slice(0, 20);
+    const ids2 = [...new Set([...(cur.sourceItemIds ?? []), ...d.sourceItemIds])];
     if (ids2.length !== (cur.sourceItemIds ?? []).length) patch.sourceItemIds = ids2;
     if (!Object.keys(patch).length) continue;
     await db.update(vdpAssetCandidates).set({ ...patch, lastSeenAt: o.now, updatedAt: o.now }).where(eq(vdpAssetCandidates.id, cur.id));

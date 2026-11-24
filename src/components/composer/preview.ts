@@ -7,12 +7,15 @@ import DOMPurify from 'isomorphic-dompurify';
 import type { Destination, DraftPreview } from '@/contract';
 import { normalizeDoc, parseSlackMrkdwn, payloadFor, renderPreview, sanitizeHtml, serialize, stableStringify, type DocNode, type Payload } from '@/lib/compose';
 import { actionApp, actionPayloadFor } from '@/lib/actions';
+import { sanitizeStyle } from '@/lib/compose/html';
+import { FORBID_ATTR_SANITIZED_STYLE, FORBID_TAGS, STYLE_ATTR } from '@/client/html-forbid';
 import { toComposeDestination } from './destination';
 
-const PURIFY_CONFIG = {
+/** SEC-4's list (src/client/html-forbid.ts, P25-2); an inline style survives only through `sanitizeStyle` (hook below). */
+export const PURIFY_CONFIG = {
   USE_PROFILES: { html: true },
-  FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'svg', 'math', 'img', 'video', 'audio', 'link', 'meta', 'base'],
-  FORBID_ATTR: ['srcset', 'formaction', 'xlink:href'],
+  FORBID_TAGS: [...FORBID_TAGS],
+  FORBID_ATTR: [...FORBID_ATTR_SANITIZED_STYLE],
   ALLOW_DATA_ATTR: false,
   ALLOW_ARIA_ATTR: false,
 };
@@ -21,6 +24,13 @@ let hooked = false;
 function ensureHooks() {
   if (hooked) return;
   hooked = true;
+  // An inline style keeps only allowlisted properties with no url(), expression or @import (nothing fetches on render).
+  DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
+    if (data.attrName !== STYLE_ATTR) return;
+    const clean = sanitizeStyle(data.attrValue ?? '');
+    if (clean) data.attrValue = clean;
+    else data.keepAttr = false;
+  });
   // Links in a preview never open in place and never leak the opener.
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     if (node.nodeName === 'A') {

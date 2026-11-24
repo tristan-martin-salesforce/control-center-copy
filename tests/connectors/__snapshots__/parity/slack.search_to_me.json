@@ -1,0 +1,45 @@
+{
+  "messages": [
+    {
+      "channelId": "D0DM00009",
+      "channelType": "im",
+      "participants": [
+        {
+          "name": "PERSON_A",
+          "externalId": "U0PERSONA"
+        },
+        {
+          "name": "ME",
+          "externalId": "U0ME00001"
+        }
+      ],
+      "authorId": "U0PERSONA",
+      "authorName": "PERSON_A",
+      "authorEmail": "person_a@example.com",
+      "ts": "1793893334.322509",
+      "permalink": "https://example.slack.com/archives/D0DM00009/p1793893334322509",
+      "text": "added you to the oppty"
+    },
+    {
+      "channelId": "D0DM00009",
+      "channelType": "im",
+      "participants": [
+        {
+          "name": "PERSON_A",
+          "externalId": "U0PERSONA"
+        },
+        {
+          "name": "ME",
+          "externalId": "U0ME00001"
+        }
+      ],
+      "authorId": "U0PERSONA",
+      "authorName": "PERSON_A",
+      "authorEmail": "person_a@example.com",
+      "ts": "1793893254.216309",
+      "permalink": "https://example.slack.com/archives/D0DM00009/p1793893254216309",
+      "text": "yes, I can do the slides and you do the demo"
+    }
+  ],
+  "cursor": "Q1VSUkVOVF9QQUdFOjI="
+}

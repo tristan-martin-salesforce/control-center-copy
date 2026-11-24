@@ -15,8 +15,11 @@ import type { Db, Tx } from '@/db/client';
 import { ConflictError } from '@/db/errors';
 import type { PersonRef } from '@/contract';
 
+import { ROW_OVERRIDES_KV, rowOverridesKeepKv, writeRowOverridesMap } from '../canvas-overrides';
 import { canon, extKey, putKv } from '../ext';
 import { uuidFor } from '../ids';
+import { needDecisionKeepsKv, parseNeedKey, writeNeedDecisionRow } from '../needs-decisions';
+import { PROMOTED, splitExt, writePromotedColumns } from './sidecar';
 
 /** Read context: ext side-car + lookups every mapper may need. */
 export interface ReadCtx {
@@ -48,21 +51,40 @@ export interface WriteCtx {
   kv: Map<string, unknown>;
 }
 
+/**
+ * Write an entity's whole ext object. D-98: the fields a column now holds (store/sidecar.ts PROMOTED) go to the row's
+ * columns and leave the kv; `w.kv` keeps the whole object, so the next write and every reader see it as before.
+ */
 export async function writeExt(w: WriteCtx, table: string, id: string, value: Record<string, unknown> | null): Promise<void> {
   const key = extKey(table, id);
   const prev = w.kv.get(key);
   const next = value ? compactExt(value) : null;
   const empty = !next || Object.keys(next).length === 0;
   if (canon(prev ?? null) === canon(empty ? null : next)) return;
-  await putKv(w.tx, w.userId, key, empty ? null : next);
+  if (PROMOTED[table]) {
+    const split = splitExt(table, empty ? null : next);
+    await writePromotedColumns(w.tx, w.userId, table, id, split.columns);
+    await putKv(w.tx, w.userId, key, split.kv);
+  } else await putKv(w.tx, w.userId, key, empty ? null : next);
   if (empty) w.kv.delete(key);
   else w.kv.set(key, next);
 }
 
+/**
+ * Write one kv value. D-98: the families that are tables now (need decisions, canvas row overrides) are routed to their
+ * table, and their old kv copy is dropped (kept only in the CC_KV_DUAL_WRITE rollback window).
+ */
 export async function writeKv(w: WriteCtx, key: string, value: unknown): Promise<void> {
   const prev = w.kv.get(key);
   if (canon(prev ?? null) === canon(value ?? null)) return;
-  await putKv(w.tx, w.userId, key, value);
+  const need = parseNeedKey(key);
+  if (need) {
+    await writeNeedDecisionRow(w.tx, w.userId, need.rule, need.subjectId, (value ?? null) as Parameters<typeof writeNeedDecisionRow>[4]);
+    await putKv(w.tx, w.userId, key, needDecisionKeepsKv() ? value : null);
+  } else if (key === ROW_OVERRIDES_KV) {
+    await writeRowOverridesMap(w.tx, w.userId, value);
+    await putKv(w.tx, w.userId, key, rowOverridesKeepKv() ? value : null);
+  } else await putKv(w.tx, w.userId, key, value);
   if (value === null || value === undefined) w.kv.delete(key);
   else w.kv.set(key, value);
 }

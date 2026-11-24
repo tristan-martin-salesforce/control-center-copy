@@ -10,8 +10,8 @@
  * Prints counts and spend only, never titles or message text.
  */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { inStateDir } from '../../src/lib/state-folder';
 
 import { sql } from 'drizzle-orm';
 
@@ -27,9 +27,9 @@ const opt = (name: string) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const PRIVATE = path.join(os.homedir(), 'Library/Application Support/control-center/stress/settle-key/runs');
+const PRIVATE = inStateDir('stress', 'settle-key', 'runs');
 
-const handle = createDb({ url: resolveDatabaseUrl(), max: 4, applicationName: 'control-center-settle-dry-run' });
+const handle = createDb({ url: resolveDatabaseUrl(), max: 4, applicationName: 'command-center-settle-dry-run' });
 let code = 0;
 try {
   const user = await loadSettleUser(handle.db);

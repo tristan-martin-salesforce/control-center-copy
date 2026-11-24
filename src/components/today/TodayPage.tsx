@@ -16,12 +16,12 @@
 import { TodaySkeleton } from './TodaySkeleton';
 import './today.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CalendarEvent, SpineSlot, WorkItem } from '@/contract';
+import type { SpineSlot, WorkItem } from '@/contract';
 import { useApi } from '@/client/hooks';
 import { useCommands, useFocusedCommands, useKeyBinding, type Command } from '@/client/keyboard';
 import { useResumeExtra, useResumeScroll, useResumeSelection } from '@/client/resume';
 import { toast, toastStore } from '@/client/toast';
-import { setChatContext, useChatContext, useOptionalChat } from '@/components/chat';
+import { useChatContext } from '@/components/chat';
 import { DomainClock } from '@/components/domain';
 import { navigate } from '@/components/shell/router';
 import { useRightPanel, type PanelEntity } from '@/components/shell/panel';
@@ -30,13 +30,17 @@ import { AgentPlan, PlanTab } from './AgentPlan';
 import { normalizePullForward, freeMinutesLeft, resolveCapacity, type CapacityIn } from './capacity';
 import { TodayProvider, type PopoverState, type TodayCtx } from './ctx';
 import { DayHeader } from './DayHeader';
-import { DayTimeline, type MeetingState } from './DayTimeline';
+import { PreviewToggle, PriorityPreviewPanel, usePriorityPreview } from './PriorityPreview';
+import { DayTimeline } from './DayTimeline';
 import { openExternal } from './external';
-import { applyPlan, claudeIntent, EMPTY_PLAN, isActionable, zonedInstant, type LocalPlan } from './model';
+import { applyPlan, EMPTY_PLAN, isActionable, zonedInstant, type LocalPlan } from './model';
 import { EMPTY_AGENT_PLAN, planChanges, summarize, type AgentPlanState, type PlanChange } from './plan';
+import { useMeetingState } from './TodayPage.meetings';
+import { useAgentPlanActions } from './TodayPage.plan';
+import { useRowActions } from './TodayPage.rows';
 import { buildSections, isBlocked, isTodayScoped, stripLabel, type DayRow } from './rows';
-import { RunOfDay, type RowAction, type RowHandlers } from './RunOfDay';
-import { approx, hhmm, hm, minuteOfDay, msOf, parseHHMM, zoned } from './time';
+import { RunOfDay, type RowHandlers } from './RunOfDay';
+import { approx, hhmm, minuteOfDay, msOf, parseHHMM, zoned } from './time';
 import { layoutDay, type LayoutInput } from './timeline';
 import { TODAY_SCOPE, useTodayKeys } from './useTodayKeys';
 import { useTodayActions } from './useTodayActions';
@@ -56,7 +60,22 @@ function rowElement(key: string | null): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-today-root] [data-row-key="${cssEscape(key)}"]`);
 }
 
+export interface TodayViewProps {
+  /**
+   * Home ▸ Plan (01 R3, the folded Today): the same tree inside Home. `p` is Home's (back to the briefing) instead of
+   * the agent's plan rail, which stays one click away on its tab.
+   */
+  embedded?: boolean;
+  /** Embedded: what `p` does (Home switches back to the briefing). */
+  onPlanKey?: () => void;
+}
+
+/** `/today` and Home ▸ Plan render this one component (no second copy of the day's logic). */
 export function TodayPage() {
+  return <TodayView />;
+}
+
+export function TodayView({ embedded = false, onPlanKey }: TodayViewProps = {}) {
   const panel = useRightPanel();
   const tz = useTimeZone();
   const now = useNow(15_000).toISOString();
@@ -64,7 +83,6 @@ export function TodayPage() {
   const settings = useApi('getSettings');
   const open = useApi('listItems', { query: { tab: 'all_open' } });
   const data = today.data;
-  const chat = useOptionalChat();
 
   // ---- resume (selection, local plan, agent plan, promises) ------------------------------------------
   const [selectedSaved, setSelectedSaved] = useResumeSelection('today');
@@ -76,7 +94,8 @@ export function TodayPage() {
   const [popover, setPopover] = useState<PopoverState | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [reauthFor, setReauthFor] = useState<string | null>(null);
-  const [accepting, setAccepting] = useState(false);
+  // priority@2: "Preview new ranking" for this session (nothing is persisted)
+  const [previewOn, togglePreview] = usePriorityPreview();
 
   const dayKey = zoned(now, tz).ymd;
   const agentPlan = useMemo(() => (agentSaved.day === dayKey ? agentSaved : { ...EMPTY_AGENT_PLAN, day: dayKey }), [agentSaved, dayKey]);
@@ -136,8 +155,8 @@ export function TodayPage() {
   // ---- sections -----------------------------------------------------------------------------------
   const pullForward = useMemo(() => normalizePullForward(capIn?.pullForward), [capIn?.pullForward]);
   const sections = useMemo(
-    () => (data ? buildSections({ data, cards, rows, extras, nowIso: now, tz, slots, pinned, pullForward, catalog }) : { run: [], fit: [], pull: [], promises: [], planned: new Set<string>() }),
-    [data, cards, rows, extras, now, tz, slots, pinned, pullForward, catalog],
+    () => (data ? buildSections({ data, cards, rows, extras, nowIso: now, tz, slots, pinned, pullForward, catalog, ...(wh ? { workingHours: { start: wh.start, end: wh.end, days: [...wh.days] } } : {}) }) : { run: [], fit: [], pull: [], promises: [], planned: new Set<string>() }),
+    [data, cards, rows, extras, now, tz, slots, pinned, pullForward, catalog, wh],
   );
 
   // ---- selection ----------------------------------------------------------------------------------
@@ -278,94 +297,7 @@ export function TodayPage() {
     [slots, plan, setPlan, tz, items, catalog, actions],
   );
 
-  const renegotiate = useCallback(
-    (item: WorkItem) => {
-      const entity: PanelEntity = { kind: 'work_item', id: item.id, label: item.title };
-      if (!chat) {
-        openDetails(entity);
-        return;
-      }
-      const who = item.counterparty?.name ?? 'them';
-      setChatContext({ kind: 'work_item', id: item.id, label: item.title });
-      chat.sendMessage(`Draft a short note to ${who} renegotiating "${item.title}" (promised ${item.ageDays}d ago): ask whether I can get it to them by a new date I propose. Put it in the Outbox as a draft; don't send.`);
-      panel.openAssistant(entity);
-      toast({ key: `reneg:${item.id}`, title: 'Asked the assistant for a renegotiation draft', body: 'It lands in the Outbox as a draft; nothing is sent.' });
-    },
-    [chat, openDetails, panel],
-  );
-
-  const runPrimary = useCallback(
-    (row: DayRow) => {
-      const it = row.item;
-      const p = row.primary;
-      switch (p.kind) {
-        case 'card': {
-          const card = row.card;
-          if (!card || !it) return openRow(row);
-          if (it.state === 'likely_done') return actions.confirmDone(it);
-          if (it.state === 'suggested') return actions.accept(it);
-          switch (card.nba?.verb) {
-            case 'start_in_claude': {
-              const intent = claudeIntent(card, null);
-              if (intent.kind === 'open') actions.openClaude(intent.url, card.nba.title);
-              else actions.launchClaude(it, card.nba.title);
-              return;
-            }
-            case 'run_tool':
-              return setPopover({ kind: 'tool', itemId: it.id, surface: row.section });
-            case 'confirm_done':
-              return actions.confirmDone(it);
-            case 'log':
-              return navigate('/activity');
-            default:
-              // send · nudge · answer · review: the composer / answer chips live in the panel's detail.
-              return openRow(row);
-          }
-        }
-        case 'outbox':
-          return navigate('/outbox');
-        case 'rail': {
-          const a = p.entry.action;
-          if (!a) return openRow(row);
-          if (a.kind === 'open_in_claude' && a.href) return actions.openClaude(a.href, p.entry.title);
-          if (a.kind === 'approve') return navigate(a.href ?? '/outbox');
-          if (a.kind === 'reauth') return setReauthFor(p.entry.ref.id);
-          if (a.kind === 'review' || a.kind === 'open') return a.href ? navigate(a.href) : openRow(row);
-          return openRow(row);
-        }
-        case 'reauth':
-          return setReauthFor((v) => (v === p.connectorId ? null : p.connectorId));
-        case 'pull':
-          if (it) void pullIn(it);
-          return;
-        case 'shelf': {
-          if (!it) return;
-          const verb = p.entry.action.verb;
-          if (verb === 'kick_off') return actions.launchClaude(it, it.title);
-          if (verb === 'start') return void pullIn(it);
-          if (verb === 'renegotiate') return renegotiate(it);
-          if (verb === 'let_go') return actions.letGo(it);
-          return openRow(row);
-        }
-        default:
-          return openRow(row);
-      }
-    },
-    [actions, openRow, pullIn, renegotiate],
-  );
-
-  const rowAction = useCallback(
-    (row: DayRow, a: RowAction) => {
-      const it = row.item;
-      if (!it) return;
-      if (a === 'snooze') setPopover({ kind: 'snooze', itemId: it.id, surface: row.section });
-      else if (a === 'done') (it.state === 'likely_done' ? actions.confirmDone : actions.done)(it);
-      else if (a === 'nudge') openRow(row);
-      else if (a === 'renegotiate') renegotiate(it);
-      else if (a === 'let_go') actions.letGo(it);
-    },
-    [actions, openRow, renegotiate],
-  );
+  const { runPrimary, rowAction } = useRowActions({ actions, openDetails, openRow, pullIn, setPopover, setReauthFor });
 
   const closePopover = useCallback(() => {
     setPopover(null);
@@ -374,70 +306,7 @@ export function TodayPage() {
   }, [selectedKey, focusRow]);
 
   // ---- agent's plan: Accept all · Undo per row ----------------------------------------------------
-  const acceptAll = useCallback(async () => {
-    const live = changes.filter((c) => !excluded.has(c.id));
-    if (!live.length || agentPlan.acceptedAt || accepting) return;
-    setAccepting(true);
-    const before = agentPlan;
-    const audits: Record<string, string> = { ...agentPlan.audits };
-    for (const c of live) {
-      if (c.proposal) {
-        const id = await actions.applyProposalAsync(c.proposal);
-        if (id) audits[c.id] = id;
-      } else if (c.kind === 'rerank') {
-        const id = await actions.rerankAsync();
-        if (id) audits[c.id] = id;
-      }
-    }
-    setAgentPlan({ ...agentPlan, acceptedAt: now, audits });
-    setAccepting(false);
-    toast({
-      key: 'today:plan',
-      title: `Accepted the plan · ${live.length} change${live.length === 1 ? '' : 's'}`,
-      body: 'Slots are your local plan; your calendar is unchanged.',
-      undo: {
-        run: () => {
-          for (const [cid, aid] of Object.entries(audits)) if (!before.audits[cid]) actions.undoAudit(aid, changes.find((c) => c.id === cid)?.title ?? 'plan change');
-          setAgentPlan(before);
-        },
-      },
-    });
-  }, [changes, excluded, agentPlan, accepting, actions, setAgentPlan, now]);
-
-  const toggleChange = useCallback(
-    (c: PlanChange) => {
-      const off = excluded.has(c.id);
-      const nextExcluded = off ? agentPlan.excluded.filter((x) => x !== c.id) : [...agentPlan.excluded, c.id];
-      const audits = { ...agentPlan.audits };
-      if (c.kind === 'deferred' && c.itemId) {
-        const it = items.get(c.itemId);
-        // Undo a deferral = keep it today (start-by today); Redo = undo that change through its audit.
-        if (!off && it) {
-          void pullIn(it).then((id) => id && setAgentSaved({ ...agentPlan, excluded: nextExcluded, audits: { ...agentPlan.audits, [c.id]: id }, day: dayKey }));
-          setAgentPlan({ ...agentPlan, excluded: nextExcluded });
-          return;
-        }
-        if (off && audits[c.id]) {
-          actions.undoAudit(audits[c.id]!, c.title);
-          delete audits[c.id];
-        }
-        setAgentPlan({ ...agentPlan, excluded: nextExcluded, audits });
-        return;
-      }
-      if (agentPlan.acceptedAt) {
-        if (!off && audits[c.id]) {
-          actions.undoAudit(audits[c.id]!, c.title);
-          delete audits[c.id];
-        } else if (off && c.proposal) {
-          void actions.applyProposalAsync(c.proposal).then((id) => id && setAgentSaved({ ...agentPlan, excluded: nextExcluded, audits: { ...audits, [c.id]: id }, day: dayKey }));
-        } else if (off && c.kind === 'rerank') {
-          void actions.rerankAsync().then((id) => id && setAgentSaved({ ...agentPlan, excluded: nextExcluded, audits: { ...audits, [c.id]: id }, day: dayKey }));
-        }
-      }
-      setAgentPlan({ ...agentPlan, excluded: nextExcluded, audits });
-    },
-    [excluded, agentPlan, items, pullIn, actions, setAgentPlan, setAgentSaved, dayKey],
-  );
+  const { accepting, acceptAll, toggleChange } = useAgentPlanActions({ changes, excluded, agentPlan, setAgentPlan, setAgentSaved, dayKey, items, pullIn, actions, now });
 
   // ---- keyboard -----------------------------------------------------------------------------------
   const moveSel = useCallback(
@@ -465,9 +334,10 @@ export function TodayPage() {
     return !!tab && getComputedStyle(tab).display !== 'none';
   };
   const togglePlan = useCallback(() => {
+    if (embedded) return onPlanKey?.();
     if (isPlanCollapsed()) setPlanOpen((v) => !v);
     else document.querySelector<HTMLElement>('[data-today-root] [data-accept-all]')?.focus();
-  }, []);
+  }, [embedded, onPlanKey]);
   const jumpToWaiting = useCallback(() => {
     const k = sections.fit.find((r) => r.key.startsWith('fit:wait:') || r.key === 'fit:approvals')?.key;
     if (!k) return false;
@@ -553,7 +423,9 @@ export function TodayPage() {
   useCommands([
     { id: 'today.rerank', title: model.rerankCount ? `Apply re-rank (${model.rerankCount} would move)` : 'Re-rank now', group: 'Today', shortcut: 'r', keywords: ['rank', 'order', 'refresh'], run: () => actions.rerank() },
     { id: 'today.plan.accept', title: 'Accept the agent’s plan', group: 'Today', shortcut: 'shift+a', keywords: ['plan', 'diff', 'apply'], disabled: !!agentPlan.acceptedAt || !changes.some((c) => !excluded.has(c.id)), run: () => void acceptAll() },
-    { id: 'today.plan.toggle', title: 'Show the agent’s plan', group: 'Today', shortcut: 'p', keywords: ['plan', 'diff'], run: togglePlan },
+    embedded
+      ? { id: 'today.plan.toggle', title: 'Home: back to the briefing', group: 'Home', shortcut: 'p', keywords: ['plan', 'home'], run: togglePlan }
+      : { id: 'today.plan.toggle', title: 'Show the agent’s plan', group: 'Today', shortcut: 'p', keywords: ['plan', 'diff'], run: togglePlan },
     { id: 'today.waiting', title: 'Jump to what’s waiting on you', group: 'Today', shortcut: 'w', keywords: ['approvals', 'sessions', 'outbox'], run: () => void jumpToWaiting() },
     { id: 'today.promises', title: promisesOpen ? 'Hide promises' : 'Show promises', group: 'Today', keywords: ['said by me', 'stale'], run: () => setPromisesOpen(!promisesOpen) },
     { id: 'today.assistant', title: 'Ask the assistant for a different plan', group: 'Today', keywords: ['chat', 'plan'], run: () => panel.openAssistant() },
@@ -605,25 +477,7 @@ export function TodayPage() {
   const relatedItems = useMemo(() => [...items.values()].map((i) => ({ id: i.id, title: i.title })), [items]);
   const blocked = useMemo(() => new Set([...items.values()].filter(isBlocked).map((i) => i.id)), [items]);
 
-  const nextMeeting = data?.spine.events
-    .filter((e) => !['declined', 'cancelled'].includes(e.attendance) && msOf(e.start) > msOf(now))
-    .sort((a, b) => msOf(a.start) - msOf(b.start))[0];
-  const meetingState = useCallback(
-    (ev: CalendarEvent): MeetingState => {
-      if (ev.attendance === 'declined' || ev.attendance === 'cancelled') return { star: false, tone: null, badge: null, note: null };
-      const prepItem = ev.prep?.workItemId ? items.get(ev.prep.workItemId) : undefined;
-      const needsPrep = !!ev.prep && !ev.prep.ready;
-      const star = needsPrep || ev.isCustomerFacing;
-      const prepLabel = ev.prep?.label.replace(/\s*›\s*$/, '') ?? null;
-      const countdown = nextMeeting?.id === ev.id ? `in ${hm(Math.max(0, (msOf(ev.start) - msOf(now)) / 60_000))}` : null;
-      const note = [countdown, prepLabel ? (needsPrep ? `prep: ${prepLabel}` : prepLabel) : null].filter(Boolean).join(' · ') || null;
-      if (ev.attendance === 'missed') return { star, tone: null, badge: { tone: 'neutral', label: ev.takeaways?.count ? `✕ Missed · ${ev.takeaways.count} takeaways` : '✕ Missed' }, note: null };
-      if (star && prepItem && isBlocked(prepItem)) return { star, tone: 'blocked', badge: { tone: 'danger', label: '⏸ Blocked' }, note };
-      if (star && needsPrep) return { star, tone: 'risk', badge: { tone: 'warning', label: '◐ Prep pending' }, note };
-      return { star, tone: null, badge: null, note };
-    },
-    [items, nextMeeting?.id, now],
-  );
+  const meetingState = useMeetingState(data?.spine.events, items, now);
 
   if (!data || !layout) {
     // First paint: skeletons mirror the final layout; the shell keeps working.
@@ -661,8 +515,12 @@ export function TodayPage() {
   return (
     <DomainClock now={now} tz={tz}>
       <TodayProvider value={ctx}>
-        <div data-today-root className="td-root" data-plan-open={planOpen || undefined}>
-          <DayHeader nowIso={now} tz={tz} cap={cap} agentLabels={agentLabels} dayOver={dayOver} catchUp={settling} />
+        <div data-today-root className="td-root" data-plan-open={planOpen || undefined} data-today-embedded={embedded || undefined}>
+          {actions.launchDialog}
+          <div className="grid min-w-0 gap-3">
+            <DayHeader nowIso={now} tz={tz} cap={cap} agentLabels={agentLabels} dayOver={dayOver} catchUp={settling} preview={<PreviewToggle on={previewOn} onToggle={togglePreview} />} />
+            <PriorityPreviewPanel on={previewOn} onClose={togglePreview} />
+          </div>
           <div className="td-panes">
             <PanelBoundary name="today.day">
               <DayTimeline

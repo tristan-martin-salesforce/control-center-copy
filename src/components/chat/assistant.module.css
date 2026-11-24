@@ -231,9 +231,12 @@
 .toolList li { display: grid; grid-template-columns: 18px minmax(0, 1fr); }
 .toolList li::before { content: '✓'; color: var(--color-faint); }
 .toolList li[data-ok='false']::before { content: '✕'; color: var(--color-danger-700); }
+.toolList li[data-ok='held']::before { content: '–'; color: var(--color-warning-700); }
 .toolList li[data-ok='null']::before { content: '·'; color: var(--color-ai-700); }
 .toolList .tn { color: var(--color-fg); }
 .toolList li[data-ok='false'] .res { color: var(--color-danger-700); }
+.liveTools .held { width: 14px; text-align: center; color: var(--color-warning-700); }
+.toolList .others { margin-left: 8px; padding: 0 6px; border: 1px solid var(--color-line); border-radius: var(--radius-sm); font-family: var(--font-sans); color: var(--color-muted); white-space: nowrap; }
 .toolList li.toolFoot { margin-top: 4px; font-family: var(--font-sans); color: var(--color-faint); }
 .toolList li.toolFoot::before { content: ''; }
 .liveTools { display: flex; flex-direction: column; gap: 4px; align-self: stretch; list-style: none; margin: 0; padding: 0; font-size: var(--text-caption); line-height: var(--text-caption--line-height); color: var(--color-muted); }
@@ -269,6 +272,7 @@
 /* draft + session */
 .draft { padding: 12px 16px; border-radius: var(--radius-sm); background: var(--as-input); border: 1px solid var(--color-line); color: var(--color-fg-heading); max-width: 68ch; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
 .prompt { font-family: var(--font-mono); font-size: var(--text-micro); line-height: 1.25rem; color: var(--color-muted); padding: 8px 12px; border-radius: var(--radius-sm); background: var(--color-surface-muted); border: 1px solid var(--color-line); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.prompt.promptWhole { display: block; -webkit-line-clamp: unset; max-height: 320px; overflow: auto; }
 .status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: var(--text-caption); line-height: var(--text-caption--line-height); color: var(--color-muted); font-variant-numeric: tabular-nums; }
 .status b { color: var(--color-fg-heading); }
 .status .warn { color: var(--color-warning-700); font-weight: 700; }

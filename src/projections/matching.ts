@@ -374,6 +374,8 @@ export class Matcher {
         whatType: opp ? 'Opportunity' : 'Account',
         whatName: opp?.name ?? a.name,
         team: opp ? opp.onMyTeam || opp.myDc : undefined,
+        // D-103 (c): zero open opps makes the Account WhatId a settled target (classify.ts drops the flag)
+        openOpps: (this.openByAccount.get(a.id) ?? []).length,
       });
     }
     return { accounts, repos: extra.repos ?? {}, channels: extra.channels ?? {}, neitherRepos: {}, internalDomains: base.internalDomains, partnerDomains: base.partnerDomains, ignoreDomains: base.ignoreDomains, overrides: [] };

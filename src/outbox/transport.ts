@@ -13,15 +13,19 @@
  *   (re-resolved at the call: Settings ▸ Feedback, else config/team.json, and only while "Post live" is on), only top-level
  *   with exactly {channel_id, message}, and only with a confirm proof the gateway spent on exactly this call. Without the
  *   `feedback` option (every caller but the worker) it is absent, so the post fails closed like any other Slack send.
+ *   A release announcement (D-90, W12-7) rides the same relay as its own `release` channel: only to the configured
+ *   announcement channel (the `distribution` settings key, else config/team.json), only top-level, only with a spent confirm. A
+ *   `release.drive_upload` hand-off never reaches a transport (its adapter refuses every call).
  * - `SimulatedOutboxTransport` is an in-memory stand-in for the mock DataSource (CC_DATA=mock never calls any
  *   external system, even with dry-run off). It accepts the four write tools, remembers what it "posted",
  *   and answers the read-back tools from that memory, so the mock exercises the real adapters end to end.
  */
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@/llm/provider';
 
 import { vdpCallLimiter } from '@/connectors/vdp/limiter';
 import { vdpWriteTransport } from '@/connectors/vdp/write';
 import { FEEDBACK_CHANNEL_ID } from '@/lib/feedback/payload';
+import { RELEASE_CHANNEL_ID } from './adapters/release-handoff';
 import { SLACK_ALL_TOOLS } from '@/llm/mcp-config';
 import { runOneToolCall, type OneCallInput } from '@/llm/one-call';
 import { loadSkill } from '@/llm/skill-loader';
@@ -48,6 +52,8 @@ export interface LiveOutboxOptions {
   canvas?: OutboxTransport | null;
   /** The feedback post (D-56). Absent (the default) or `null`: a feedback post fails closed. The worker wires it. */
   feedback?: FeedbackRelayOptions | null;
+  /** The release announcement (D-90). Absent (the default) or `null`: an announcement fails closed. The worker wires it. */
+  release?: FeedbackRelayOptions | null;
 }
 
 /** A live relay for structured actions: one server, and only the tools it names (and, optionally, only for one channel). */
@@ -56,7 +62,7 @@ interface Relay {
   tools: ReadonlySet<string>;
   transport: OutboxTransport;
   /** Extra match on the call's options (the feedback relay: a send only for the feedback channel's adapter). */
-  match?: (call: ToolCall, opts: TransportCallOptions | undefined) => boolean;
+  match?: (call: ToolCall, opts: TransportCallOptions | undefined) => boolean | Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +86,14 @@ const FEEDBACK_SEND = OUTBOX_TOOLS.feedback.write.send;
 const FEEDBACK_READS: ReadonlySet<string> = new Set(OUTBOX_TOOLS.feedback.read);
 export const FEEDBACK_RELAY_TOOLS: ReadonlySet<string> = new Set([FEEDBACK_SEND, ...FEEDBACK_READS]);
 
-const refuse = (call: ToolCall, why: string) => new OutboxToolRefusedError(outboxToolName(call.server, call.tool), `feedback relay: ${why}`);
+/** The one-message channels a relay carries: a feedback report (D-56) or a release announcement (D-90). */
+type PostChannel = 'feedback' | 'release';
+const POST: Record<PostChannel, { id: RegExp; what: string; unset: string }> = {
+  feedback: { id: FEEDBACK_CHANNEL_ID, what: 'a feedback report', unset: 'no feedback channel is configured, or posting feedback is off' },
+  release: { id: RELEASE_CHANNEL_ID, what: 'a release announcement', unset: 'no announcement channel is configured' },
+};
+
+const refuse = (call: ToolCall, why: string, ch: PostChannel = 'feedback') => new OutboxToolRefusedError(outboxToolName(call.server, call.tool), `${ch} relay: ${why}`);
 
 /** One relayed Slack call (only the Slack server loads, only this one tool may run). */
 function slackOneCall(o: Pick<FeedbackRelayOptions, 'run' | 'server'>): OutboxTransport {
@@ -111,20 +124,24 @@ function slackOneCall(o: Pick<FeedbackRelayOptions, 'run' | 'server'>): OutboxTr
 
 /**
  * The feedback relay: `slack_send_message` for a feedback report and `slack_read_thread` for its read-back, nothing
- * else, and only in the configured channel. Every refusal throws before the inner transport is touched.
+ * else, and only in the configured channel. Every refusal throws before the inner transport is touched. With `ch:
+ * 'release'` it is the release relay: the same rules for an announcement in the configured announcement channel.
  */
-export function feedbackRelay(o: FeedbackRelayOptions): OutboxTransport {
+export const releaseRelay = (o: FeedbackRelayOptions): OutboxTransport => feedbackRelay(o, 'release');
+
+export function feedbackRelay(o: FeedbackRelayOptions, ch: PostChannel = 'feedback'): OutboxTransport {
   const inner = o.transport ?? slackOneCall(o);
+  const p = POST[ch];
   return {
     async callTool(call, opts): Promise<ToolResult> {
-      if (call.server !== OUTBOX_SERVER.feedback || !FEEDBACK_RELAY_TOOLS.has(call.tool)) throw refuse(call, `carries ${[...FEEDBACK_RELAY_TOOLS].join(' and ')} only`);
+      if (call.server !== OUTBOX_SERVER[ch] || !FEEDBACK_RELAY_TOOLS.has(call.tool)) throw refuse(call, `carries ${[...FEEDBACK_RELAY_TOOLS].join(' and ')} only`, ch);
       const allowed = await o.channel();
-      if (!allowed || !FEEDBACK_CHANNEL_ID.test(allowed)) throw refuse(call, 'no feedback channel is configured, or posting feedback is off');
-      if (String(call.args.channel_id ?? '') !== allowed) throw refuse(call, 'only the configured feedback channel');
+      if (!allowed || !p.id.test(allowed)) throw refuse(call, p.unset, ch);
+      if (String(call.args.channel_id ?? '') !== allowed) throw refuse(call, `only the configured ${ch === 'feedback' ? 'feedback' : 'announcement'} channel`, ch);
       if (call.tool === FEEDBACK_SEND) {
-        if (opts?.channel !== 'feedback') throw refuse(call, 'slack_send_message is carried for a feedback report only');
+        if (opts?.channel !== ch) throw refuse(call, `slack_send_message is carried for ${p.what} only`, ch);
         const keys = Object.keys(call.args).sort().join(',');
-        if (keys !== 'channel_id,message' || typeof call.args.message !== 'string' || !call.args.message.trim()) throw refuse(call, 'a report is one top-level message: {channel_id, message} only');
+        if (keys !== 'channel_id,message' || typeof call.args.message !== 'string' || !call.args.message.trim()) throw refuse(call, `${ch === 'feedback' ? 'a report' : 'an announcement'} is one top-level message: {channel_id, message} only`, ch);
         // The proof the gateway spent on exactly this call (NotConfirmedError otherwise).
         assertSpentOn(opts.proof, call);
       }
@@ -146,11 +163,13 @@ export function liveOutboxTransport(o: LiveOutboxOptions = {}): OutboxTransport 
   const canvas = o.canvas === undefined ? slackCanvasRelay() : o.canvas;
   if (canvas) relays.push({ server: OUTBOX_SERVER.slack_canvas, tools: CANVAS_RELAY_TOOLS, transport: canvas });
   // The feedback post (D-56): a send only when the feedback adapter made it; any other Slack send stays fail-closed.
+  // The release announcement (D-90): first, so its read-back (in its own channel) is not taken by the feedback relay.
+  const rel = o.release;
+  if (rel) relays.push({ server: OUTBOX_SERVER.release, tools: FEEDBACK_RELAY_TOOLS, transport: releaseRelay(rel), match: async (call, opts) => (call.tool === FEEDBACK_SEND ? opts?.channel === 'release' : String(call.args.channel_id ?? '') === ((await rel.channel()) ?? '\0')) });
   if (o.feedback) relays.push({ server: OUTBOX_SERVER.feedback, tools: FEEDBACK_RELAY_TOOLS, transport: feedbackRelay(o.feedback), match: (call, opts) => call.tool !== FEEDBACK_SEND || opts?.channel === 'feedback' });
   return {
     async callTool(call, opts): Promise<ToolResult> {
-      const r = relays.find((x) => x.server === call.server && x.tools.has(call.tool) && (!x.match || x.match(call, opts)));
-      if (r) return r.transport.callTool(call, opts);
+      for (const r of relays) if (r.server === call.server && r.tools.has(call.tool) && (!r.match || (await r.match(call, opts)))) return r.transport.callTool(call, opts);
       throw new OutboxLiveDisabledError();
     },
   };

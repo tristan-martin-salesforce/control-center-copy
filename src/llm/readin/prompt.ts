@@ -5,7 +5,7 @@
  *                  , context pack JSON + Persona block + voice block ]     ← per read-in
  *   user prompt  = the Run block (entity, trigger, budget, the exact tool names)
  */
-import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@/llm/provider';
 
 import { loadSkill } from '@/engines/nba/prompt/skills';
 import { personaOf, renderPersonaBlock } from '@/personas';

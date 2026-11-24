@@ -51,7 +51,7 @@ export async function withdrawDraftsOfClosedItems(tx: Tx, userId: string, o: { i
   if (o.itemIds && !o.itemIds.length) return [];
   const found = await tx.execute<Candidate & Record<string, unknown>>(sql`
     select d.id::text as id, d.work_item_id::text as work_item_id, wi.status::text as status, wi.status_reason,
-           us.value -> 'dismissed' as dismissed
+           coalesce(wi.dismissed, us.value -> 'dismissed') as dismissed
       from drafts d
       join work_items wi on wi.id = d.work_item_id and wi.owner_user_id = d.owner_user_id
       left join user_settings us on us.owner_user_id = d.owner_user_id and us.key = ${extKey('work_items', '')} || wi.id::text

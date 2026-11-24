@@ -10,7 +10,8 @@
  * The read side (Time, History, the attendance of a trip's meetings) reads the week records only.
  */
 import type { OnsiteCorrection, OnsiteDay as ContractOnsiteDay } from '@/contract';
-import { addDays, type OnsiteDay as EngineOnsiteDay, type OnsiteDayOverride, type OnsiteOverrides, type OnsiteTripOverride } from '@/engines/activity';
+import { addDays } from '@/engines/activity/time';
+import type { OnsiteDay as EngineOnsiteDay, OnsiteDayOverride, OnsiteOverrides, OnsiteTripOverride } from '@/engines/activity/onsite';
 
 import { canon } from '../ext';
 

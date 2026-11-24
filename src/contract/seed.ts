@@ -1,7 +1,7 @@
 /**
  * The mock seed file: the full store contents plus an optional scenario.
  *
- * Loaded from ~/Library/Application Support/control-center/fixtures/seed.json (real data, outside the repo,
+ * Loaded from ~/Library/Application Support/command-center/fixtures/seed.json (real data, outside the repo,
  * owned by the SEED lane) or the committed placeholder src/mock/seed.example.json.
  *
  * Time handling: every timestamp is authored relative to `meta.asOf` (the seed's "now"). On load the mock

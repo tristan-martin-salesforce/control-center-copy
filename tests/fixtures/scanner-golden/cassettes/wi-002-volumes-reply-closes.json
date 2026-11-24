@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\"), keyed by the completion pass ledger hash. Re-key offline after a prompt or skill change: npm run eval:record. Replace with live replies: npm run eval:record -- --live --yes-spend (costs money).",
+  "entries": [
+    {
+      "hash": "0e143ae01c41b11306f26d31b4f46f10",
+      "label": "2026-10-21 17:12Z | Send PERSON_G the expected volumes for the Saltmere consumption model",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"done\", \"source\": \"s1\", \"basis\": \"delivered\", \"confidence\": 0.85, \"reason\": \"my reply in the thread gives the member and interaction volumes asked for\"}]}"
+    }
+  ]
+}

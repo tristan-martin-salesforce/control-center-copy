@@ -27,7 +27,15 @@ export type TraceKind =
   /** D3: items recorded without the model (status-only changes), and why. */
   | 'quiet'
   /** D5: the pre-check before a scheduled poll (empty or not, its calls and cost). */
-  | 'precheck';
+  | 'precheck'
+  /** COST-2 (0027): the prompt guard stopped a run before a request past the long-prompt tier. */
+  | 'prompt_guard'
+  /** Spend governor (H-5): the run passed its hold and stopped at a turn boundary to ask (paused, re-queued). */
+  | 'spend_ask'
+  /** 0027: what the context held at the first request (getContextUsage rows: ids and token counts only). */
+  | 'context'
+  /** Ask #14: one paid request of an Agent SDK query in flight (src/llm/skill-runner.turns.ts); booked only by recovery. */
+  | 'turn';
 
 export interface TraceEvent {
   runId: string;

@@ -2,7 +2,7 @@
  * Mock DataSource read-ins (example seed, placeholders): demo read-ins are deterministic and only on when asked
  * for; "Read me in" plays queued → researching → ready, dedupes, and links an Outbox draft that is never sent.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ReadInPayload, routes } from '../../src/contract';
 import { createMockDataSource, type MockDataSource } from '../../src/server/datasource/mock';
@@ -13,8 +13,10 @@ let ds: MockDataSource | null = null;
 afterEach(() => {
   ds?.dispose();
   ds = null;
+  vi.useRealTimers();
 });
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** The read-in's steps are timers (stepMs 20 → a 20 ms step, ready after 7): step a fake clock, never the wall clock. */
+const elapse = (ms: number) => vi.advanceTimersByTimeAsync(ms);
 
 describe('mock read-ins', () => {
   it('demo read-ins: one per Slack destination shape, sourced from the seed, deterministic', async () => {
@@ -46,6 +48,7 @@ describe('mock read-ins', () => {
   });
 
   it('Read me in: queued → researching → ready, deduped while running, the reply stays a draft', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     ds = createMockDataSource({ autoplay: false, delays: fast });
     const id = demoItems(ds.store)[0]!.id;
     const seen: string[] = [];
@@ -54,10 +57,12 @@ describe('mock read-ins', () => {
     routes.requestReadIn.response.parse(first);
     expect(first.entity.state).toBe('queued');
     expect(first.auditId).toBeNull();
-    await sleep(25);
+    await elapse(25);
     const dup = await ds.requestReadIn({ params: { type: 'work_item', id }, body: { force: true } });
-    expect(['queued', 'researching']).toContain(dup.entity.state);
-    await sleep(15 * 8);
+    expect(dup.entity.state).toBe('researching'); // the first of six 20 ms steps ran, the job is still going
+    await elapse(114);
+    expect((await ds.getReadIn({ params: { type: 'work_item', id } })).readIn?.state).not.toBe('ready'); // at 139 ms: ready comes at 140 ms (seven steps), not before
+    await elapse(1);
     const done = await ds.getReadIn({ params: { type: 'work_item', id } });
     ReadInPayload.parse(done);
     expect(done.readIn?.state).toBe('ready');

@@ -1,0 +1,30 @@
+{
+  "name": "overbooked-tuesday",
+  "description": "Tue 2026-11-17 13:00 MT, the day before the sample snapshot (items made later don't exist yet; items closed later are open). The afternoon fills up: a Saltmere escalation call 13:30-15:00 and a pipeline deep-dive with Hana 15:00-16:00 leave 2 h free, while two Saltmere blueprint pieces are due at 17:00 (the data-flow diagram, 90 min; the data residency subsection, 40 min) and two admin items are due within 48 h (the weekly deal-contribution sweep today, the Ferrowpay VDP deck add tomorrow noon). A good first screen: the two due-today Saltmere pieces, then tomorrow's Oakhallow sign-off or the Elderglen build; admin as one block, the day overbooked, and the admin is what moves first.",
+  "now": "2026-11-17T20:00:00.000Z",
+  "timezone": "America/Denver",
+  "workingHours": { "start": "07:30", "end": "17:30", "days": [1, 2, 3, 4, 5] },
+  "overrides": {
+    "wi-039": { "due": "2026-11-18T00:00:00.000Z", "dueKind": "hard" },
+    "wi-099": { "due": "2026-11-18T00:00:00.000Z", "dueKind": "hard" },
+    "wi-096": { "due": "2026-11-18T00:00:00.000Z" },
+    "wi-072": { "due": "2026-11-18T19:00:00.000Z" }
+  },
+  "extraMeetings": [
+    { "title": "Saltmere escalation call", "start": "2026-11-17T20:30:00.000Z", "end": "2026-11-17T22:00:00.000Z", "external": true },
+    { "title": "Pipeline deep-dive with Hana", "start": "2026-11-17T22:00:00.000Z", "end": "2026-11-17T23:00:00.000Z" }
+  ],
+  "firstScreen": 5,
+  "goldenTop3": [["wi-039"], ["wi-099"], ["wi-060", "wi-032"]],
+  "expectations": [
+    { "kind": "inTop3", "anyOf": ["wi-039"], "note": "the Saltmere data-flow diagram is due 17:00 and there are 2 h free" },
+    { "kind": "inTop3", "anyOf": ["wi-099"], "note": "the data residency subsection is due 17:00 too" },
+    { "kind": "notFirstScreen", "ids": ["wi-096", "wi-072", "wi-090", "wi-027", "wi-037", "wi-097", "wi-098", "wi-021"], "note": "admin is one quiet block, never individual rows at the top" },
+    { "kind": "order", "above": "wi-060", "below": "wi-042", "note": "tomorrow's critical Oakhallow sign-off above a 1-day-late soft recap" },
+    { "kind": "capacity", "is": "overbooked", "note": "2 h free against the two Saltmere pieces plus the promoted admin block" },
+    { "kind": "adminBatch", "promoted": ["wi-096", "wi-072"], "note": "both admin items are due within 48 h: one Admin block in today's lowest-value free slot" },
+    { "kind": "makeRoom", "first": ["wi-096", "wi-072"], "never": ["wi-039", "wi-099"], "note": "lowest value moves first; hard due-today work is never proposed" },
+    { "kind": "whyContains", "id": "wi-039", "phrases": ["due 17:00"] },
+    { "kind": "whyContains", "id": "wi-099", "phrases": ["due 17:00", "Soo-jin"] }
+  ]
+}

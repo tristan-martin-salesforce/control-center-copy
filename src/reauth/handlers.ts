@@ -2,7 +2,7 @@
  * One handler per connector (brief 09 §7). Each has a read-only `status()` and a confirm-gated `act()`.
  * None of them handle credentials: OAuth/MFA always happens in the user's own terminal or browser.
  */
-import { closeSync, existsSync, mkdirSync, openSync, statSync, unlinkSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DEFAULT_VDP_REFRESH_SCRIPT } from '../contract/settings';
 import { brewPrefix } from '../ops/brew';
@@ -21,18 +21,35 @@ const needsConfirm = (kind: ReauthKind, command?: string): ReauthResult => ({
 
 // ------------------------------------------------------------- Slack / Org62 (claude mcp login)
 
+/**
+ * Whether `server` is declared in the user's Claude config: true / false, or null when the file can't be read (then
+ * nothing is assumed). Names only; headers and tokens are never read out.
+ */
+export function serverDeclared(claudeJson: string, server: string): boolean | null {
+  try {
+    const cfg = JSON.parse(readFileSync(claudeJson, 'utf8')) as { mcpServers?: Record<string, unknown> };
+    return Object.keys(cfg.mcpServers ?? {}).some((n) => n.toLowerCase() === server.toLowerCase());
+  } catch {
+    return null;
+  }
+}
+
 function mcpLoginHandler(kind: 'slack' | 'org62', server: string, label: string, deps: ReauthDeps): ReauthHandler {
   const command = loginCommand(server);
+  // CONN-8: `claude mcp login` only works for a declared server; a missing one needs `claude mcp add` first
+  const addCommand = `claude mcp add --transport http ${server} <server URL>`;
+  const notDeclared = `${label} isn't set up in Claude Code yet (no "${server}" server). Add it first: ${addCommand} (the URL is in README, Troubleshooting), then sign in.`;
   return {
     kind,
     async status(): Promise<ReauthStatus> {
-      const { ok, servers } = await listMcp(deps.exec);
-      if (!ok) return { kind, state: 'unknown', message: 'Could not run "claude mcp list".' };
+      const { ok, servers, missing } = await listMcp(deps.exec, deps.claudeBin);
+      if (missing) return { kind, state: 'unknown', setupState: 'missing', code: 'DEP.CLAUDE.MISSING', message: `Claude Code isn't installed; ${label} is read through it.` };
+      if (!ok) return { kind, state: 'unknown', setupState: 'unknown', message: 'Could not run "claude mcp list".' };
       const s = findServer(servers, server);
-      if (!s) return { kind, state: 'auth_needed', message: `${label} is not configured in Claude Code (server "${server}" missing).` };
-      if (s.state === 'connected') return { kind, state: 'ok', message: `${label} is connected.` };
-      if (s.state === 'needs_auth') return { kind, state: 'auth_needed', message: `${label} needs sign-in.` };
-      return { kind, state: 'offline', message: `${label} failed to connect (network or service).` };
+      if (!s) return { kind, state: 'auth_needed', setupState: 'missing', code: 'MCP.SERVER_NOT_DECLARED', message: notDeclared };
+      if (s.state === 'connected') return { kind, state: 'ok', setupState: 'ok', message: `${label} is connected.` };
+      if (s.state === 'needs_auth') return { kind, state: 'auth_needed', setupState: 'signed_out', code: kind === 'slack' ? 'AUTH.SLACK.SIGNED_OUT' : 'AUTH.ORG62.SIGNED_OUT', message: `${label} needs sign-in.` };
+      return { kind, state: 'offline', setupState: 'offline', code: 'NET.SERVICE_DOWN', message: `${label} failed to connect (network or service).` };
     },
     describe: () => ({
       command,
@@ -40,6 +57,7 @@ function mcpLoginHandler(kind: 'slack' | 'org62', server: string, label: string,
     }),
     async act({ confirm }): Promise<ReauthResult> {
       if (!confirm) return needsConfirm(kind, command);
+      if (serverDeclared(deps.claudeJson, server) === false) return { kind, status: 'unavailable', command: addCommand, message: notDeclared };
       const r = await deps.openTerminal(command);
       return r.ok
         ? { kind, status: 'launched', command, message: `Terminal opened with "${command}". Finish the sign-in in the browser; Health re-checks automatically.` }
@@ -129,13 +147,13 @@ export function vdpHandler(deps: ReauthDeps, opts: VdpReauthOptions = {}): Reaut
     kind: 'vdp',
     async status(): Promise<ReauthStatus> {
       const v = info();
-      if (!v.configured) return { kind: 'vdp', state: 'auth_needed', message: 'vdp-app-fir is not configured in ~/.claude.json (admin-issued PAT required).' };
-      if (!v.hasPat) return { kind: 'vdp', state: 'auth_needed', message: 'VDP PAT missing. Ask an admin for one.' };
-      if (v.cookieSecondsLeft === null) return { kind: 'vdp', state: 'auth_needed', message: 'VDP gateway cookie missing or unreadable.' };
+      if (!v.configured) return { kind: 'vdp', state: 'auth_needed', setupState: 'missing', code: 'AUTH.VDP.NOT_CONFIGURED', message: 'vdp-app-fir is not configured in ~/.claude.json (admin-issued PAT required).' };
+      if (!v.hasPat) return { kind: 'vdp', state: 'auth_needed', setupState: 'missing', code: 'AUTH.VDP.NO_PAT', message: 'VDP PAT missing. Ask an admin for one.' };
+      if (v.cookieSecondsLeft === null) return { kind: 'vdp', state: 'auth_needed', setupState: 'signed_out', code: 'AUTH.VDP.COOKIE_EXPIRED', message: 'VDP gateway cookie missing or unreadable.' };
       if (v.cookieSecondsLeft < VDP_MIN_LIFETIME_S) {
-        return { kind: 'vdp', state: 'auth_needed', message: v.cookieSecondsLeft <= 0 ? 'VDP gateway cookie expired.' : 'VDP gateway cookie expires soon.' };
+        return { kind: 'vdp', state: 'auth_needed', setupState: 'expired', code: 'AUTH.VDP.COOKIE_EXPIRED', message: v.cookieSecondsLeft <= 0 ? 'VDP gateway cookie expired.' : 'VDP gateway cookie expires soon.' };
       }
-      return { kind: 'vdp', state: 'ok', message: `VDP cookie valid for ${Math.round(v.cookieSecondsLeft / 60)} min.` };
+      return { kind: 'vdp', state: 'ok', setupState: 'ok', message: `VDP cookie valid for ${Math.round(v.cookieSecondsLeft / 60)} min.` };
     },
     describe: () => ({
       command: windowCmd,
@@ -197,8 +215,10 @@ const DEVBAR: Record<DevbarSpec['kind'], DevbarSpec> = {
   devbar_restart: { kind: 'devbar_restart', args: ['daemon', 'start'], label: 'Restart devbar', instructions: 'Starts the devbar daemon (no browser).' },
 };
 
-async function devbarJson(deps: ReauthDeps, args: string[]): Promise<Record<string, unknown> | null> {
+/** The JSON devbar printed; `missing` when the program is not installed (spawn ENOENT, CONN-5). */
+async function devbarJson(deps: ReauthDeps, args: string[]): Promise<Record<string, unknown> | 'missing' | null> {
   const r = await deps.exec('devbar', args, { timeoutMs: 15_000 });
+  if (r.spawnError === 'ENOENT') return 'missing';
   if (r.code !== 0) return null;
   try {
     return JSON.parse(r.stdout) as Record<string, unknown>;
@@ -207,6 +227,9 @@ async function devbarJson(deps: ReauthDeps, args: string[]): Promise<Record<stri
   }
 }
 
+/** CONN-5: what devbar is, for a teammate who has never heard of it. */
+export const DEVBAR_MISSING_MESSAGE = 'devbar is not installed. Google (Gmail, Calendar, Drive, meeting notes) comes in through it: install devbar from the internal developer portal, then sign in.';
+
 export function devbarHandler(deps: ReauthDeps, kind: DevbarSpec['kind'] = 'google'): ReauthHandler {
   const spec = DEVBAR[kind];
   const command = `devbar ${spec.args.join(' ')}`;
@@ -214,20 +237,22 @@ export function devbarHandler(deps: ReauthDeps, kind: DevbarSpec['kind'] = 'goog
     kind,
     async status(): Promise<ReauthStatus> {
       const auth = await devbarJson(deps, ['auth', 'status', '--json']);
-      if (!auth) return { kind, state: 'offline', message: 'devbar is not installed or not responding.' };
-      if (auth.authenticated !== true) return { kind, state: 'auth_needed', message: 'devbar is signed out. Use "Sign in to devbar".' };
+      if (auth === 'missing') return { kind, state: 'offline', setupState: 'missing', code: 'DEP.DEVBAR.MISSING', message: DEVBAR_MISSING_MESSAGE };
+      if (!auth) return { kind, state: 'offline', setupState: 'unknown', message: 'devbar is not responding.' };
+      if (auth.authenticated !== true) return { kind, state: 'auth_needed', setupState: 'signed_out', code: 'AUTH.GOOGLE.DEVBAR_SIGNED_OUT', message: 'devbar is signed out. Use "Sign in to devbar".' };
       const gw = await devbarJson(deps, ['mcpgw', 'status', '--json']);
-      if (!gw || gw.listener_ok !== true) return { kind, state: 'offline', message: 'devbar gateway is not running. Use "Restart devbar".' };
-      if (gw.upstream_ok === false || gw.auth_ok === false) return { kind, state: 'auth_needed', message: 'Google is not connected through devbar. Use "Reconnect Google".' };
-      return { kind, state: 'ok', message: 'devbar gateway is up and Google is connected.' };
+      if (gw === 'missing' || !gw || gw.listener_ok !== true) return { kind, state: 'offline', setupState: 'installed', code: 'DEP.DEVBAR.DAEMON_DOWN', message: 'devbar gateway is not running. Use "Restart devbar".' };
+      if (gw.upstream_ok === false || gw.auth_ok === false) return { kind, state: 'auth_needed', setupState: 'signed_out', code: 'AUTH.GOOGLE.CONNECTOR_MISSING', message: 'Google is not connected through devbar. Use "Reconnect Google".' };
+      return { kind, state: 'ok', setupState: 'ok', message: 'devbar gateway is up and Google is connected.' };
     },
     describe: () => ({ command, instructions: spec.instructions }),
     async act({ confirm }): Promise<ReauthResult> {
       if (!confirm) return needsConfirm(kind, command);
-      const r = deps.spawnDetached('devbar', spec.args);
-      return r.ok
-        ? { kind, status: 'launched', command, message: `${spec.label}: started. ${spec.instructions}` }
-        : { kind, status: 'unavailable', command, message: `Could not start devbar. Run this yourself: ${command}` };
+      // waits for spawn/error: a devbar that is not installed reports that, never "started" (CONN-5)
+      const r = await deps.spawnDetached('devbar', spec.args);
+      if (r.ok) return { kind, status: 'launched', command, message: `${spec.label}: started. ${spec.instructions}` };
+      if (r.error === 'ENOENT') return { kind, status: 'unavailable', command, message: DEVBAR_MISSING_MESSAGE };
+      return { kind, status: 'unavailable', command, message: `Could not start devbar. Run this yourself: ${command}` };
     },
   };
 }

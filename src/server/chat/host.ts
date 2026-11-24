@@ -4,9 +4,12 @@
  * (`ChatHostBackend`): staging a proposal, enqueueing a scan, an Outbox draft, a prepared session, spend.
  * Nothing here sends, posts or writes to an external system.
  */
-import type { ChatMessage, ChatModel } from '@/contract';
+import type { ActivityEntry, ChatMessage, ChatModel, Receipt, WorkItem } from '@/contract';
+import type { ChatMemoryStore } from '../datasource/db/chat-memory';
+import { runQuery } from './views';
 import type { GoogleTools } from '@/connectors/google/client';
-import type { ChatBudget, ChatGoogleTool, ChatHost, ChatSourceHit, ChatSourceName, ChatUsageRecord, DraftInput, SessionInput, StageInput } from '@/llm/chat/types';
+import type { SpendGovernor } from '@/llm/spend';
+import type { ChatBudget, ChatGoogleTool, ChatHost, ChatSourceHit, ChatUsageRecord, DraftInput, SessionInput, StageInput } from '@/llm/chat/types';
 import { createResearchState, createResearchTools, type ResearchToolName } from '@/llm/research/tools';
 import { personaOf, type ResolvedPersona } from '@/personas';
 
@@ -15,7 +18,7 @@ import { previewChanges, type ActivityLookup } from './changes';
 import { buildContextPack } from './compact';
 import { buildOrg62Query } from './org62';
 import { chatReadPageAllowed, ChatReadArgsError, readPage } from './read';
-import { appRead } from './app-routes';
+import { appRead, appReadRaw, appRouteInput } from './app-routes';
 
 export interface ChatHostBackend {
   readonly kind: 'mock' | 'db';
@@ -28,8 +31,8 @@ export interface ChatHostBackend {
   prepareSession(input: SessionInput): ReturnType<ChatHost['prepareSession']>;
   /** Time-page rows and opportunity names for `edit_activities` previews. */
   activityLookup?: ActivityLookup;
-  /** The scan ledger / evidence: sources the app already recorded. */
-  searchLedger(query: string, limit: number): Promise<ChatSourceHit[]>;
+  /** The scan ledger / evidence: sources the app already recorded (DM-10: with notes when the search itself failed). */
+  searchLedger(query: string, limit: number): Promise<ChatSourceHit[] | { hits: ChatSourceHit[]; notes: string[] }>;
   /** The next logging batch (db only). */
   logBatch?: ChatHost['logBatch'];
   /** Deep research runs (db + live connectors only). */
@@ -40,11 +43,23 @@ export interface ChatHostBackend {
   google?: () => Promise<GoogleTools & { close?: () => Promise<void> }>;
   /** D-58: load the scanners' Slack and Org62 MCP servers into the turn (db + live connectors only). */
   liveReads?: boolean;
-  /** Read-only connector lookups (db + live connectors only). */
-  searchConnectors?(query: string, sources: Exclude<ChatSourceName, 'ledger'>[], limit: number, signal?: AbortSignal): Promise<{ hits: ChatSourceHit[]; notes: string[] }>;
   budget(model: ChatModel): Promise<ChatBudget>;
   recordUsage(u: ChatUsageRecord): Promise<void>;
+  /** The spend governor (H-5): the message's hold, its asks and receipts. */
+  spend?: () => SpendGovernor;
+  // ---- Assistant v2 ----
+  /** Memory and the thread's SDK session id (chat_memory, chat_threads.sdk_session_id). */
+  memory?: ChatMemoryStore;
+  /** Apply a chat card the turn just staged (act's allow class), through the DataSource's own Apply path. */
+  applyStaged?: (proposalId: string, ds: DataSource) => Promise<Receipt | null>;
+  /** Live reads through the connector runtime (db + live connectors only). */
+  liveRead?: ChatHost['liveRead'];
+  org62Record?: ChatHost['org62Record'];
+  complete?: ChatHost['complete'];
 }
+
+/** The `run` class's read-only jobs (lane 05 R8): they queue work that reads, never a change to review. */
+export const RUN_JOB_ROUTES = ['requestReadIn', 'syncForecast', 'checkMissingForecast', 'retryJob'] as const;
 
 /**
  * Characters per page when the Assistant reads a Drive file or a Gmail thread (A6, 2026-11-13: a 40,000-character sheet
@@ -64,11 +79,47 @@ const GOOGLE_HANDLER: Record<ChatGoogleTool, ResearchToolName> = {
 
 export function createChatHost(ds: DataSource, b: ChatHostBackend, now: () => Date): ChatHost {
   let resolved: Promise<ResolvedPersona> | undefined; // one turn = one host: the persona is read once
+  const googleState = createResearchState(); // one turn: a thread, file or calendar range is fetched once, then paged
   const persona = () => (resolved ??= ds.getSettings({} as never).then((s) => personaOf(s)));
+  const viewCache = new Map<string, Promise<unknown>>(); // one turn: two queries over the same payload read it once
   return {
     kind: b.kind,
     now,
     timezone: () => b.timezone(),
+    query: async (a) => runQuery(ds, await persona(), a, { cache: viewCache }),
+    async explain(id, what) {
+      const p = await persona();
+      const isItem = await appReadRaw(ds, 'getItem', p, { params: { id } }).then(
+        (r) => r as { item?: WorkItem } & Record<string, unknown>,
+        () => null,
+      );
+      if (isItem) {
+        const item = (isItem.item ?? isItem) as WorkItem & { rankReasons?: unknown; score?: number; signals?: unknown; whyDetail?: string | null; priority?: string };
+        const out: Record<string, unknown> = { id, kind: 'work_item', title: item.title, state: item.state };
+        if (what === 'rank' || what === 'all') out.rank = { rank: item.rank ?? null, score: item.score ?? null, priority: item.priority ?? null, why: item.why, whyDetail: item.whyDetail ?? null, reasons: item.rankReasons ?? [], signals: item.signals ?? null, startBy: item.startBy, due: item.due, snoozedUntil: item.snoozedUntil };
+        if (what === 'closure' || what === 'all') out.closure = await appReadRaw(ds, 'getResolutionCheck', p, { params: { id } }).catch((e: Error) => ({ unavailable: e.message }));
+        if (what === 'evidence' || what === 'all' || what === 'attribution') out.trace = await appReadRaw(ds, 'getItemTrace', p, { params: { id } }).catch((e: Error) => ({ unavailable: e.message }));
+        if (what === 'attribution') out.attribution = { accountId: item.accountId, oppId: item.oppId, initiativeId: item.initiativeId, confidence: (item as { confidence?: string }).confidence ?? null };
+        return out;
+      }
+      const log = (await appReadRaw(ds, 'getActivityLog', p, {})) as { entries: ActivityEntry[] };
+      const e = log.entries.find((x) => x.id === id);
+      if (!e) return { id, found: false, note: 'No work item or time row has this id: query work_items or time_entries for the id.' };
+      const x = e as ActivityEntry & { why?: unknown; suggestion?: unknown; sources?: unknown; confidence?: unknown; issues?: unknown; logNote?: unknown };
+      return { id, kind: 'time_entry', description: e.description, date: e.date, hours: e.durationH, status: e.status, attribution: { oppId: e.oppId, opp: e.oppName, account: e.accountName, taskType: e.taskType, confidence: x.confidence ?? null, why: x.why ?? null, suggestion: x.suggestion ?? null, sources: x.sources ?? [], issues: x.issues ?? [] }, logNote: x.logNote ?? null };
+    },
+    async startJob(route, raw) {
+      const fn = (ds as unknown as Record<string, ((i: unknown) => Promise<unknown>) | undefined>)[route];
+      if (!fn) throw new Error(`${route} is not available here`);
+      // the route's own schemas and the persona's gates, as a staged call would have them
+      const { input } = appRouteInput(route, 'stage', await persona(), raw);
+      return fn.call(ds, input);
+    },
+    ...(b.memory ? { memory: b.memory } : {}),
+    ...(b.applyStaged ? { applyStaged: (pid: string) => b.applyStaged!(pid, ds) } : {}),
+    ...(b.liveRead ? { liveRead: b.liveRead } : {}),
+    ...(b.org62Record ? { org62Record: b.org62Record } : {}),
+    ...(b.complete ? { complete: b.complete } : {}),
     async contextPack() {
       const [today, settings, outbox, health, tz] = await Promise.all([ds.getToday({} as never), ds.getSettings({} as never), ds.getOutbox({} as never), ds.getHealth({} as never), b.timezone()]);
       return buildContextPack({ now: now(), timezone: tz, today, settings, outbox, health });
@@ -76,20 +127,18 @@ export function createChatHost(ds: DataSource, b: ChatHostBackend, now: () => Da
     async searchSources(query, o) {
       const notes: string[] = [];
       const hits: ChatSourceHit[] = [];
-      if (o.sources.includes('ledger')) hits.push(...(await b.searchLedger(query, o.limit)));
-      const live = o.sources.filter((s): s is Exclude<ChatSourceName, 'ledger'> => s !== 'ledger');
-      if (live.length) {
-        if (b.searchConnectors) {
-          try {
-            const r = await b.searchConnectors(query, live, o.limit, o.signal);
-            hits.push(...r.hits);
-            notes.push(...r.notes);
-          } catch (err) {
-            notes.push(`connector lookup failed: ${(err as Error).message.slice(0, 120)}`);
-          }
-        } else notes.push(`${live.join(', ')}: live connector lookups are not available here (${b.kind} mode); searched the ledger only`);
+      if (o.sources.includes('ledger')) {
+        const r = await b.searchLedger(query, o.limit);
+        if (Array.isArray(r)) hits.push(...r);
+        else {
+          hits.push(...r.hits);
+          notes.push(...r.notes);
+        }
       }
-      return { hits: hits.slice(0, o.limit * 2), notes };
+      // the ledger is the only source read here; live Gmail and Drive search is the `search` tool's own source (paged by page token)
+      const live = o.sources.filter((src) => src !== 'ledger');
+      if (live.length) notes.push(`${live.join(', ')}: not searched here (ledger only); search with source ${live.join(' or ')} for live results`);
+      return { hits, notes };
     },
     // D-55: a page whose feature the persona has not activated is not read (the tool list doesn't offer it either)
     read: async (page, args, paging) => {
@@ -105,7 +154,7 @@ export function createChatHost(ds: DataSource, b: ChatHostBackend, now: () => Da
       if (!b.google) return { text: `Live ${tool.split('_')[0]} reads aren't available here (${b.kind} mode): answer from the app's data and say so.`, ok: false, available: false };
       const g = await b.google();
       try {
-        const handlers = createResearchTools({ google: g, ledger: null, signal, now, filePage: CHAT_DRIVE_PAGE, threadPage: CHAT_GMAIL_PAGE }, createResearchState());
+        const handlers = createResearchTools({ google: g, ledger: null, signal, now, filePage: CHAT_DRIVE_PAGE, threadPage: CHAT_GMAIL_PAGE }, googleState);
         const r = await handlers[GOOGLE_HANDLER[tool]](args);
         return { text: r.text, ok: !r.isError, available: true };
       } catch (err) {
@@ -156,5 +205,6 @@ export function createChatHost(ds: DataSource, b: ChatHostBackend, now: () => Da
     prepareSession: (i) => b.prepareSession(i),
     budget: (m) => b.budget(m),
     recordUsage: (u) => b.recordUsage(u),
+    ...(b.spend ? { spend: b.spend } : {}),
   };
 }

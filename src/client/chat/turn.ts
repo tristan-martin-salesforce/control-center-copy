@@ -12,9 +12,10 @@ export function localId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${seq.toString(36)}`;
 }
 
-export function startTurn(input: { threadId: string; text: string; context: ContextRef[]; baseIds: string[]; now?: Date; allowExtraUsd?: number }): LiveTurn {
+export function startTurn(input: { threadId: string; text: string; context: ContextRef[]; baseIds: string[]; now?: Date; allowExtraUsd?: number; continueMessageId?: string }): LiveTurn {
   return {
     ...(input.allowExtraUsd ? { allowExtraUsd: input.allowExtraUsd } : {}),
+    ...(input.continueMessageId ? { continueMessageId: input.continueMessageId } : {}),
     key: localId('turn'),
     threadId: input.threadId,
     userText: input.text,
@@ -29,6 +30,7 @@ export function startTurn(input: { threadId: string; text: string; context: Cont
     receipts: [],
     proposals: [],
     resources: [],
+    plans: [],
     error: null,
     lastEvent: null,
     attempt: 0,
@@ -37,12 +39,22 @@ export function startTurn(input: { threadId: string; text: string; context: Cont
 
 export const TERMINAL: ReadonlySet<ChatTurnStatus> = new Set(['done', 'error', 'stopped']);
 
+/** The step-stop's catalog code (src/errors/catalog.ts, src/llm/chat/router.ts STEP_LIMIT_CODE): the API code stays `internal`. */
+export const STEP_LIMIT_CODE = 'RATE.CHAT.STEP_LIMIT';
+/** An answer stopped at Steps per message (P31-1): its button continues it ("Continue"), it never re-asks (P33-2). */
+export const isStepLimitError = (e: Pick<ApiErrorBody, 'details'> | null | undefined): boolean =>
+  (e?.details as { catalogCode?: unknown } | undefined)?.catalogCode === STEP_LIMIT_CODE;
+
 export function reduceTurn(turn: LiveTurn, ev: ChatSseEvent): LiveTurn {
   if (TERMINAL.has(turn.status)) return turn;
   const t: LiveTurn = { ...turn, status: 'streaming', lastEvent: ev.type };
   switch (ev.type) {
     case 'start': // header (CONTRACT-1): the turn's ids arrive before any content
-      return { ...t, messageId: t.messageId ?? ev.messageId, userMessageId: t.userMessageId ?? ev.userMessageId };
+      return { ...t, messageId: t.messageId ?? ev.messageId, userMessageId: t.userMessageId ?? ev.userMessageId, ...(ev.route ? { route: ev.route } : {}) };
+    case 'plan': {
+      const has = t.plans.some((p) => p.id === ev.plan.id);
+      return { ...t, plans: has ? t.plans.map((p) => (p.id === ev.plan.id ? ev.plan : p)) : [...t.plans, ev.plan] };
+    }
     case 'text-delta':
       return { ...t, text: t.text + ev.delta, messageId: t.messageId ?? ev.messageId };
     case 'tool-start':
@@ -54,8 +66,8 @@ export function reduceTurn(turn: LiveTurn, ev: ChatSseEvent): LiveTurn {
       return {
         ...t,
         tools: has
-          ? t.tools.map((x) => (x.id === ev.id ? { ...x, summary: ev.summary, ok: ev.ok } : x))
-          : [...t.tools, { id: ev.id, name: 'tool', startSummary: null, summary: ev.summary, ok: ev.ok }],
+          ? t.tools.map((x) => (x.id === ev.id ? { ...x, summary: ev.summary, ok: ev.ok, ...(ev.costUsd ? { costUsd: ev.costUsd } : {}), ...(ev.held ? { held: true } : {}) } : x))
+          : [...t.tools, { id: ev.id, name: 'tool', startSummary: null, summary: ev.summary, ok: ev.ok, ...(ev.held ? { held: true } : {}) }],
       };
     }
     case 'receipt':
@@ -64,6 +76,11 @@ export function reduceTurn(turn: LiveTurn, ev: ChatSseEvent): LiveTurn {
       return t.proposals.some((p) => p.proposal.id === ev.proposal.id) ? t : { ...t, proposals: [...t.proposals, { proposal: ev.proposal, summary: ev.summary }] };
     case 'resource':
       return t.resources.some((r) => r.id === ev.resource.id && r.kind === ev.resource.kind) ? t : { ...t, resources: [...t.resources, ev.resource] };
+    case 'usage-delta':
+      // a spend ask clears once the hold moves past `asked` (answered)
+      return { ...t, spentUsd: ev.spentUsd, spentModel: ev.model, ...(ev.hold ? { hold: ev.hold } : {}), ...(t.spendAsk && ev.hold && ev.hold.state !== 'asked' ? { spendAsk: null } : {}) };
+    case 'spend-ask':
+      return { ...t, spendAsk: { holdId: ev.holdId, question: ev.question, spentUsd: ev.spentUsd, heldUsd: ev.heldUsd, moreUsd: ev.moreUsd } };
     case 'done':
       return { ...t, status: 'done', messageId: ev.messageId, userMessageId: ev.userMessageId, threadId: ev.threadId, tools: settleTools(t.tools, true) };
     case 'error':
@@ -134,11 +151,15 @@ export function viewOfServer(m: ChatMessage, extras?: TurnExtras): ChatMessageVi
     error: extras?.error ?? (m.parts ?? []).find((p): p is Extract<ChatMessage['parts'][number], { type: 'error' }> => p.type === 'error')?.error ?? null,
     stopped: extras?.stopped ?? m.status === 'stopped',
     pending: false,
+    plans: [],
+    ...(m.usage ? { usage: m.usage } : {}),
+    ...(m.route ? { route: m.route } : {}),
   };
   const parts = m.parts ?? [];
   for (const [i, p] of parts.entries()) {
     const prev = i > 0 ? parts[i - 1] : undefined;
-    if (p.type === 'tool') view.tools.push({ id: p.id, name: p.name, startSummary: extras?.toolArgs[p.id] ?? null, summary: p.summary, ok: p.ok, ...(p.progress ? { progress: p.progress } : {}) });
+    if (p.type === 'tool') view.tools.push({ id: p.id, name: p.name, startSummary: extras?.toolArgs[p.id] ?? null, summary: p.summary, ok: p.ok, ...(p.progress ? { progress: p.progress } : {}), ...(p.costUsd ? { costUsd: p.costUsd } : {}), ...(p.held ? { held: true } : {}) });
+    else if (p.type === 'plan') (view.plans ??= []).push(p.plan);
     // an applied card's receipt (stored right after it) joins the card: one card in the thread, not two
     else if (p.type === 'receipt' && prev?.type === 'proposal' && (prev.status === 'applied' || prev.proposal.status === 'applied') && view.proposals.at(-1)?.proposal.id === prev.proposal.id) view.proposals.at(-1)!.receipt = p.receipt;
     else if (p.type === 'receipt') view.receipts.push(p.receipt);
@@ -167,6 +188,7 @@ export function viewsOfTurn(turn: LiveTurn): [ChatMessageView, ChatMessageView] 
       error: null,
       stopped: false,
       pending: !turn.userMessageId && live,
+      plans: [],
     },
     {
       id: turn.messageId ?? `${turn.key}_a`,
@@ -185,6 +207,11 @@ export function viewsOfTurn(turn: LiveTurn): [ChatMessageView, ChatMessageView] 
       error: turn.error,
       stopped: turn.status === 'stopped',
       pending: false,
+      ...(turn.spentUsd !== undefined ? { spentUsd: turn.spentUsd } : {}),
+      ...(turn.spentModel ? { spentModel: turn.spentModel } : {}),
+      ...(live && turn.spendAsk ? { spendAsk: turn.spendAsk } : {}),
+      ...(turn.route ? { route: turn.route } : {}),
+      plans: turn.plans,
     },
   ];
 }

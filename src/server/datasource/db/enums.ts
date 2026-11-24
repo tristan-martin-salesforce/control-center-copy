@@ -28,6 +28,7 @@ import type {
   WorkKind,
   WorkState,
 } from '@/contract';
+import { kindOfSystem, systemOfKind } from '@/contract/sources';
 
 type Db<T extends string> = T;
 
@@ -80,12 +81,9 @@ export type DbSourceItemKind = Db<
   | 'tool_output'
 >;
 
-export const sourceToDb = (s: SourceKind): DbSourceSystem => (s === 'gemini' ? 'gemini_notes' : s);
-export function sourceFromDb(s: DbSourceSystem): SourceKind {
-  if (s === 'gemini_notes') return 'gemini';
-  if (s === 'git' || s === 'chat' || s === 'tool' || s === 'app') return 'manual';
-  return s;
-}
+// the one source-kind mapping (src/contract/sources.ts)
+export const sourceToDb = (s: SourceKind): DbSourceSystem => systemOfKind(s);
+export const sourceFromDb = (s: DbSourceSystem): SourceKind => kindOfSystem(s);
 
 const SOURCE_ITEM_KIND: Record<SourceKind, DbSourceItemKind> = {
   slack: 'slack_message',

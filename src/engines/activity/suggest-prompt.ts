@@ -10,7 +10,7 @@
  * addresses and phone numbers are dropped.
  */
 import type { ActivityEntry, OppOption } from '@/contract';
-import { redactText } from '@/llm/redact';
+import { redactText } from '@/lib/redact';
 import { plainIssues } from '@/lib/time-issues';
 import { INTERNAL_TASK_TYPES } from './internal';
 

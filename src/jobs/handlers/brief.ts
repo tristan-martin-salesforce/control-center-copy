@@ -17,6 +17,10 @@
  * Before this handler the kind was a "not yet wired" stub and its schedule stayed disabled, so a watch added on the
  * Briefs page was scanned for items by scan-slack but never produced a brief (STRESS WATCH-1).
  *
+ * Spend (caps audit 26 F-4): the run is under the job's governor hold (the worker's start gate took it). One call's SDK
+ * budget is the runaway guard (4x the hold), not $0.10; past the hold, before the next watch's call, it raises a hand
+ * (Health ▸ Spend) and the watches still due wait in one queued run carrying the hold (Allow runs it, Stop cancels).
+ *
  * Opportunity, account, person and search watches are counted as `unsupported` (BE-5's other brief kinds).
  * jobs.result holds ids, counts and codes only, never message text.
  */
@@ -42,7 +46,10 @@ import { sourceRefOf } from '@/server/datasource/db/store/work';
 import { ensureExtractor } from '@/server/datasource/db/seed';
 
 import { ledgerHash } from '@/db/ledger';
+import { finishJobSpend, gateOf, startJobSpend, type SpendGovernor } from '@/llm/spend';
+import { dbSpendGovernor } from '@/server/datasource/db/spend';
 import { QUEUES } from '../registry';
+import { spendPauseResult, spendStartResult } from '../spend-pause';
 import type { JobHandler, JobHandlerDef } from '../types';
 
 export const BRIEF_JOB_KIND = 'brief.generate';
@@ -66,7 +73,10 @@ export interface BriefHandlerDeps {
   /** The model seam (default: one tool-less Agent SDK turn). Tests pass a fake. */
   model?: CompletionModel;
   skillsDir?: string;
+  /** One call's line without a governor hold (with one, the hold's runaway guard when larger). */
   maxCallUsd?: number;
+  /** The spend governor (default: the database one; null: no hold, `maxCallUsd` is the line). */
+  spend?: SpendGovernor | null;
 }
 
 type WatchRow = {
@@ -193,6 +203,12 @@ export function briefHandler(deps: BriefHandlerDeps = {}): JobHandler {
     const persona = await loadPersona(ctx.db, ctx.userId);
     if (!connectorActive(persona, 'watch')) return { status: 'watch_inactive', counts, briefs, errors };
 
+    const gov = deps.spend === undefined ? dbSpendGovernor({ db: ctx.db, userId: ctx.userId, clock: ctx.clock }) : deps.spend;
+    const envelope = await startJobSpend(gov, ctx.job, { scope: 'job', skill: 'brief-channel' });
+    const early = await spendStartResult(ctx, envelope, { dedupeKey: briefFollowUpKey(ctx.userId) });
+    if (early) return { status: 'nothing_due', counts, briefs, errors, ...early };
+    const gate = gateOf(envelope);
+    let askNext = false;
     const store = new DbScannerStore({ db: ctx.db, userId: ctx.userId, clock: ctx.clock });
     const user = await userInfo(ctx.db, ctx.userId);
     const watches = await loadWatchRows(ctx.db, ctx.userId);
@@ -253,6 +269,11 @@ export function briefHandler(deps: BriefHandlerDeps = {}): JobHandler {
           continue;
         }
       }
+      if (askNext && gate && messages.some((m) => m.text.trim())) {
+        // H-5: past the hold with a paid brief still to write: raise a hand before this call; the rest waits for it
+        await gate.ask({ pctDone: null }).catch(() => undefined);
+        break;
+      }
       context ??= await myContext(ctx.db, ctx.userId);
       model ??= agentSdkCompletionModel();
       const out = await channelBrief({
@@ -264,7 +285,7 @@ export function briefHandler(deps: BriefHandlerDeps = {}): JobHandler {
         myContext: context,
         ...(coverage ? { coverage } : {}),
         model,
-        maxCallUsd: deps.maxCallUsd ?? DEFAULT_MAX_CALL_USD,
+        maxCallUsd: gate ? Math.max(deps.maxCallUsd ?? DEFAULT_MAX_CALL_USD, gate.ceilingUsd()) : (deps.maxCallUsd ?? DEFAULT_MAX_CALL_USD),
         skillsDir: deps.skillsDir,
         signal: ctx.signal,
       });
@@ -286,6 +307,7 @@ export function briefHandler(deps: BriefHandlerDeps = {}): JobHandler {
           outcome: out.status === 'failed' ? `failed:${out.code}` : out.status,
         });
       costUsd += out.costUsd;
+      if (gate?.observe(costUsd) === 'ask') askNext = true;
       if (out.status === 'failed') {
         counts.failed++;
         errors.push({ watchId: w.id, code: out.code });
@@ -298,8 +320,11 @@ export function briefHandler(deps: BriefHandlerDeps = {}): JobHandler {
       if (cadence === 'every_4h') later(now.getTime() + 4 * 3_600_000);
     }
 
+    await finishJobSpend(gov, envelope, costUsd);
+    // asked: the watches still due wait in one queued run carrying the hold (the follow-up key keeps one queued)
+    const paused = await spendPauseResult(ctx, envelope, { dedupeKey: briefFollowUpKey(ctx.userId), payload: { trigger: 'follow_up', retry: 0 } });
     let followUpAt: string | null = null;
-    if (next !== undefined && !ctx.signal.aborted && next - now.getTime() < DAY) {
+    if (!paused.paused && next !== undefined && !ctx.signal.aborted && next - now.getTime() < DAY) {
       const at = new Date(Math.max(next, now.getTime() + 5 * MIN));
       const waiting = retrySoon && next <= now.getTime() + WAIT_RETRY_MS;
       await enqueueJob(ctx.db, {
@@ -314,7 +339,7 @@ export function briefHandler(deps: BriefHandlerDeps = {}): JobHandler {
       followUpAt = at.toISOString();
     }
     const status = counts.failed ? 'partial' : counts.ready || counts.quiet ? 'ok' : 'nothing_due';
-    return { status, counts, briefs, errors, costUsd: Number(costUsd.toFixed(6)), followUpAt };
+    return { status, counts, briefs, errors, costUsd: Number(costUsd.toFixed(6)), followUpAt, ...paused };
   };
 }
 
@@ -356,6 +381,7 @@ export function briefJobDef(deps: BriefHandlerDeps = {}): JobHandlerDef {
     kind: BRIEF_JOB_KIND,
     queue: QUEUES.brief,
     wired: true,
+    spends: true,
     description: 'watched-channel briefs: the period since the last brief, one Haiku call, the Briefs page (BE-5, R-UI-21)',
     handler: briefHandler(deps),
   };

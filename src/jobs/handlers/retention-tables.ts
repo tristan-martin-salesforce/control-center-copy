@@ -1,7 +1,7 @@
 /**
  * Table retention (audit 2026-11-13, lane E: E4), part of the nightly `retention.scrub` job (03:15 local). The DB was
  * 255 MB after one week, mostly the scan ledger, the scan trace, jobs and the audit log. Horizons (RETENTION_HORIZONS,
- * docs/ui/WORKER.md "Retention"):
+ * docs/reference/WORKER.md "Retention"):
  *
  *   jobs                      succeeded / cancelled after 30 days, dead after 90; with an idempotency key (Outbox
  *                             deliveries, VDP pushes: the outbound record) after 400. The newest of each kind and

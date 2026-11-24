@@ -38,7 +38,7 @@ export async function runMigrations(opts: MigrateOptions = {}): Promise<SchemaSt
   const url = resolveDatabaseUrl(opts.url);
   const log = opts.log ?? ((line: string) => console.log(line));
   const folder = opts.migrationsFolder ?? defaultMigrationsFolder();
-  const handle = createDb({ url, max: 1, applicationName: 'control-center-migrate' });
+  const handle = createDb({ url, max: 1, applicationName: 'command-center-migrate' });
   try {
     await migrate(handle.db, { migrationsFolder: folder });
     const state = compareSchema(readJournal(folder), await readAppliedMigrations(handle.db));

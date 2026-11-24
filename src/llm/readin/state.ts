@@ -51,6 +51,10 @@ const SKIP_MESSAGE: Record<string, string> = {
   hard_cap: 'The daily LLM hard cap is reached; read-ins resume tomorrow.',
   disabled: 'Read-ins are off in this worker (CC_READIN=0).',
   gone: 'This item no longer exists.',
+  // F-4: the read-in passed its spend estimate and asked (Health ▸ Spend)
+  paused_for_spend: 'Paused at its spend estimate: allow more in Health ▸ Spend to finish it.',
+  spend_ask_open: 'Waiting for your answer in Health ▸ Spend to finish it.',
+  spend_stopped: 'Stopped from a spend ask. Read me in to run it again.',
 };
 
 const ERROR_MESSAGE: Record<string, string> = {

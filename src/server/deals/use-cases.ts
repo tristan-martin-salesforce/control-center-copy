@@ -28,6 +28,7 @@ import {
   type UseCasePlan,
 } from '@/engines/activity/use-cases';
 import { CANVAS_HOLDING, canvasInputOf } from '@/lib/canvas/payload';
+import { hasObjectRows } from '@/lib/canvas/tables';
 import { org62RecordUrl } from '@/projections/links';
 
 /** Canvas items whose rows go back to waiting: never Applied, rejected or discarded. Anything else was sent. */
@@ -45,7 +46,7 @@ export function ucHolds(drafts: ReadonlyArray<Pick<Draft, 'id' | 'status' | 'des
   for (const d of [...drafts].sort((a, b) => (a.sentAt ?? a.updatedAt).localeCompare(b.sentAt ?? b.updatedAt) || a.id.localeCompare(b.id))) {
     if (d.destination.kind !== 'action' || d.destination.action !== 'slack_canvas.create') continue;
     const md = canvasInputOf(d.destination).markdown;
-    if (!md.includes('|Use_Case__c|')) continue;
+    if (!hasObjectRows(md, 'Use_Case__c')) continue;
     const rows = ucRowsIn(md);
     if (CANVAS_HOLDING.has(d.status)) {
       for (const c of rows.creates) held.set(ucCreateKey(c.vdpUseCaseId), d.id);
@@ -125,7 +126,7 @@ export function ucDuplicateGuard(ctx: UcGuardContext): (title: string, scope: { 
         if (typeof t === 'string' && mineScope) pending.push({ title: t, where: d.status === 'ready' ? 'staged for VDP, waiting for your Apply' : 'applied to VDP, waiting for the next read' });
       } else if (d.destination.action === 'slack_canvas.create') {
         const md = canvasInputOf(d.destination).markdown;
-        if (!md.includes('|Use_Case__c|')) continue;
+        if (!hasObjectRows(md, 'Use_Case__c')) continue;
         for (const c of ucRowsIn(md).creates) if (opp15.has(id15(c.opportunityId))) pending.push({ title: c.name, where: 'on a logging canvas for Org62' });
       }
     }

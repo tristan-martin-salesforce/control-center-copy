@@ -92,7 +92,7 @@ export const RunRow = forwardRef<HTMLDivElement, RunRowProps>(function RunRow({ 
         <span className={cn('hidden shrink-0 whitespace-nowrap @[25rem]/sec:inline', STATE_TEXT[run.state])}>{ROW_STATE[run.state]} ·</span>
         {elapsed ? <span className="shrink-0 tabular-nums whitespace-nowrap">{elapsed}</span> : null}
         {need.text ? (
-          <span className={cn('shrink-0 whitespace-nowrap', need.ai ? 'text-ai-700' : 'font-bold text-fg')} data-need>
+          <span className={cn('min-w-0 truncate', need.ai ? 'text-ai-700' : 'font-bold text-fg')} title={need.text} data-need>
             · {need.text}
           </span>
         ) : null}

@@ -19,7 +19,7 @@ export function openReadme() {
 function ReadmeBody() {
   const q = useApi('getReadme', undefined, { staleTime: 5 * 60_000 });
   if (q.isLoading) return <Skeleton variant="block" className="h-64 w-full" />;
-  if (!q.data) return <p className="text-muted">The README isn’t in this folder. It lives at the root of the Control Center checkout.</p>;
+  if (!q.data) return <p className="text-muted">The README isn’t in this folder. It lives at the root of the Command Center checkout.</p>;
   return <MarkdownBubble text={q.data.markdown} />;
 }
 

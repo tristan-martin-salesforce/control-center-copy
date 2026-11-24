@@ -1,8 +1,8 @@
 /**
  * Local input types for the pure BE-3 engines (priority, closure, re-eval).
  *
- * These mirror docs/ui/DATA-MODEL.md (enum and column names) and docs/ui/UI-SPEC.md (UI vocabulary).
- * The orchestrator reconciles them with W0's `src/contract/**`; see docs/ui/ENGINES.md §5 for the
+ * These mirror docs/reference/DATA-MODEL.md (enum and column names) and docs/archive/2026-build/UI-SPEC.md (UI vocabulary).
+ * The orchestrator reconciles them with W0's `src/contract/**`; see docs/reference/ENGINES.md §5 for the
  * name map. No I/O, no DB, no LLM: the data layer builds these from rows and applies the outputs.
  *
  * Conventions: instants are ISO-8601 strings (UTC `Z` or with an offset); durations are minutes
@@ -204,6 +204,11 @@ export interface WorkingHours {
   days: number[];
   /** Minutes east of UTC for the horizon (PT = -480/-420). The data layer computes it from the IANA zone. */
   utcOffsetMinutes: number;
+  /**
+   * The persona's IANA zone. When set, working windows follow its DST changes day by day (each day's start and end
+   * are wall-clock times in the zone), so the late grace day does not shift by an hour across a change (W0-11).
+   */
+  timeZone?: string;
 }
 
 export interface TimeWindow {
@@ -247,8 +252,19 @@ export interface ClosureItem {
   closureKind?: ClosureKind;
   /** e.g. thread key, email thread id, Drive file id. */
   closureTarget?: string | null;
-  /** DATA-MODEL `auto_close_allowed`. Undefined = allowed (the role-template default for Tristan). */
+  /**
+   * DATA-MODEL `auto_close_allowed`. Not mapped from the column (it defaults to false and was never honoured, SCN-16):
+   * a caller may still pass false to forbid auto-closing one item. Undefined = allowed.
+   */
   autoCloseAllowed?: boolean;
+  /**
+   * R1, the one correction rule both closers share (src/engines/closure/correction.ts): false when the user reopened it
+   * after a close, kept it, marked it Not done, or it touches their ask-first lists. A Sure completion then only asks
+   * (Likely done · Confirm). Undefined = allowed.
+   */
+  mayAutoClose?: boolean;
+  /** Why `mayAutoClose` is false (`user_reopened`, `user_kept`, `ask_first_person`, …), for the decision's reason. */
+  autoCloseBlock?: string | null;
   /** Drive file / asset ids this item delivers (R-UI-15). */
   deliverableRefs?: string[];
   snoozedUntil?: string | null;

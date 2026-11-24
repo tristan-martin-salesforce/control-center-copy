@@ -8,12 +8,18 @@
  *                      attempts ≤ 1 → Haiku retry; attempts = 2 → one Sonnet escalation;
  *                      attempts ≥ 3 → a Triage mapping question (a `guess` proposal, lands suggested).
  *                      A relink run that leaves an item unlinked counts one attempt (store rule S6).
+ *                      Spend (caps audit 26 F-4): with the governor each relink run holds its estimate and asks past
+ *                      it (the $0.05 / $0.25 become the runaway guard's floor); while a connector's relink ask is
+ *                      open its relinks wait; once allowed, the next pass resumes on the approved hold.
  *  3. stale_active   — open items with no new evidence while their source thread/file changed get a
  *                      targeted rescan (deterministic listing, or Slack thread reads, ≤ 10 per pass).
  *  4. skill_upgrade  — when a skill version bumps, re-link the last N days in a DRY RUN against an
  *                      overlay store; the would-be actions become a finding for the Health page.
  */
+import { randomUUID } from 'node:crypto';
+
 import { ESCALATION_MODEL, SCANNER_MODEL } from '../../llm/models';
+import { holdGate, PAUSED_FOR_SPEND, type Hold, type SpendGate, type SpendGovernor } from '../../llm/spend';
 import type { ScanSkillRunInput } from '../../llm/skill-runner';
 import { DEFAULT_SCANNING_PREFS, type ConnectorId, type CoverageObject, type ReevaluateEnqueuer, type ScanContext, type ScannerStore, type ScanningPrefs, type ScopeKey, type SkillRunner, type TimeWindow } from '../types';
 import type { Clock } from '../runtime/clock';
@@ -76,7 +82,12 @@ export interface ReconcilerDeps {
   firstScanActive?: (connector: ConnectorId) => boolean;
   /** D-55: false for a source the persona doesn't scan (no coverage-gap, relink or stale work). Default: every source. */
   connectorActive?: (connector: ConnectorId) => boolean;
+  /** F-4: the spend governor (relink runs hold their estimate and ask past it). Absent: the fixed per-run caps. */
+  spend?: SpendGovernor | null;
 }
+
+/** A relink hold's job key: `relink:<connector>:<uuid>` (one ask per connector stands at a time). */
+const relinkKey = (connector: ConnectorId) => `relink:${connector}:${randomUUID()}`;
 
 /** Optional store extension: the scope's committed coverage span (both stores implement it). */
 interface CoverageSpanStore {
@@ -182,6 +193,7 @@ export class Reconciler {
 
   private async unlinked(specs: ConnectorSpec[], report: ReconcileReport, signal: AbortSignal) {
     for (const spec of specs) {
+      // a page per reconcile pass (oldest flag first); the next pass takes the next page, so nothing waits forever
       const items = (await this.d.store.unlinkedSourceItems({ connector: spec.connector, limit: 60 })) as UnlinkedSourceItemDetail[];
       if (!items.length) continue;
       if (this.d.llmAllowed && !(await this.d.llmAllowed(spec.connector))) {
@@ -199,9 +211,35 @@ export class Reconciler {
       const escalate = open.filter((i) => i.attempts === 2);
       const triage = open.filter((i) => i.attempts >= 3);
       const batch = this.d.relinkBatch ?? 12;
-      for (let i = 0; i < retry.length && !signal.aborted; i += batch) report.relinked += await this.relink(spec, retry.slice(i, i + batch), SCANNER_MODEL, 'relink', report, signal);
-      for (let i = 0; i < escalate.length && !signal.aborted; i += batch) report.escalated += await this.relink(spec, escalate.slice(i, i + batch), ESCALATION_MODEL, 'relink_escalated', report, signal);
+      // F-4: a relink that asked about spend holds the connector's relinks until the answer (no second ask)
+      const waiting = this.d.spend && retry.length + escalate.length ? await this.d.spend.store.listHolds({ states: ['asked'], jobKeyPrefix: `relink:${spec.connector}:`, limit: 1 }).catch(() => [] as Hold[]) : [];
+      if (waiting.length) report.findings.push({ kind: 'unlinked_item', connector: spec.connector, detail: `deferred: a relink asked to allow more spend (Health ▸ Spend); ${retry.length + escalate.length} item(s) wait for the answer` });
+      const paused = () => waiting.length > 0 || this.relinkPaused.has(spec.connector);
+      for (let i = 0; i < retry.length && !signal.aborted && !paused(); i += batch) report.relinked += await this.relink(spec, retry.slice(i, i + batch), SCANNER_MODEL, 'relink', report, signal);
+      for (let i = 0; i < escalate.length && !signal.aborted && !paused(); i += batch) report.escalated += await this.relink(spec, escalate.slice(i, i + batch), ESCALATION_MODEL, 'relink_escalated', report, signal);
+      this.relinkPaused.delete(spec.connector);
       if (triage.length) report.triaged += await this.triage(spec, triage, report);
+    }
+  }
+
+  /** Connectors whose relink asked about spend in this pass (their remaining batches wait for the answer). */
+  private readonly relinkPaused = new Set<ConnectorId>();
+
+  /**
+   * F-4: the relink run's hold: an allowed one the connector's last ask left (resumed), else a new one on the estimate
+   * (whose default is the old cap). Null without a governor, or when today's hard cap has no room (BUD-1: skipped).
+   */
+  private async relinkGate(connector: ConnectorId, escalated: boolean, capUsd: number): Promise<SpendGate | null | 'day_budget'> {
+    const gov = this.d.spend;
+    if (!gov) return null;
+    try {
+      const [allowed] = await gov.store.listHolds({ states: ['approved'], jobKeyPrefix: `relink:${connector}:`, limit: 1 });
+      if (allowed) return holdGate(gov, allowed, { minCeilingUsd: capUsd });
+      const job = { scope: 'scan_run' as const, jobKey: relinkKey(connector), skill: escalated ? 'relink-escalated' : 'relink' };
+      const r = await gov.hold(job, await gov.estimate(job));
+      return r.ok ? holdGate(gov, r.hold, { minCeilingUsd: capUsd }) : 'day_budget';
+    } catch {
+      return null;
     }
   }
 
@@ -210,8 +248,16 @@ export class Reconciler {
     const now = this.d.clock.now().toISOString();
     const key: ScopeKey = { connector: spec.connector, scope: 'reconcile:unlinked' };
     const ctx = await this.d.store.getContext(key);
-    const { runId } = await this.d.store.startRun({ scope: key, trigger: 'reconcile', window: { from: now, to: now }, model, skillVersion: undefined });
     const escalated = model === ESCALATION_MODEL;
+    const capUsd = escalated ? 0.25 : 0.05;
+    const gate = await this.relinkGate(spec.connector, escalated, capUsd);
+    if (gate === 'day_budget') {
+      // BUD-1: as with the hard cap, the items wait for the next budget day (no run, no attempt counted)
+      report.findings.push({ kind: 'unlinked_item', connector: spec.connector, detail: `deferred: daily LLM hard cap; ${items.length} item(s) wait for the next budget day` });
+      this.relinkPaused.add(spec.connector);
+      return 0;
+    }
+    const { runId } = await this.d.store.startRun({ scope: key, trigger: 'reconcile', window: { from: now, to: now }, model, skillVersion: undefined });
     const input: ScanSkillRunInput = {
       skillPath: spec.skillPath,
       model,
@@ -220,7 +266,8 @@ export class Reconciler {
       runId,
       context: ctx,
       maxTurns: spec.maxTurns('reconcile:unlinked', 'relink') + (escalated ? 4 : 0),
-      costCapUsd: escalated ? 0.25 : 0.05,
+      costCapUsd: capUsd,
+      ...(gate ? { spend: gate } : {}),
       signal,
       window: { from: now, to: now },
       mode,
@@ -247,6 +294,16 @@ export class Reconciler {
     report.costUsd += result.costUsd;
     // D0: booked with its tokens, why it ran (reconcile) and why its model (the escalated pass is the second try).
     if (result.costUsd > 0) await this.d.store.recordSpend(runSpend(result, { connector: spec.connector, model, runId, trigger: 'reconcile', modelReason: escalated ? 'escalation:still_unlinked' : 'default', hashOf: [spec.skillPath, mode, ...items.map((i) => i.sourceItemId)] }));
+    if (gate) {
+      // asked: the hold waits for the answer (the connector's relinks with it); otherwise it settles with what it cost
+      if (gate.hold.state === 'asked') this.relinkPaused.add(spec.connector);
+      else await this.d.spend!.settle(gate.hold, gate.hold.spentUsd).catch(() => undefined);
+    }
+    if (!result.ok && gate && gate.hold.state === 'asked' && new RegExp(`^${PAUSED_FOR_SPEND.replace(/_/g, ' ')}`).test(result.error?.message ?? '')) {
+      await this.d.store.failRun(runId, { error: `cancelled: ${result.error?.message ?? 'paused for spend'}; waiting for your answer`, errorClass: 'config' });
+      report.findings.push({ kind: 'unlinked_item', connector: spec.connector, runId, detail: `paused: a relink passed its spend estimate and asked to allow more (Health ▸ Spend); ${items.length} item(s) wait` });
+      return 0;
+    }
     if (!result.ok) {
       // A failed run (budget, transient, auth) is not a linking failure: attempts stay as they are.
       await this.d.store.failRun(runId, { error: result.error?.message ?? 'relink failed', errorClass: result.error?.errorClass });
@@ -254,7 +311,8 @@ export class Reconciler {
       return 0;
     }
     const ids = new Set(items.map((i) => i.sourceItemId));
-    const still = ((await this.d.store.unlinkedSourceItems({ connector: spec.connector, limit: 500 })) as UnlinkedSourceItemDetail[]).filter((u) => ids.has(u.sourceItemId));
+    // every unlinked row (caps audit 2026-11-21: the newest-flagged 500 could miss this batch's re-flagged items)
+    const still = ((await this.d.store.unlinkedSourceItems({ connector: spec.connector, limit: Number.POSITIVE_INFINITY })) as UnlinkedSourceItemDetail[]).filter((u) => ids.has(u.sourceItemId));
     for (const u of still) await this.d.store.flagUnlinked(runId, { sourceItemId: u.sourceItemId, reason: u.reason, hints: u.hints });
     const { touchedWorkItemIds } = await this.d.store.finishRun(runId, {
       cursor: { value: 'relink', at: now },

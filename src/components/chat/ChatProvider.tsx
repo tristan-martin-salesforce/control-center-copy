@@ -6,14 +6,14 @@
  * Context (v2): "Looking at" follows the docked right panel's entity (`useRightPanel().entity`), falling
  * back to what a page attached with setChatContext. It rides along with every message until you remove
  * it, and comes back with "+ Attach what you're looking at" (or by selecting something else).
- * Model: `settings.chat.defaultModel` (CONTRACT-1), saved instantly when you pick one.
+ * Model: `settings.chat.routing` (Assistant v2: Auto, or always Haiku / Sonnet / Opus), saved instantly when you pick one.
  *
  * Keyboard: ⌘J (Ctrl+J) focuses the composer from anywhere and toggles back; Esc in the composer returns
  * focus to where you were. The shell's key manager can take over with `registerHotkey={false}`.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ChatModel as ContractModel, ChatThread, ChatThreadsPayload, ContextRef, Settings } from '@/contract';
+import type { ChatModelChoice, ChatThread, ChatThreadsPayload, ContextRef, Settings } from '@/contract';
 import { api, queryKey } from '@/client/api';
 import { CHAT_KEYS, useChatActions, useChatStream, type ChatActionsApi, type ChatStreamApi } from '@/client/chat';
 import { readString, writeString } from '@/client/chat/storage';
@@ -24,10 +24,11 @@ import { toContextRef, useChatContextValue, type ChatContextInput } from './cont
 import { lastUserMessage } from './thread-model';
 import { ChatUiContext, type ChatUi } from './ui-context';
 
-export type ChatModel = 'Sonnet' | 'Opus';
-export const CHAT_MODELS: ChatModel[] = ['Sonnet', 'Opus'];
-const TO_CONTRACT: Record<ChatModel, ContractModel> = { Sonnet: 'sonnet', Opus: 'opus' };
-const FROM_CONTRACT: Record<ContractModel, ChatModel> = { sonnet: 'Sonnet', opus: 'Opus' };
+/** Assistant v2 (H-6): Auto routes each message (Haiku first); the others are "always <model>" (settings.chat.routing). */
+export type ChatModel = 'Auto' | 'Haiku' | 'Sonnet' | 'Opus';
+export const CHAT_MODELS: ChatModel[] = ['Auto', 'Haiku', 'Sonnet', 'Opus'];
+const TO_CONTRACT: Record<ChatModel, ChatModelChoice> = { Auto: 'auto', Haiku: 'haiku', Sonnet: 'sonnet', Opus: 'opus' };
+const FROM_CONTRACT: Record<ChatModelChoice, ChatModel> = { auto: 'Auto', haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus' };
 
 export interface ChatController {
   stream: ChatStreamApi;
@@ -107,14 +108,14 @@ export function ChatProvider({ children, initialThreadId, registerHotkey = true,
   const settings = useQuery({ queryKey: queryKey('getSettings'), queryFn: ({ signal }) => api('getSettings', undefined, { signal }), staleTime: 60_000 });
   const timeZone = settings.data?.profile.timezone;
 
-  // ── Model: settings.chat.defaultModel, instant save; a local copy covers the first paint ──
-  const [localModel, setLocalModel] = useState<ChatModel>('Sonnet');
+  // ── Model: settings.chat.routing (Auto by default), instant save; a local copy covers the first paint ──
+  const [localModel, setLocalModel] = useState<ChatModel>('Auto');
   useEffect(() => {
     if (!persist) return;
     const m = readString(CHAT_KEYS.model) as ChatModel | null;
     if (m && models.includes(m)) setLocalModel(m);
   }, [persist, models]);
-  const serverModel = settings.data?.chat?.defaultModel;
+  const serverModel = settings.data?.chat?.routing;
   const model: ChatModel = serverModel ? FROM_CONTRACT[serverModel] : localModel;
   const patchModel = useOptimisticMutation({
     route: 'patchSettings',
@@ -123,7 +124,7 @@ export function ChatProvider({ children, initialThreadId, registerHotkey = true,
     rebase: ({ input, current }) => ({ ...input, body: { ...input.body!, ifVersion: Number(current.version) } }),
     optimistic: (input, cache) =>
       cache.setQuery<Settings>(queryKey('getSettings'), (old) =>
-        old ? { ...old, chat: { ...old.chat, defaultModel: (input.body?.value as { defaultModel: ContractModel }).defaultModel } } : old,
+        old ? { ...old, chat: { ...old.chat, routing: (input.body?.value as { routing: ChatModelChoice }).routing } } : old,
       ),
     onError: () => toast({ key: 'chat-model', tone: 'warning', title: "Couldn't change the model", body: 'New messages keep the previous model.' }),
   });
@@ -132,7 +133,7 @@ export function ChatProvider({ children, initialThreadId, registerHotkey = true,
       setLocalModel(m);
       if (persist) writeString(CHAT_KEYS.model, m);
       const chat = settings.data?.chat;
-      if (chat) patchModel.mutate({ params: { section: 'chat' }, body: { ifVersion: chat.version, value: { defaultModel: TO_CONTRACT[m] } } });
+      if (chat) patchModel.mutate({ params: { section: 'chat' }, body: { ifVersion: chat.version, value: { routing: TO_CONTRACT[m] } } });
     },
     [persist, settings.data?.chat, patchModel],
   );

@@ -25,6 +25,7 @@ import { org62CheckOf } from '@/engines/activity/org62-check';
 import { phaseOfStage, ucGoLive, ucProduct, type UseCaseItem, type UseCasePlan, type UseCasePlanInput } from '@/engines/activity/use-cases';
 import { canvasInputOf } from '@/lib/canvas/payload';
 import { canvasRowsOf } from '@/lib/canvas/preflight';
+import { hasObjectRows } from '@/lib/canvas/tables';
 import type { VdpSnapshot } from '@/lib/vdp/types';
 import type { CandidateRecord } from '@/server/vdp/detail';
 
@@ -406,7 +407,7 @@ function canvasUseCases(world: LandingWorld): Array<{ vdpUseCaseId?: string; org
     } catch {
       continue;
     }
-    if (!md.includes('|Use_Case__c|')) continue;
+    if (!hasObjectRows(md, 'Use_Case__c')) continue;
     for (const r of canvasRowsOf(md)) {
       if (r.section === 'use_cases' && r.ref) out.push({ vdpUseCaseId: r.ref, title: r.cells[2] ?? '' });
       else if (r.section === 'update' && r.cells[1] === 'Use_Case__c' && r.cells[2]) out.push({ org62UseCaseId: r.cells[2], title: (r.cells[6] ?? '').split(':')[0]?.trim() ?? '' });

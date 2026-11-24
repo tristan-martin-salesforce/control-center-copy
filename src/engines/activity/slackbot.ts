@@ -4,15 +4,19 @@
  * ap/handoff.py), the format Slackbot has already run. Pure: no I/O; the owner's Org62 user id and the Solutions Event
  * record type id come in as inputs (never constants in the repo).
  *
- *   ADD     one row per Org62 Event: Subject, UTC start/end, SE_Task_Type__c, Duration__c, WhatId, Meeting_Type__c
- *           (Workshop / POC only), Description: the row's note (D-66, a teammate's note: what was done, with whom,
- *           the use case, the next step), then the CC# key that ties it back to the app's row, at the end
- *   UPDATE  field fixes on existing Events (Duration__c backfills)
+ *   EVENTS TO CREATE  one row per Org62 Event: Subject, UTC start/end, SE_Task_Type__c, Duration__c, WhatId,
+ *                     Meeting_Type__c (Workshop / POC only), Description: the row's note (D-66, a teammate's note: what
+ *                     was done, with whom, the use case, the next step), then the CC# key that ties it back to the
+ *                     app's row, at the end (the last column)
+ *   EVENTS TO UPDATE  field fixes on existing Events (Duration__c backfills and changes)
+ *
+ * WO-1 (2026-11-23): one table per object and verb (src/lib/canvas/tables.ts); DCs and use cases add their own.
  *
  * The app never writes to Org62 itself: the user hands this canvas to Slackbot, and the Org62 read-back confirms it.
  */
 
 import { CANVAS_MAX_BYTES, utf8Bytes } from '@/lib/canvas/payload';
+import { lineInTable, tableSpec, upsertTable } from '@/lib/canvas/tables';
 
 import { isInternalTaskType } from './internal';
 import { cleanNote, templateNote, withCcKey, type NoteFacts } from './note';
@@ -51,7 +55,7 @@ export interface WorkOrderInput {
   generatedAt: string;
   events: WorkOrderEvent[];
   updates: WorkOrderUpdate[];
-  /** "Control Center" plus the batch label, shown in the footnote. */
+  /** "Command Center" plus the batch label, shown in the footnote. */
   sourceLabel: string;
   /**
    * D-55: the persona's record type and whether rows carry an SE task type. Absent: the SE's (Solutions Event, task
@@ -126,61 +130,64 @@ export function eventRow(r: {
   return { ccId: r.id, subject: r.subject, startUtc, endUtc, taskType: r.taskType, durationH: hours, whatId: r.whatOrg62Id, meetingType: meetingTypeFor(r.taskType), description };
 }
 
-const EVENT_HEADER = '|#|Object|Subject / Opportunity|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c / Role|Duration__c / Split %|WhatId / Opportunity__c|Meeting_Type__c|Description / Comments__c|';
-const UPDATE_HEADER = '|#|Object|Record Id|Action / Field|New value|Current value|Why|';
 
-/** One ADD-table Event row (numbered `n`): what Slackbot creates. */
-export const eventLine = (n: number, e: WorkOrderEvent) => `|${n}|Event|${cell(e.subject)}|${e.startUtc}|${e.endUtc}|${cell(e.taskType)}|${e.durationH}|${cell(e.whatId)}|${cell(e.meetingType)}|${cell(e.description)}|`;
-
-/** One UPDATE-table row on an Event (a Duration__c backfill). */
-export const updateLine = (n: number, u: WorkOrderUpdate) => `|${n}|Event|${cell(u.recordId)}|${cell(u.field)}|${cell(u.newValue)}|${cell(u.currentValue)}|${cell(u.why)}|`;
-
-/** The whole work order as canvas markdown. */
-export function renderWorkOrder(i: WorkOrderInput): string {
+/** The EVENTS TO CREATE paragraph: what Slackbot creates from each row, and which column is which field. */
+export function eventCreateRule(i: Pick<WorkOrderInput, 'ownerName' | 'ownerOrg62Id' | 'recordTypeId' | 'logging'>, internal: boolean): string {
   const { ownerName: who, ownerOrg62Id: owner, recordTypeId: rt } = i;
-  const hours = i.events.reduce((s, e) => s + e.durationH, 0);
   const se = !i.logging || (i.logging.recordTypeName === 'Solutions Event' && i.logging.taskTypeRequired);
   const rtName = i.logging?.recordTypeName ?? 'Solutions Event';
-  const out: string[] = [];
-  out.push('::: {.callout}');
-  out.push(`**Slackbot: this canvas is a complete work order. Execute it in Org62 for ${who} (User Id ${owner}) without asking for more context.** Rules:`);
-  out.push(':::');
-  out.push('');
-  if (se) {
-    out.push(
-      `1. **ADD table, rows with Object = Event:** create an Event with RecordTypeId \`${rt}\` (Solutions Event), OwnerId \`${owner}\`, and Subject, StartDateTime, EndDateTime (UTC, exactly as given), SE_Task_Type__c, Duration__c, WhatId, Meeting_Type__c (only when given) and Description. Do not set DurationInMinutes or Remote__c.`,
-    );
-    out.push(
-      `2. **Duplicates:** skip an Event row ONLY if ${who} already owns an Event with RecordTypeId \`${rt}\` (Solutions Event) and the same Subject and StartDateTime. "Sales Events" records (Type = AE meeting, IsChild = true) are copies of AE calendar invites, not SE time, so they are NOT duplicates. Create the row anyway.`,
-    );
-  } else {
-    // D-55: another persona's record type (the AE's Sales Events), with or without a task type
-    const task = i.logging!.taskTypeRequired ? 'SE_Task_Type__c, ' : '';
-    out.push(
-      `1. **ADD table, rows with Object = Event:** create an Event with RecordTypeId \`${rt}\` (${rtName}), OwnerId \`${owner}\`, and Subject, StartDateTime, EndDateTime (UTC, exactly as given), ${task}Duration__c, WhatId, Meeting_Type__c (only when given) and Description.${task ? '' : ' Leave SE_Task_Type__c empty.'} Do not set DurationInMinutes or Remote__c.`,
-    );
-    out.push(`2. **Duplicates:** skip an Event row ONLY if ${who} already owns an Event with RecordTypeId \`${rt}\` (${rtName}) and the same Subject and StartDateTime. Otherwise create the row.`);
-  }
+  const task = se || i.logging!.taskTypeRequired;
+  const what = `Create one Event per row with RecordTypeId \`${rt}\` (${rtName}) and OwnerId \`${owner}\`. Each column is the Event field of the same name: Subject, StartDateTime and EndDateTime (UTC, exactly as given), ${task ? 'SE_Task_Type__c, ' : ''}Duration__c, WhatId, Meeting_Type__c (only when given) and Description (exactly as given, its CC# key included). A WhatId is an Opportunity (006…) or an Account (001…): set it as given either way.${task ? '' : ' Leave SE_Task_Type__c empty.'} Do not set DurationInMinutes or Remote__c.`;
+  // D-55: the SE's Solutions Events sit next to AE copies that are not duplicates; another persona's only its own
+  const dup = se
+    ? `Skip a row ONLY if ${who} already owns an Event with RecordTypeId \`${rt}\` (Solutions Event) and the same Subject and StartDateTime. "Sales Events" records (Type = AE meeting, IsChild = true) are copies of AE calendar invites, not SE time, so they are NOT duplicates: create the row anyway.`
+    : `Skip a row ONLY if ${who} already owns an Event with RecordTypeId \`${rt}\` (${rtName}) and the same Subject and StartDateTime. Otherwise create it.`;
   // D-64: internal rows (no opportunity) carry an empty WhatId: say so, so Slackbot neither stops nor guesses one
-  const internal = i.events.some((e) => !e.whatId);
-  if (internal) out.push(`3. **Internal rows:** a row whose WhatId cell is empty is internal work with no opportunity: create it with WhatId (Related To) left empty. Do not look up or guess an opportunity or account for it.`);
-  out.push(`${internal ? 4 : 3}. **UPDATE table:** set Field = New value on the given Record Id.`);
-  out.push(`${internal ? 5 : 4}. Work through everything in batches of 25. Don't stop on an individual failure. At the end, reply with counts: created / updated / skipped as duplicate / failed (with the error for each failure).`);
+  const int = internal ? ' A row whose WhatId is empty is internal work with no opportunity: create it with WhatId (Related To) left empty, and do not look up or guess an opportunity or account for it.' : '';
+  return `**EVENTS TO CREATE:** ${what} ${dup}${int}`;
+}
+
+/** The paragraph of an update table (one field on an existing record per row). */
+export const updateRule = (title: string, object: string, extra = '') =>
+  `**${title}:** each row changes one field on an existing ${object}: on the record whose Id is in Record Id, set the field named in Field to New value, nothing else.${extra} Current value (what Org62 held when this was written) and Why are for you to read: never write them anywhere.`;
+
+export const EVENT_UPDATE_RULE = updateRule('EVENTS TO UPDATE', 'Event');
+
+/** The Event rows in the legacy cell layout the table helpers take (src/lib/canvas/tables.ts). */
+const eventCells = (n: number, e: WorkOrderEvent) => [String(n), 'Event', cell(e.subject), e.startUtc, e.endUtc, cell(e.taskType), String(e.durationH), cell(e.whatId), cell(e.meetingType), cell(e.description)];
+const updateCells = (n: number, u: WorkOrderUpdate) => [String(n), 'Event', cell(u.recordId), cell(u.field), cell(u.newValue), cell(u.currentValue), cell(u.why)];
+
+/** One EVENTS TO CREATE row (numbered `n`): what Slackbot creates. */
+export const eventLine = (n: number, e: WorkOrderEvent) => lineInTable(tableSpec('events_create'), eventCells(n, e));
+
+/** One EVENTS TO UPDATE row (a Duration__c fix). */
+export const updateLine = (n: number, u: WorkOrderUpdate) => lineInTable(tableSpec('events_update'), updateCells(n, u));
+
+/**
+ * The callout every work order opens with: who it is for, and the rules for all tables (top to bottom, batches,
+ * the reply). Each table's own paragraph sits under its heading.
+ */
+export function workOrderCallout(who: string, owner: string, reply = 'created / updated / skipped as duplicate / failed (with the error for each failure)'): string[] {
+  return [
+    '::: {.callout}',
+    `**Slackbot: this canvas is a complete work order. Execute it in Org62 for ${who} (User Id ${owner}) without asking for more context.** Rules:`,
+    ':::',
+    '',
+    '1. **One table per job.** Each table below does one thing to one kind of Org62 record (its heading says which: create or update, and the object). Work through the tables from top to bottom, and follow the paragraph under each heading. Every column is named by its Org62 field (API name).',
+    `2. Work through everything in batches of 25. Don't stop on an individual failure. At the end, reply with counts: ${reply}.`,
+  ];
+}
+
+/** The whole work order as canvas markdown: the Event tables (each only when it has rows); DCs and use cases join later. */
+export function renderWorkOrder(i: WorkOrderInput): string {
+  const { ownerName: who, ownerOrg62Id: owner } = i;
+  const out: string[] = [...workOrderCallout(who, owner)];
   out.push('');
-  out.push(`_Generated ${i.generatedAt.slice(0, 16).replace('T', ' ')} UTC by ${cell(i.sourceLabel)}. Control Center checks Org62 afterwards and flags any row that didn't land._`);
-  out.push('');
-  out.push(`# ADD (${i.events.length} rows · ${hours.toFixed(2)} h of activities)`);
-  out.push('');
-  out.push(EVENT_HEADER);
-  out.push('|---|---|---|---|---|---|---|---|---|---|');
-  i.events.forEach((e, n) => out.push(eventLine(n + 1, e)));
-  out.push('');
-  out.push(`# UPDATE (${i.updates.length} rows)`);
-  out.push('');
-  out.push(UPDATE_HEADER);
-  out.push('|---|---|---|---|---|---|---|');
-  i.updates.forEach((u, n) => out.push(updateLine(n + 1, u)));
-  return out.join('\n');
+  out.push(`_Generated ${i.generatedAt.slice(0, 16).replace('T', ' ')} UTC by ${cell(i.sourceLabel)}. Command Center checks Org62 afterwards and flags any row that didn't land._`);
+  let md = out.join('\n');
+  md = upsertTable(md, 'events_create', eventCreateRule(i, i.events.some((e) => !e.whatId)), i.events.map((e, n) => eventCells(n + 1, e)));
+  md = upsertTable(md, 'events_update', EVENT_UPDATE_RULE, i.updates.map((u, n) => updateCells(n + 1, u)));
+  return md;
 }
 
 /**
@@ -196,7 +203,7 @@ export function splitWorkOrder(md: string, limit = CANVAS_MAX_BYTES): string[] {
   let title: string | null = null;
   let header: string[] | null = null;
   for (const ln of md.split('\n')) {
-    if (ln.startsWith('# ')) {
+    if (/^#{1,2} /.test(ln)) {
       title = ln;
       header = null;
     }

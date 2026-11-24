@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { SE_TASK_TYPES } from '@/engines/activity/taxonomy';
 import { PersonaId, PersonaSettings, Settings, SETTINGS_SECTION_SCHEMAS, SettingsSectionKey } from '@/contract';
 import { SCAN_CONNECTORS } from '@/jobs';
-import { AE_POLICY, ROLE_POLICIES } from '@/engines/priority';
-import { allows, ALL_CONNECTORS, fillThresholds, PERSONAS, personaOf, READ_PAGE_GATES, renderPersonaBlock, ROUTE_GATES, TOOL_GATES } from '@/personas';
+import { AE_POLICY, ROLE_POLICIES } from '@/engines/priority/policy';
+import { allows, ALL_CONNECTORS, fillThresholds, PERSONAS, personaOf, READ_PAGE_GATES, renderPersonaBlock, roleTitle, ROUTE_GATES } from '@/personas';
 import { routes } from '@/contract';
 import { defaultSections, rolePolicy, templateFor, BootstrapProfile } from '@/server/datasource/db/bootstrap';
 import { createMockDataSource } from '@/server/datasource/mock';
@@ -91,7 +91,7 @@ describe('gates', () => {
     expect(allows(null, undefined)).toBe(true);
     const ae = personaOf({ persona: { id: 'ae' } });
     const se = personaOf({});
-    for (const g of [TOOL_GATES.chat_vdp_update, READ_PAGE_GATES.vdp, ROUTE_GATES.getVdpCoverage]) {
+    for (const g of [READ_PAGE_GATES.vdp, ROUTE_GATES.getVdpCoverage]) {
       expect(allows(ae, g)).toBe(false);
       expect(allows(se, g)).toBe(true);
     }
@@ -103,12 +103,19 @@ describe('the Persona block', () => {
   it('is deterministic and names the role, its active duties, rules with thresholds filled, and the sources', () => {
     const a = renderPersonaBlock(personaOf({ persona: { id: 'ae' } }));
     expect(a).toBe(renderPersonaBlock(personaOf({ persona: { id: 'ae' } })));
-    expect(a).toContain('Role: Specialist AE (Specialist AE), one Salesforce Data 360 Specialist Account Executive (AE).');
+    expect(a).toContain('Role: Specialist AE, one Salesforce Data 360 Specialist Account Executive (AE).');
     expect(a).toContain('$100,000');
     expect(a).not.toContain('VDP');
     expect(a).toContain('record type SalesEvents');
     const s = renderPersonaBlock(personaOf({}));
     expect(s).toContain('each with an SE task type, 250 h a quarter');
+    expect(s).toContain('Role: SE (Solutions Engineer), one Salesforce Solutions Engineer (SE).');
+  });
+
+  it('names a role once when its level reads the same (29-persona-qa: no "Specialist AE (Specialist AE)")', () => {
+    expect(roleTitle(personaOf({ persona: { id: 'ae' } }))).toBe('Specialist AE');
+    expect(roleTitle(personaOf({}))).toBe('SE (Solutions Engineer)');
+    expect(roleTitle(personaOf({ persona: { id: 'se', level: 'manager' } }))).toBe('SE manager (Solutions Engineer)');
   });
 });
 

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\") for the resolution check (skills/resolve-item.md), keyed by ledgerHash(model, skill, system, user). Re-key offline after a prompt or skill change: npx tsx tests/evals/scanner/record-resolution.ts.",
+  "entries": [
+    {
+      "hash": "6120ac4a44fe758d62b1a2ad4b4653bc",
+      "label": "claude-haiku-5-5 | 2026-10-23 23:32Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"cite\": null, \"confidence\": 0.3, \"needs\": \"an answer from PERSON_AR\"}]}"
+    },
+    {
+      "hash": "b0c66044665583dc575fef628b215f83",
+      "label": "claude-haiku-5-5 | 2026-10-25 16:52Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"cite\": null, \"confidence\": 0.3, \"needs\": \"an answer from PERSON_AR\"}]}"
+    },
+    {
+      "hash": "b5a58a3f64990c6a580dce296001eece",
+      "label": "claude-haiku-5-5 | 2026-11-02 16:12Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"cite\": null, \"confidence\": 0.3, \"needs\": \"an answer from PERSON_AR\"}]}"
+    },
+    {
+      "hash": "b0cffbc5bebc9f8b642343e84682772c",
+      "label": "claude-haiku-5-5 | 2026-11-05 22:22Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"cite\": null, \"confidence\": 0.3, \"needs\": \"an answer from PERSON_AR\"}]}"
+    }
+  ]
+}

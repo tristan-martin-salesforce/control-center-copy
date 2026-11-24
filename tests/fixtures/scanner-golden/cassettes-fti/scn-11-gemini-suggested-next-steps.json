@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "a52efa88e9614904883b6b83ac288cf6",
+      "label": "classify | DOC_GEMINI_CHECKBOX_01#1",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"DOC_GEMINI_CHECKBOX_01#1\", \"v\": \"commitment\", \"kind\": \"deliverable\", \"title\": \"Send the updated workshop deck\", \"deliverable\": \"deck\", \"due\": null, \"conf\": 0.8, \"cite\": \"Send the updated workshop deck\", \"link\": null, \"why\": \"next step assigned to me in the meeting notes\"}]}"
+    },
+    {
+      "hash": "db52b5d9ab899359a9a50e6b2b02a643",
+      "label": "classify | DOC_GEMINI_SUGGESTED_01#1",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"DOC_GEMINI_SUGGESTED_01#1\", \"v\": \"commitment\", \"kind\": \"deliverable\", \"title\": \"Send PERSON_M the denied-claim scenario outline\", \"who\": \"PERSON_M\", \"deliverable\": \"outline\", \"due\": \"2026-11-13\", \"conf\": 0.82, \"cite\": \"Send PERSON_M the denied-claim scenario outline (Friday)\", \"link\": null, \"why\": \"next step assigned to me, due Friday\"}]}"
+    }
+  ]
+}

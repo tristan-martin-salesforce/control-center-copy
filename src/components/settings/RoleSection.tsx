@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PersonaFeature, PersonaLevel } from '@/contract';
 import { useApi } from '@/client/hooks';
 import { loggingProfile } from '@/engines/activity/persona';
-import { fillThresholds, personaOf, selectablePersonas, type PersonaThreshold, type ResolvedPersona } from '@/personas';
+import { fillThresholds, personaOf, roleTitle, selectablePersonas, type PersonaThreshold, type ResolvedPersona } from '@/personas';
 import type { ConnectorId } from '@/scanner/types';
 import { Button, cn, SegmentedToggle, Skeleton } from '@/ui';
 import { Check, Glyph, MiniButton, NumberInput, Select, TextInput } from './controls';
@@ -246,7 +246,7 @@ export function RoleSection() {
         <>
           {carriedHere ? (
             <p role="status" className="text-body text-fg" data-testid="role-carried">
-              Carried over {carriedHere === 1 ? '1 rule' : `${carriedHere} rules`} from Agent behavior. Save to keep {carriedHere === 1 ? 'it' : 'them'}.
+              Carried over {carriedHere === 1 ? '1 rule' : `${carriedHere} rules`} from Autonomy. Save to keep {carriedHere === 1 ? 'it' : 'them'}.
             </p>
           ) : null}
           <SaveFeedback mutation={f.mutation} />
@@ -276,7 +276,7 @@ export function RoleSection() {
           </div>
         </Row>
         {levels.length > 1 ? (
-          <Row label="Level" labelId="l-r-level" help={d.level === null ? 'Follows Profile & role ▸ Role pack.' : 'Set here, whatever Profile & role says.'} edited={p.level !== was.level || d.level !== saved.level}>
+          <Row label="Level" labelId="l-r-level" help={d.level === null ? 'From your setup. Pick the other level here to change it.' : 'Set here.'} edited={p.level !== was.level || d.level !== saved.level}>
             <SegmentedToggle size="md" label="Level" value={p.level} onChange={(v) => update(setLevel(d, v, profile))} options={levels.map(([lv, x]) => ({ value: lv, label: x.label }))} />
           </Row>
         ) : null}
@@ -374,7 +374,7 @@ export function RoleSection() {
                   </td>
                   <td>
                     <RuleText text={r.text} filled={fillThresholds(r.text, p.thresholds)} label={`Your rule ${i + 1}`} invalid={!!err} onText={(t) => update(editCustomRule(d, r.id, { text: t }))} testId={`role-custom-${r.id}`} />
-                    {carriedIds.has(r.id) ? <p className={s.help}>From Agent behavior ▸ What counts as a task.</p> : null}
+                    {carriedIds.has(r.id) ? <p className={s.help}>From Autonomy ▸ What counts as a task.</p> : null}
                     {err ? (
                       <p className={cn(s.help, s.helpErr)} role="alert">
                         {err}
@@ -483,7 +483,9 @@ function list(xs: string[]): string {
 function loggingLine(p: ResolvedPersona): string {
   if (!p.features.activityLogging) return 'Activity logging is not active: nothing is proposed for Org62.';
   const l = loggingProfile(p);
-  return `Customer meetings are logged in Org62 as ${l.recordTypeName}${l.taskTypeRequired ? ', each with an SE task type' : ''}${l.hoursTargetH ? `, toward ${l.hoursTargetH} h a quarter` : ''}.`;
+  // the record type's name is singular for an SE ("Solutions Event"), plural for an AE ("Sales Events")
+  const events = /s$/i.test(l.recordTypeName) ? l.recordTypeName : `${l.recordTypeName}s`;
+  return `Customer meetings are logged in Org62 as ${events}${l.taskTypeRequired ? ', each with an SE task type' : ''}${l.hoursTargetH ? `, toward ${l.hoursTargetH} h a quarter` : ''}.`;
 }
 
 /** The effect pane: what follows the role, from the draft (the same `personaOf` the server runs). */
@@ -504,7 +506,7 @@ export function RoleEffect() {
           {f.dirty ? <span className={s.badge}>Not saved</span> : null}
         </div>
         <p className={s.sub}>
-          {p.levelLabel} ({p.label}){p.status === 'preview' ? ' · Preview' : ''}
+          {roleTitle(p)}{p.status === 'preview' ? ' · Preview' : ''}
         </p>
       </div>
       <div className={s.card}>

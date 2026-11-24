@@ -47,7 +47,7 @@ interface ThreadExt {
   atCount: number;
 }
 
-type Blocks = [{ context?: ChatMessage['context']; isMorningBrief?: boolean; parts?: ChatMessage['parts']; status?: ChatMessage['status']; usage?: ChatMessage['usage'] }?];
+type Blocks = [{ context?: ChatMessage['context']; isMorningBrief?: boolean; parts?: ChatMessage['parts']; status?: ChatMessage['status']; usage?: ChatMessage['usage']; route?: ChatMessage['route'] }?];
 
 export const NEW_THREAD_TITLE = 'New thread';
 
@@ -70,9 +70,10 @@ export async function loadChat(rc: ReadCtx): Promise<ChatThreadDetail[]> {
           parts: meta.parts ?? [],
           context: meta.context ?? [],
           isMorningBrief: !!meta.isMorningBrief,
-          ...(m.model === 'sonnet' || m.model === 'opus' ? { model: m.model } : {}),
+          ...(m.model === 'sonnet' || m.model === 'opus' || m.model === 'haiku' ? { model: m.model } : {}),
           ...(meta.status ? { status: meta.status } : {}),
           ...(meta.usage ? { usage: meta.usage } : {}),
+          ...(meta.route ? { route: meta.route } : {}),
         };
       });
     const seeded = x.atCount === undefined || x.atCount === messages.length;
@@ -132,7 +133,7 @@ export async function insertChatMessage(tx: Tx, threadId: string, m: ChatMessage
     seq,
     role: m.role,
     content: m.text,
-    contentBlocks: [{ parts: m.parts, context: m.context, isMorningBrief: m.isMorningBrief, ...(m.status ? { status: m.status } : {}), ...(m.usage ? { usage: m.usage } : {}) }],
+    contentBlocks: [{ parts: m.parts, context: m.context, isMorningBrief: m.isMorningBrief, ...(m.status ? { status: m.status } : {}), ...(m.usage ? { usage: m.usage } : {}), ...(m.route ? { route: m.route } : {}) }],
     model: m.model ?? null,
     createdAt: toDate(m.at)!,
   });

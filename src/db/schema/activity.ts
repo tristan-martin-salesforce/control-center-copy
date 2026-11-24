@@ -16,7 +16,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { tstz, createdAt, updatedAt, ownerUserId, confidence, textArray } from './columns';
+import { tstz, createdAt, updatedAt, ownerUserId, confidence, textArray, id15 } from './columns';
 import {
   linkMethod,
   runStatus,
@@ -134,10 +134,16 @@ export const activityEntries = pgTable(
     /** Fields the user edited; engines propose instead of overwriting (R-UI-20). */
     userLockedFields: textArray('user_locked_fields'),
     version: integer('version').notNull().default(1),
+    /** 0036 (D-98, D-66): the Org62 Description's note and how the app drafted it (were `cc.ext/activity_entries/<id>`). */
+    logNote: text('log_note'),
+    logNoteBasis: text('log_note_basis'),
+    targetOrg62EventId15: id15('target_org62_event_id15', 'target_org62_event_id'),
+    whatOrg62Id15: id15('what_org62_id15', 'what_org62_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    index('activity_entries_owner_what_id15_idx').on(t.ownerUserId, t.whatOrg62Id15),
     uniqueIndex('activity_entries_owner_dedupe_uidx').on(t.ownerUserId, t.dedupeKey),
     index('activity_entries_owner_status_idx').on(t.ownerUserId, t.status, t.startsAt),
     index('activity_entries_owner_period_idx').on(t.ownerUserId, t.fiscalPeriodId, t.status),

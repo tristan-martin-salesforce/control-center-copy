@@ -1,0 +1,24 @@
+{
+  "name": "sample-wednesday",
+  "description": "The sample day as the database holds it: Wed 2026-11-18 09:00 MT. Expectations from sample-data/CAST-work.md (Anchors, Today's priority run) and lane 07 §2.7 / §4.5: Oakhallow sign-off before the 14:30 call (Valentina, customer exec), the Elderglen demo (Nadia's reply, then the build + OMS sandbox; demo Thu 10:00), blueprint sections 6-7 in the morning focus block; the gone-quiet Anjali items are re-date rows, not #1; admin stays off the first screen.",
+  "now": "2026-11-18T16:00:00.000Z",
+  "timezone": "America/Denver",
+  "workingHours": { "start": "07:30", "end": "17:30", "days": [1, 2, 3, 4, 5] },
+  "firstScreen": 5,
+  "goldenTop3": [["wi-060"], ["wi-031", "wi-032", "wi-105"], ["wi-015", "wi-003"]],
+  "expectations": [
+    { "kind": "inTop3", "anyOf": ["wi-015", "wi-003"], "note": "blueprint sections 6-7 in the 09:30 focus block (Friday's $1.25M deliverable)" },
+    { "kind": "inTop3", "anyOf": ["wi-060"], "note": "Oakhallow technical sign-off before the 14:30 call; Valentina (customer exec) reopened it" },
+    { "kind": "inTop3", "anyOf": ["wi-031", "wi-032", "wi-105"], "note": "the Elderglen demo build: tomorrow 10:00, ~3.5 h hands-on, has to happen today" },
+    { "kind": "notFirstScreen", "ids": ["wi-044", "wi-042"], "note": "gone quiet: re-date rows, never the head of the list" },
+    { "kind": "notFirstScreen", "ids": ["wi-027", "wi-037", "wi-072", "wi-090", "wi-096", "wi-097", "wi-098", "wi-021"], "note": "admin (VDP, logging, sweep reminders, training) stays off the first screen" },
+    { "kind": "order", "above": "wi-032", "below": "wi-042", "note": "tomorrow's $780k demo build above a 2-day-late recap" },
+    { "kind": "order", "above": "wi-060", "below": "wi-044", "note": "the reopened customer sign-off above a 6-day-late follow-up" },
+    { "kind": "capacity", "is": "overbooked", "note": "PRIO-3: the demo build must start today; with it the day is overbooked, never \"fits, 35 min open\"" },
+    { "kind": "whyContains", "id": "wi-042", "phrases": ["2 d late", "re-date or drop", "Anjali"] },
+    { "kind": "whyContains", "id": "wi-044", "phrases": ["6 d late", "re-date or drop"] },
+    { "kind": "whyContains", "id": "wi-060", "phrases": ["14:30", "Valentina", "customer exec"] },
+    { "kind": "whyContains", "id": "wi-032", "phrases": ["due Thu 09:30", "start by"] },
+    { "kind": "whyContains", "id": "wi-093", "phrases": ["SE team sync 10:00", "Hana"] }
+  ]
+}

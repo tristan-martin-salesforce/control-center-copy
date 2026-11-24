@@ -98,7 +98,7 @@ interface Sel {
 
 /** An opp's DC words: my DC, else a request in flight ("DC requested: 100%", "DC change requested: 50% → 100%"). */
 export function oppDcWords(o: Pick<Opportunity, 'myDc' | 'dcAssigned'>, req: Pick<DcRequest, 'kind' | 'fromSplit' | 'splitPercent' | 'stage'> | undefined): string | null {
-  const pending = req && req.stage !== 'confirmed' && req.stage !== 'dismissed' && req.stage !== 'not_created' ? `${req.kind === 'change' ? `DC change requested: ${req.fromSplit ?? '?'}% → ${req.splitPercent}%` : `DC requested: ${req.splitPercent}%`}${req.stage === 'waiting' ? '' : req.stage === 'in_canvas' ? ' (on a canvas)' : ' (with Slackbot)'}` : null;
+  const pending = req && req.stage !== 'confirmed' && req.stage !== 'dismissed' && req.stage !== 'not_created' ? `${req.kind === 'change' ? `DC change requested: ${req.fromSplit ?? '?'}% → ${req.splitPercent}%` : `DC requested: ${req.splitPercent}%`}${req.stage === 'waiting' ? '' : req.stage === 'in_canvas' ? ' (in a batch)' : ' (with Slackbot)'}` : null;
   const mine = myDcWords(o.myDc) ?? (o.dcAssigned ? 'DC assigned' : null);
   // D-68: Slackbot had it and Org62 shows no DC: the opp is a gap again (Ask again on Deals ▸ DCs)
   const notCreated = req?.stage === 'not_created' && !o.myDc ? 'DC request not created in Org62' : null;
@@ -477,7 +477,9 @@ export function AccountPage({ accountId }: { accountId: string }) {
               Deals
             </AppLink>
             <span aria-hidden>›</span>
-            <span>{account.industry ?? 'No industry set'}</span>
+            {/* 01-ui-audit UI-21: the crumb names the account (the industry is not a level of Deals) */}
+            <span className="font-bold text-fg">{account.name}</span>
+            {account.industry ? <span className="text-muted">· {account.industry}</span> : null}
           </span>
         }
         title={account.name}

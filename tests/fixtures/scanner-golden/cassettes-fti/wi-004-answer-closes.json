@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "7962c9e08d82ec5b342389432ffbddfe",
+      "label": "classify | C0SALT001:1793144400.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0SALT001:1793144400.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Answer PERSON_S: how do member identities enter the POC org?\", \"who\": \"PERSON_S\", \"deliverable\": \"answer\", \"due\": null, \"conf\": 0.95, \"cite\": \"will member identities come in through our IdP, or do we create test members manually?\", \"link\": null, \"why\": \"direct question to me\"}]}"
+    },
+    {
+      "hash": "1b624cf266182f39b62d359c7f9672f9",
+      "label": "classify | C0SALT001:1793146500.000000 , C0SALT001:1793147460.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0SALT001:1793146500.000000\", \"v\": \"completion\", \"due\": null, \"conf\": 0.9, \"cite\": \"test members are loaded as synthetic records in Data 360 for the POC\", \"link\": \"w1\", \"why\": \"my answer in the thread to the identities question\"}, {\"ref\": \"C0SALT001:1793147460.000000\", \"v\": \"change\", \"due\": null, \"conf\": 0.75, \"cite\": \"Please also state the data residency assumption in the blueprint\", \"link\": \"w1\", \"why\": \"agrees, and also wants the data residency assumption stated\"}]}"
+    }
+  ]
+}

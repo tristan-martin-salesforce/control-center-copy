@@ -3,12 +3,17 @@
  *
  * For meetings that ended, poll for the "Notes by Gemini" doc for up to 120 minutes (cadence is the runtime's: every 10 min).
  * Found notes are parsed (Summary, Decisions, "Next steps" with assignees) into one `meeting_notes` item per notes doc.
+ * R11 (SCN-11): the steps heading is `Next steps`, `Suggested next steps` or `Action items` at levels 1-3, the checkbox
+ * is optional (`- [ ] [Name] …` and `- [Name] …`), and a first-name-only assignee is me when no other attendee or
+ * assignee shares that first name. Notes with a summary but no parsed step are counted on Health (NOTES_NO_STEPS).
  * Notes docs sit in Drive (not Gmail) and are normally attached to the calendar event; if not, a Drive name search finds them.
  */
 import type { ConnectorHealthProbe, CoverageObject, Cursor, DeterministicFetcher, FetchResult, NormalizedSourceItem, PersonRef, TimeWindow } from '@/scanner/types';
 import { redact, redactExcerpt } from '../redact';
 import { decodeCursor, encodeCursor, h16, normalizeText, systemClock, throwIfAborted, type Clock } from '../util';
-import { GoogleCallError, type GoogleTools } from './client';
+import { GoogleCallError } from './client';
+// injected: the connector runtime's text port (src/connectors/runtime: GoogleWorkspaceClient behind direct_mcp)
+import type { TextToolPort as GoogleTools } from '../runtime/types';
 import { classifyAttendance, isMeetingLike, listEvents, NOTES_POLL_MINUTES } from './calendar';
 import type { Me } from './gmail';
 import { parseDocSections, parseDriveSearch, type ParsedEvent } from './parse';
@@ -32,7 +37,22 @@ export interface ParsedGeminiNotes {
 
 const NAME_SPLIT = /\s*(?:,|&|\band\b|\/)\s*/i;
 
-function isMeName(name: string, me: Me): boolean {
+/** R11: the steps heading (`## Next steps`, `## Suggested next steps`, `# Action items`), any case. */
+export const STEPS_HEADING = /^(#{1,3})\s*(suggested\s+)?(next steps|action items)\b/i;
+/** Fetch decision reason (and Health app_events code) for notes with a summary but 0 parsed steps (R11). */
+export const NOTES_NO_STEPS = 'notes_no_steps';
+
+/** First name of an attendee: their display name, or the local part of their email (`pat.example@…` → pat). */
+const firstNameOf = (who: string) => who.trim().toLowerCase().split('@')[0]!.split(/[\s._-]+/)[0] ?? '';
+
+interface NameCtx {
+  /** Attendees other than me (emails or names). */
+  others: string[];
+  /** Every assignee name in the steps. */
+  assignees: string[];
+}
+
+function isMeName(name: string, me: Me, ctx?: NameCtx): boolean {
   const n = name.trim().toLowerCase();
   if (!n) return false;
   if (me.email && n.includes(me.email.toLowerCase())) return true;
@@ -41,46 +61,62 @@ function isMeName(name: string, me: Me): boolean {
   if (n === mn) return true;
   const [first, ...rest] = mn.split(/\s+/);
   const last = rest[rest.length - 1];
-  return (n === first && !last) || (!!last && n.includes(first!) && n.includes(last));
+  if ((n === first && !last) || (!!last && n.includes(first!) && n.includes(last))) return true;
+  // R11: a bare first name is me when I'm in the meeting and nobody else there (or named in the steps) shares it.
+  if (!ctx?.others.length || n !== first) return false;
+  const clash = ctx.others.some((o) => firstNameOf(o) === first) || ctx.assignees.some((a) => a.trim().toLowerCase() !== n && firstNameOf(a) === first && a.trim().toLowerCase() !== mn);
+  return !clash;
 }
 
-/** Parses the "Next steps" checklist: `- [ ] [Assignee] Title: description`. */
-export function parseNextSteps(markdown: string, me: Me): NextStep[] {
-  // Prefer the "Full notes" Next steps (### level); fall back to the Quick notes copy (## level).
+/**
+ * Parses the steps checklist: `- [ ] [Assignee] Title: description`, or without the checkbox `- [Assignee] Title`.
+ * `attendees` (emails or names, me included or not) lets a first-name-only assignee match me when it is unique.
+ */
+export function parseNextSteps(markdown: string, me: Me, opts: { attendees?: string[] } = {}): NextStep[] {
+  // Prefer the "Full notes" copy (it comes last); fall back to the Quick notes copy.
   const lines = markdown.split('\n');
   const idxs: number[] = [];
   lines.forEach((l, i) => {
-    if (/^#{2,3}\s+Next steps\s*$/i.test(l)) idxs.push(i);
+    if (STEPS_HEADING.test(l.trim())) idxs.push(i);
   });
   if (!idxs.length) return [];
-  const start = idxs[idxs.length - 1]!; // the Full notes copy comes last
-  const steps: NextStep[] = [];
+  const start = idxs[idxs.length - 1]!;
+  const parsed: Array<{ m: RegExpMatchArray; l: string }> = [];
   for (let i = start + 1; i < lines.length; i++) {
     const l = lines[i]!;
     if (/^#{1,6}\s/.test(l)) break;
-    const m = l.match(/^\s*[-*]\s*\[( |x|X)\]\s*(?:\[([^\]]+)\]\s*)?(.*)$/);
-    if (!m) continue;
-    const body = m[3]!.trim();
-    const colon = body.indexOf(': ');
-    const title = colon > 0 ? body.slice(0, colon).trim() : body;
-    const description = colon > 0 ? body.slice(colon + 2).trim() : undefined;
-    const assignees = (m[2] ?? '')
+    const m = l.match(/^\s*[-*]\s*(?:\[( |x|X)\]\s*)?(?:\[([^\]]+)\]\s*)?(.*)$/);
+    if (!m || !m[3]!.trim()) continue;
+    parsed.push({ m, l });
+  }
+  const split = (s: string | undefined) =>
+    (s ?? '')
       .split(NAME_SPLIT)
       .map((x) => x.trim())
       .filter(Boolean);
-    steps.push({
+  const meEmail = me.email?.toLowerCase();
+  const ctx: NameCtx = {
+    others: (opts.attendees ?? []).filter((a) => a.trim().toLowerCase() !== meEmail),
+    assignees: parsed.flatMap(({ m }) => split(m[2])),
+  };
+  return parsed.map(({ m, l }) => {
+    const body = m[3]!.replace(/\*\*/g, '').trim();
+    const colon = body.indexOf(': ');
+    const title = colon > 0 ? body.slice(0, colon).trim() : body;
+    const description = colon > 0 ? body.slice(colon + 2).trim() : undefined;
+    const assignees = split(m[2]);
+    return {
       assignees,
       title,
       description,
-      done: m[1]!.toLowerCase() === 'x',
-      isMine: assignees.some((a) => isMeName(a, me)),
+      done: (m[1] ?? ' ').toLowerCase() === 'x',
+      isMine: assignees.some((a) => isMeName(a, me, ctx)),
       raw: l.trim(),
-    });
-  }
-  return steps;
+    };
+  });
 }
 
-export function parseGeminiNotes(markdown: string, me: Me): ParsedGeminiNotes {
+export function parseGeminiNotes(markdown: string, me: Me, opts: { attendees?: string[] } = {}): ParsedGeminiNotes {
   const sections = parseDocSections(markdown, true);
   const find = (h: string) => sections.filter((s) => s.heading.toLowerCase() === h.toLowerCase());
   const summary = (find('Summary')[0]?.text ?? '').replace(/\*\*/g, '\n').replace(/\n{2,}/g, '\n').trim();
@@ -90,12 +126,12 @@ export function parseGeminiNotes(markdown: string, me: Me): ParsedGeminiNotes {
   if (di >= 0) {
     for (let i = di + 1; i < sections.length; i++) {
       const h = sections[i]!.heading.toLowerCase();
-      if (h === 'next steps' || h === 'details') break;
+      if (STEPS_HEADING.test(`## ${h}`) || h === 'details') break;
       for (const l of sections[i]!.text.split('\n')) if (/^\s*[-*]\s+/.test(l)) decisions.push(l.replace(/^\s*[-*]\s+/, '').replace(/\*\*/g, '').trim());
     }
   }
   const transcriptUrl = markdown.match(/\[Transcript\]\((https:\/\/docs\.google\.com\/document\/d\/[^)\s]+)\)/)?.[1];
-  const nextSteps = parseNextSteps(markdown, me);
+  const nextSteps = parseNextSteps(markdown, me, opts);
   return { summary, decisions, nextSteps, transcriptUrl, hasNotes: nextSteps.length > 0 || summary.length > 0 };
 }
 
@@ -168,6 +204,7 @@ export class GeminiNotesFetcher implements DeterministicFetcher {
     const ended = events.filter((e) => Date.parse(e.end) <= now.getTime() && Date.parse(e.start) < to.getTime() && isMeetingLike(e, this.me) && (e.meetingLink || e.attachments.length > 0));
 
     const items: NormalizedSourceItem[] = [];
+    const decisions: NonNullable<FetchResult['decisions']> = [];
     const coverage: CoverageObject[] = [{ kind: 'calendar_range', ref: 'notes-poll', from: from.toISOString(), to: to.toISOString(), meta: { candidates: ended.length } }];
 
     // One Drive name search covers every candidate.
@@ -218,13 +255,16 @@ export class GeminiNotesFetcher implements DeterministicFetcher {
         }
         throw err;
       }
-      const parsed = parseGeminiNotes(md, this.me);
+      const parsed = parseGeminiNotes(md, this.me, { attendees: e.attendees.map((a) => a.email) });
       coverage.push({ kind: 'file', ref: docId, meta: { eventId: e.id, found: true, nextSteps: parsed.nextSteps.length } });
       if (!parsed.hasNotes) {
         // Doc exists but is not filled yet (Gemini still writing). Poll again next run.
         next.polls[e.id] = (next.polls[e.id] ?? 0) + 1;
         continue;
       }
+      // R11: notes with a summary but no step parsed (a heading or line format the parser does not know) are counted
+      // on Health, so a silent recall hole shows up. Ids only.
+      if (!parsed.nextSteps.length) decisions.push({ reason: NOTES_NO_STEPS, subject: docId, detail: { eventId: e.id } });
       const item = this.toItem(e, docId, parsed, verdict, now);
       if (prev.found[e.id]?.h !== item.contentHash) items.push(item);
       next.found[e.id] = { doc: docId, h: item.contentHash };
@@ -237,7 +277,7 @@ export class GeminiNotesFetcher implements DeterministicFetcher {
     for (const id of Object.keys(next.found)) if ((known.get(id) ?? Infinity) < cutoff) delete next.found[id];
     for (const id of Object.keys(next.polls)) if ((known.get(id) ?? 0) < cutoff && known.has(id)) delete next.polls[id];
 
-    return { items, coverage, nextCursor: encodeCursor(next, now.toISOString()), complete: !deferred };
+    return { items, coverage, nextCursor: encodeCursor(next, now.toISOString()), complete: !deferred, ...(decisions.length ? { decisions } : {}) };
   }
 
   private toItem(e: ParsedEvent, docId: string, p: ParsedGeminiNotes, v: ReturnType<typeof classifyAttendance>, now: Date): NormalizedSourceItem {

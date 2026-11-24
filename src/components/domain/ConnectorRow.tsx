@@ -143,7 +143,7 @@ function ReauthCell({ connector: c, broken, onReauth, onCopyCommand, onScan }: {
       return (
         <div className="min-w-0">
           <Button size="sm" variant={c.state === 'auth_needed' || c.state === 'error' ? 'primary' : 'secondary'} onClick={() => onReauth?.(c, r)}>
-            Run refresh
+            {r.label || 'Run refresh'}
           </Button>
           {command}
           {r.instructions ? <span className="mt-0.5 block truncate text-caption text-muted" title={r.instructions}>{r.instructions}</span> : null}

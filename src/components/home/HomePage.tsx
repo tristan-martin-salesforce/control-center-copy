@@ -3,10 +3,13 @@
  * Home (design v2, "Morning paper"): the most important things across every tab and every day, on one
  * screen with no page scroll. Visual target: public/mockups/home-1-briefing.html.
  *
- *   masthead (sentence · date · since · ahead) → day ribbon → Do now (capacity + 3 cards)
- *   → Looks done: confirm (LD-1, only when the engine thinks something is finished)
- *   → verb columns (Reply & approve · Think ahead + 14-day strip · Log & fix · Chase · Initiatives ≥ wide)
+ *   masthead (Home | Plan · date · sentence · "Overbooked: move X" · ahead) → day ribbon → Do now (capacity + 3
+ *   cards; the third is "Approve N drafts" when drafts are ready) → Respond chips (./Briefing.tsx)
+ *   → Needs you: the one queue grouped (GET /needs, ./HomeNeeds.tsx) → Coming builds · the Admin row
+ *   → verb columns (Think ahead + 14-day strip · Log & fix · Chase · Initiatives ≥ wide)
  *   → "That's everything for today." + one status line
+ *
+ * Home ▸ Plan (`/?view=plan`, `p`): the Today page's own tree inside Home (./HomePlan.tsx).
  *
  * Planning ahead: `/?day=next` shows the next working day (the toggle on the masthead's date line; late in the day a
  * quiet "Plan tomorrow →" suggests it, Home never switches by itself). "Move to …" (s) sends an item to the working
@@ -21,7 +24,7 @@
 import { keepPreviousData } from '@tanstack/react-query';
 import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { HomeAheadDay, HomeDay, HomePayload, HomeSection, LiveTopic } from '@/contract';
+import type { HomeAheadDay, HomeCard, HomeDay, HomePayload, HomeSection, LiveTopic } from '@/contract';
 import { useApi } from '@/client/hooks';
 import { useCommands, useFocusedCommands, useKeyBinding, useKeyScope, type Command } from '@/client/keyboard';
 import { queryKey } from '@/client/api';
@@ -36,10 +39,12 @@ import { HomeViewProvider, type HomeView } from './ctx';
 import { DayRibbon } from './DayRibbon';
 import { DoNow } from './DoNow';
 import { HomeEnd } from './HomeEnd';
-import { LooksDone } from './LooksDone';
+import { AdminRow, ComingBuilds, MoveItLine, RespondStrip } from './Briefing';
+import { HomeNeeds } from './HomeNeeds';
+import { HomePlan, homeModeOf, useSetHomeMode, ViewToggle, type HomeMode } from './HomePlan';
 import { DoNowSkeleton, HomeSkeleton, SectionSkeleton } from './HomeSkeleton';
 import { dayInSentence, Masthead } from './Masthead';
-import { cardKey, holdsOpen, homeTargets, openKeyFor, type HomeTarget } from './model';
+import { cardKey, closedInPlace, holdsOpen, homeTargets, openKeyFor, type ClosedInPlace, type HomeTarget } from './model';
 import { SectionColumn } from './Sections';
 import { useHomeActions } from './useHomeActions';
 import { useLiveHome } from './live';
@@ -116,12 +121,39 @@ const entityOf = (t: HomeTarget): PanelEntity => ({ kind: t.entity.kind, id: t.e
 
 // ---- regions (each honors its own forced dev state: empty / loading / error) ------------------------------
 
-function DoNowRegion({ h, onRetry }: { h: HomePayload; onRetry: () => void }) {
-  const st = usePanelState('home.donow', { empty: !h.doNow.cards.length });
+function DoNowRegion({ h, kept, onRetry }: { h: HomePayload; kept: readonly ClosedInPlace[]; onRetry: () => void }) {
+  const st = usePanelState('home.donow', { empty: !h.doNow.cards.length && !kept.length });
   if (st === 'loading') return <DoNowSkeleton />;
   if (st === 'error') return <PanelError title="Do now failed to load" onRetry={onRetry} compact />;
   if (st === 'empty') return <DoNow h={{ ...h, doNow: { ...h.doNow, cards: [], total: 0, elsewhere: [], elsewhereNote: '' } }} />;
-  return <DoNow h={h} />;
+  return <DoNow h={h} kept={kept} />;
+}
+
+/**
+ * HM-05: cards closed for you while Home is open stay in their slot (tag, reason, Undo). Detected between two server
+ * payloads (before the live layer's fade), forgotten when Home unmounts.
+ */
+function useClosedInPlace(server: HomePayload | undefined): ClosedInPlace[] {
+  const prev = useRef<HomeCard[]>([]);
+  const [kept, setKept] = useState<ClosedInPlace[]>([]);
+  useEffect(() => {
+    if (!server) return;
+    setKept((k) => {
+      const next = closedInPlace(prev.current, server, k);
+      return next.length === k.length && next.every((x, i) => x.card.id === k[i]?.card.id) ? k : next;
+    });
+    prev.current = server.doNow.cards;
+  }, [server]);
+  return kept;
+}
+
+/** Home: the briefing (default) or Home ▸ Plan (`/?view=plan`, the folded Today). */
+export function HomePage() {
+  const params = useSearchParams();
+  const mode = homeModeOf(params);
+  const setMode = useSetHomeMode();
+  if (mode === 'plan') return <HomePlan onMode={setMode} />;
+  return <HomeBriefing onMode={setMode} />;
 }
 
 function SectionRegion({ section, strip, onRetry }: { section: HomeSection; strip?: HomeAheadDay[]; onRetry: () => void }) {
@@ -141,7 +173,7 @@ export function homeDayHref(d: HomeDay): string {
   return d === 'next' ? '/?day=next' : '/';
 }
 
-export function HomePage() {
+function HomeBriefing({ onMode }: { onMode: (m: HomeMode) => void }) {
   const wide = useWide();
   const params = useSearchParams();
   const requestedDay: HomeDay = params.get('day') === 'next' ? 'next' : 'today';
@@ -157,6 +189,7 @@ export function HomePage() {
   const hold = useArrivalHold(rootRef);
   const [keepKey, setKeepKey] = useState<string | null>(null);
   const { data, live: liveHome } = useLiveHome(home.data, `${requestedDay}:${wide ? 'wide' : ''}`, { hold, keep: keepKey, frozen: home.isPlaceholderData });
+  const kept = useClosedInPlace(home.isPlaceholderData ? undefined : home.data);
   const refetch = home.refetch;
   const retry = useCallback(() => void refetch(), [refetch]);
   useEffect(() => syncServerNow(data?.now), [data?.now]);
@@ -291,6 +324,8 @@ export function HomePage() {
   useKeyBinding('mod+enter', () => runPrimary(current()), kopts);
   useKeyBinding('d', () => doneT(current()), kopts);
   useKeyBinding('s', () => snoozeT(current()), kopts);
+  // Home ▸ Plan: the folded Today (the same `p` takes you back from there)
+  useKeyBinding('p', () => onMode('plan'), kopts);
   useKeyBinding(
     'escape',
     () => {
@@ -328,6 +363,7 @@ export function HomePage() {
       { id: 'home.done', title: 'Home: mark the selection done', group: 'Home', shortcut: 'd', run: () => doneT(current()) },
       { id: 'home.snooze', title: `Home: move the selection to ${moveLabel}`, group: 'Home', shortcut: 's', keywords: ['snooze', 'tomorrow', 'later'], run: () => snoozeT(current()) },
       { id: 'home.refresh', title: 'Home: refresh', group: 'Home', run: retry },
+      { id: 'home.plan', title: 'Home: show the plan (day column and run of the day)', group: 'Home', shortcut: 'p', keywords: ['today', 'plan', 'timeline', 'run of day'], run: () => onMode('plan') },
     ];
     if (data.nextDay)
       list.push(
@@ -356,7 +392,7 @@ export function HomePage() {
       run: () => actions.run({ label: 'Review', action: 'review', href: '/outbox', targetId: null }, { title: 'Outbox' }),
     });
     return list;
-  }, [data, move, current, openTarget, runPrimary, doneT, snoozeT, retry, actions, moveLabel, setDay]);
+  }, [data, move, current, openTarget, runPrimary, doneT, snoozeT, retry, actions, moveLabel, setDay, onMode]);
   useCommands(commands, { enabled: !!data });
   const sel = selected ? byKey.get(selected) : undefined;
   const selVerb = sel?.card?.verb ?? sel?.row?.verb;
@@ -398,22 +434,38 @@ export function HomePage() {
       <DomainClock now={new Date(nowMs).toISOString()} tz={tz}>
       <div ref={rootRef} className="cc-home" data-home-root data-state={pageState} data-wide={data.wide ? '1' : '0'} data-day={data.day} aria-busy={data.day !== requestedDay || undefined}>
         <LivePill count={liveHome.held.length} onShow={liveHome.showHeld} placement="overlay" />
+        {actions.launchDialog}
         <PanelBoundary name="home.masthead" onRetry={retry}>
-          <Masthead m={data.masthead} nowMs={nowMs} stale={stale} day={data.day} next={data.nextDay} requested={requestedDay} onDay={setDay} />
+          <Masthead m={data.masthead} nowMs={nowMs} stale={stale} day={data.day} next={data.nextDay} requested={requestedDay} onDay={setDay} viewToggle={<ViewToggle mode="home" onMode={onMode} />}>
+            {data.moveIt ? <MoveItLine m={data.moveIt} actions={actions} /> : null}
+          </Masthead>
         </PanelBoundary>
         <PanelBoundary name="home.ribbon" onRetry={retry}>
           <DayRibbon r={data.ribbon} tz={tz} nowMs={nowMs} plan={plan ? (data.nextDay?.label ?? 'The next day') : null} />
         </PanelBoundary>
         <PanelBoundary name="home.donow" onRetry={retry}>
-          <DoNowRegion h={data} onRetry={retry} />
+          <DoNowRegion h={data} kept={kept} onRetry={retry} />
         </PanelBoundary>
-        {data.looksDone?.count ? (
-          <PanelBoundary name="home.looksdone" onRetry={retry}>
-            <LooksDone g={data.looksDone} />
+        {/* phase 3: drafts and replies as chips (the Outbox row is where they are approved); it replaces Reply & approve */}
+        <PanelBoundary name="home.respond" onRetry={retry}>
+          <RespondStrip r={data.respond} />
+        </PanelBoundary>
+        {/* 01 R1 / D-86: the one Needs-you queue (GET /needs), grouped: Today open, the other groups folded */}
+        <PanelBoundary name="home.needs" onRetry={retry}>
+          <section className="hm-panel" aria-label="Needs you" data-home-panel="needs">
+            <HomeNeeds className="px-4 py-3" />
+          </section>
+        </PanelBoundary>
+        {data.builds.length || data.admin ? (
+          <PanelBoundary name="home.builds" onRetry={retry}>
+            <div className="flex min-w-0 flex-col gap-2">
+              <ComingBuilds builds={data.builds} actions={actions} />
+              {data.admin ? <AdminRow a={data.admin} /> : null}
+            </div>
           </PanelBoundary>
         ) : null}
         <section className="hm-panel hm-sections" aria-label="Everything else, by verb">
-          {data.sections.map((s) => (
+          {data.sections.filter((s) => s.id !== 'reply').map((s) => (
             <PanelBoundary key={s.id} name={`home.${s.id}`} onRetry={retry} fallbackClassName={`hm-sec is-${s.id}`}>
               <SectionRegion section={s} strip={s.id === 'ahead' ? data.aheadStrip : undefined} onRetry={retry} />
             </PanelBoundary>

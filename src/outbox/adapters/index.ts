@@ -11,6 +11,7 @@ import type { OutboxChannel, ReadbackOutcome, ToolCall, ToolResult, WriteOutcome
 import { canvasAdapter } from './canvas';
 import { feedbackAdapter } from './feedback';
 import { gmailAdapter } from './gmail';
+import { releaseAdapter } from './release';
 import { slackAdapter } from './slack';
 import { vdpAdapter } from './vdp';
 
@@ -43,7 +44,7 @@ export interface OutboxAdapter {
   readback(read: ReadFn, ctx: ReadbackContext): Promise<ReadbackOutcome>;
 }
 
-const ADAPTERS: Record<OutboxChannel, OutboxAdapter> = { slack: slackAdapter, gmail: gmailAdapter, vdp: vdpAdapter, slack_canvas: canvasAdapter, feedback: feedbackAdapter };
+const ADAPTERS: Record<OutboxChannel, OutboxAdapter> = { slack: slackAdapter, gmail: gmailAdapter, vdp: vdpAdapter, slack_canvas: canvasAdapter, feedback: feedbackAdapter, release: releaseAdapter };
 
 export function adapterFor(channel: OutboxChannel): OutboxAdapter {
   return ADAPTERS[channel];

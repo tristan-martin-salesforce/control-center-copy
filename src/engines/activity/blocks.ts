@@ -10,6 +10,7 @@
  * user dismissal; `BlockOptions.nonLogging`) fills only the time nothing else claims, so it never makes another row
  * lose. Whether a meeting that lost here still logs is the entries' call (propose.ts, `ActivityConfig.overlaps`).
  */
+import { accountFor, channelAccount, meetingAccount } from '@/engines/attribution/activity';
 import { accountByKey, resolveAccount } from './classify';
 import { type EngagedAction, type EngagedKind, engagedParams, engagedStretches } from './engaged';
 import {
@@ -90,7 +91,8 @@ export function ownActions(ev: EvidenceBundle, m: ActivityMappings): EngagedActi
   const out: EngagedAction[] = [];
   const acctOfRepo = (repo: string): string | null => m.repos[repo] ?? null;
   for (const c of ev.claude) {
-    const acct = c.accountKey ?? (c.title ? resolveAccount(c.title, [], m)?.key : null) ?? acctOfRepo(c.repoKey);
+    // the session's own account, else the engine over its title and repo (a learned repo rule; the repo mapping after a title match)
+    const acct = c.accountKey ?? (accountFor({ kind: 'claude', text: c.title ?? '', repo: c.repoKey }, m, { repoKey: acctOfRepo(c.repoKey) })?.key ?? null);
     const base = { evidenceId: c.sessionId, accountKey: acct ?? null, repoKey: c.repoKey };
     const seen = new Set<number>();
     for (const t of c.turns ?? []) {
@@ -114,7 +116,8 @@ export function ownActions(ev: EvidenceBundle, m: ActivityMappings): EngagedActi
     else out.push({ kind: 'drive', at: toMs(d.editedAt), evidenceId: d.fileId, accountKey: acct, repoKey: null });
   }
   for (const g of ev.git) out.push({ kind: 'git', at: toMs(g.at), evidenceId: g.sha, accountKey: acctOfRepo(g.repoKey), repoKey: g.repoKey });
-  const chanAcct = (channelId: string, name?: string | null): string | null => m.channels[channelId] ?? (name ? (resolveAccount(name.replace(/[-_]+/g, ' '), [], m)?.key ?? null) : null);
+  // the Slack burst mapper (src/engines/attribution): a learned channel rule, the confirmed channel map, else its name
+  const chanAcct = (channelId: string, name?: string | null): string | null => channelAccount(channelId, name, m);
   if (ev.slackMessages) for (const s of ev.slackMessages) out.push({ kind: 'slack', at: toMs(s.at), evidenceId: s.id, accountKey: chanAcct(s.channelId, s.channelName), repoKey: null });
   else for (const b of ev.slack) out.push({ kind: 'slack', at: toMs(b.startsAt), until: toMs(b.endsAt), evidenceId: b.id, accountKey: chanAcct(b.channelId), repoKey: null });
   for (const e of ev.emails ?? []) {
@@ -171,7 +174,7 @@ function candidates(ev: EvidenceBundle, m: ActivityMappings, cfg: ActivityConfig
   meets
     .sort((a, b) => rank(b) - rank(a) || toMs(a.startsAt) - toMs(b.startsAt))
     .forEach((c, i) => {
-      const acct = (c.accountKey ? accountByKey(m, c.accountKey) : null) ?? resolveAccount(c.summary, c.attendeeDomains, m);
+      const acct = meetingAccount({ summary: c.summary, attendeeDomains: c.attendeeDomains, accountKey: c.accountKey ?? null, seriesId: c.seriesId ?? null }, m);
       const key = `cal|${c.id}|${c.startsAt}`;
       out.push({
         key,

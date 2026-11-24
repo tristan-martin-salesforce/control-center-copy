@@ -5,15 +5,17 @@
  *   readin_gmail_search    Gmail search      → devbar google_workspace_readonly `search_gmail_messages`
  *   readin_gmail_thread    one Gmail thread  → `get_gmail_thread_content`
  *   readin_drive_search    Drive search      → `search_drive_files` (metadata)
- *   readin_drive_read      one Drive file    → `get_drive_file_content` (excerpt only)
+ *   readin_drive_read      one Drive file    → `get_drive_file_content` (paged)
  *   readin_finish          the structured result (zod-validated); the run ends after it
  *
  * Google calls go through `GoogleWorkspaceClient`, whose code-level read allowlist refuses anything else; the four
- * names below are a subset of it (never widened). Every result is redacted (credential-like text masked) and capped
- * before the model sees it, and every URL in it is remembered so the output may only cite links it was shown.
+ * names below are a subset of it (never widened). Every result is redacted (credential-like text masked) and paged
+ * (`offset`; searches also take the source's `page_token`), never cut (ASSIST-5, 2026-11-20); a thread or file is
+ * fetched once per run and its later pages read from that copy. Every URL in it is remembered so the output may only
+ * cite links it was shown.
  * Slack and Org62 are not here: the agent reaches them through their own restricted MCP servers (agent.ts).
  */
-import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance } from '@/llm/provider';
 import { z } from 'zod';
 
 import { assertReadTool, type GoogleTools } from '@/connectors/google/client';
@@ -53,10 +55,7 @@ export interface ReadInToolDeps {
   signal?: AbortSignal;
   /** Characters per page of a Drive file read (default LIMITS.file). */
   filePage?: number;
-  /**
-   * Characters per page of a Gmail thread read (the Assistant's, A6): the thread pages by an `offset` arg instead of
-   * being cut at LIMITS.thread. Absent (read-ins, research runs): cut as before.
-   */
+  /** Characters per page of a Gmail thread read (the Assistant's, A6: 60,000; default PAGES.thread). */
   threadPage?: number;
 }
 
@@ -66,10 +65,12 @@ export interface ReadInToolState {
   /** Every URL the agent was shown (context pack + tool results); cited links must be in here. */
   seenUrls: Set<string>;
   calls: string[];
+  /** Fetched texts by call (a thread, a file, a calendar range): the next page of one reads from here, not Google. */
+  fetched?: Map<string, string>;
 }
 
 export function createToolState(seed: Iterable<string> = []): ReadInToolState {
-  return { output: null, finishCalls: 0, seenUrls: new Set(seed), calls: [] };
+  return { output: null, finishCalls: 0, seenUrls: new Set(seed), calls: [], fetched: new Map() };
 }
 
 export type ToolResult = { text: string; isError?: boolean };
@@ -77,7 +78,25 @@ export type ToolHandler = (args: unknown) => Promise<ToolResult>;
 /** Keyed by bare tool name (`readin_finish`). */
 export type ToolHandlerMap = Record<ReadInToolName, ToolHandler>;
 
-const LIMITS = { search: 4000, thread: 8000, file: 6000, ledger: 4000 } as const;
+/**
+ * Characters per page (2026-11-20, ASSIST-5): a long result is read a page at a time by `offset`, never cut. The page
+ * size keeps one result small in a read-in's context; every character is reachable. Searches also take the source's
+ * own `page_token` for the next page of hits.
+ */
+export const PAGES = { search: 4000, thread: 8000, file: 6000, ledger: 4000 } as const;
+/** Results per search call (the Google read client's page size; its own limit). */
+export const SEARCH_PAGE_MAX = 50;
+
+/** One fetch per call key per run: paging a thread or a file reads the text fetched for page 1 (no re-download). */
+export async function fetchOnce(state: ReadInToolState, key: string, load: () => Promise<string>): Promise<string> {
+  const hit = state.fetched?.get(key);
+  if (hit !== undefined) return hit;
+  const text = await load();
+  state.fetched ??= new Map();
+  if (state.fetched.size > 50) state.fetched.delete(state.fetched.keys().next().value!);
+  state.fetched.set(key, text);
+  return text;
+}
 
 const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
 
@@ -106,43 +125,49 @@ export function pageForModel(text: string, max: number, offset: number, state: R
   return `${head}${page}${more}`;
 }
 
-/** Redact, collapse blank runs, cap, and remember URLs. */
-export function sanitizeForModel(text: string, max: number, state: ReadInToolState): string {
+/** Redact, collapse blank runs, and remember URLs; never cut (a long text is paged with `pageForModel`). */
+export function sanitizeForModel(text: string, state: ReadInToolState): string {
   const red = redactText(text).replace(/\n{3,}/g, '\n\n');
   rememberUrls(red, state);
-  return red.length > max ? `${red.slice(0, max)}\n… [truncated ${red.length - max} chars]` : red;
+  return red;
 }
 
+const Offset = z.number().int().min(0).max(5_000_000).optional().describe('Where to start, in characters (a long result ends with the offset to read next)');
+const PageToken = z.string().min(1).max(500).optional().describe("The source's next-page token from the last result (page_token / nextPageToken), for more hits");
+
 const schemas = {
-  readin_ledger_search: { text: z.string().min(2).max(200).describe('Words to look for: a person, account, topic or phrase'), limit: z.number().int().min(1).max(12).optional() },
-  readin_gmail_search: { query: z.string().min(2).max(300).describe('Gmail search syntax, e.g. from:dana@example.com newer_than:30d'), max: z.number().int().min(1).max(10).optional() },
-  readin_gmail_thread: { thread_id: z.string().min(4).max(80) },
-  readin_drive_search: { query: z.string().min(2).max(300).describe("Drive query, e.g. name contains 'ACME' and modifiedTime > '2026-10-01'"), max: z.number().int().min(1).max(10).optional() },
-  readin_drive_read: { file_id: z.string().min(4).max(120), offset: z.number().int().min(0).max(5_000_000).optional().describe('Where to start, in characters (a long file says the offset to read next)') },
+  readin_ledger_search: { text: z.string().min(2).max(200).describe('Words to look for: a person, account, topic or phrase'), limit: z.number().int().min(1).max(SEARCH_PAGE_MAX).optional(), offset: Offset },
+  readin_gmail_search: { query: z.string().min(2).max(300).describe('Gmail search syntax, e.g. from:dana@example.com newer_than:30d'), max: z.number().int().min(1).max(SEARCH_PAGE_MAX).optional(), page_token: PageToken, offset: Offset },
+  readin_gmail_thread: { thread_id: z.string().min(4).max(80), offset: Offset },
+  readin_drive_search: { query: z.string().min(2).max(300).describe("Drive query, e.g. name contains 'ACME' and modifiedTime > '2026-10-01'"), max: z.number().int().min(1).max(SEARCH_PAGE_MAX).optional(), page_token: PageToken, offset: Offset },
+  readin_drive_read: { file_id: z.string().min(4).max(120), offset: Offset },
   readin_finish: READIN_OUTPUT_SHAPE,
 } as const;
 
+const PAGED = ' A long result comes a page at a time: it ends with "read again with offset=N"; call again with that offset for the rest.';
 const descriptions: Record<ReadInToolName, string> = {
-  readin_ledger_search: 'Search the internal ledger (your earlier messages, prior work items, commitments). Read-only.',
-  readin_gmail_search: 'Search Gmail (read-only). Returns message ids, thread ids and web links.',
-  readin_gmail_thread: 'Read one Gmail thread (read-only, redacted, capped).',
-  readin_drive_search: 'Search Drive files by name/content (read-only). Returns metadata and links.',
-  readin_drive_read: 'Read one Drive file (read-only, redacted), a page at a time: a long file ends with the offset to read next.',
+  readin_ledger_search: `Search the internal ledger (your earlier messages, prior work items, commitments). Read-only.${PAGED}`,
+  readin_gmail_search: `Search Gmail (read-only). Returns message ids, thread ids and web links; pass page_token from the result for more hits.${PAGED}`,
+  readin_gmail_thread: `Read one Gmail thread (read-only, redacted).${PAGED}`,
+  readin_drive_search: `Search Drive files by name/content (read-only). Returns metadata and links; pass the nextPageToken from the result as page_token for more.${PAGED}`,
+  readin_drive_read: `Read one Drive file (read-only, redacted).${PAGED}`,
   readin_finish: 'Submit the read-in. Call exactly once, last. Every bullet cites a permalink you were shown or a workItemId from the context pack.',
 };
 
 const unavailable = (what: string): ToolResult => ({ text: `${what} is not available in this run; continue with the other sources.` });
+const failed = (err: unknown): ToolResult => ({ text: `error: ${redactText(err instanceof Error ? err.message : String(err)).slice(0, 200)}`, isError: true });
 
 export function createReadInTools(deps: ReadInToolDeps, state: ReadInToolState): ToolHandlerMap {
   const g = deps.google ?? null;
-  const call = async (tool: (typeof READIN_GOOGLE_TOOLS)[number], args: Record<string, unknown>, max: number): Promise<ToolResult> => {
+  /** One Google read, fetched once per run (`key`) and returned a page at a time from `offset`. */
+  const paged = async (tool: (typeof READIN_GOOGLE_TOOLS)[number], args: Record<string, unknown>, page: number, offset: number): Promise<ToolResult> => {
     if (!g) return unavailable('Google (Gmail/Drive)');
     try {
-      const text = await g.call(tool, args, { signal: deps.signal, timeoutMs: 30_000 });
-      return { text: sanitizeForModel(text || '(no results)', max, state) };
+      const text = await fetchOnce(state, `${tool}:${JSON.stringify(args)}`, () => g.call(tool, args, { signal: deps.signal, timeoutMs: 30_000 }));
+      return { text: pageForModel(text || '(no results)', page, offset, state) };
     } catch (err) {
       // Error text never carries the arguments (GoogleCallError), and is redacted again here.
-      return { text: `error: ${redactText(err instanceof Error ? err.message : String(err)).slice(0, 200)}`, isError: true };
+      return failed(err);
     }
   };
   const parse = <T extends z.ZodRawShape>(shape: T, args: unknown): z.infer<z.ZodObject<T>> => z.object(shape).parse(args);
@@ -153,37 +178,23 @@ export function createReadInTools(deps: ReadInToolDeps, state: ReadInToolState):
       const hits = await deps.ledger.search({ text: a.text, limit: a.limit ?? 8, signal: deps.signal });
       if (!hits.length) return { text: 'No ledger matches.' };
       const lines = hits.map((h) => `- [${h.kind}${h.workItemId ? ` workItemId=${h.workItemId}` : ''}] ${h.at.slice(0, 16)} · ${h.label}${h.fromMe ? ' · YOU' : ''}: ${h.text}${h.permalink ? ` (${h.permalink})` : ''}`);
-      return { text: sanitizeForModel(lines.join('\n'), LIMITS.ledger, state) };
+      return { text: pageForModel(lines.join('\n'), PAGES.ledger, a.offset ?? 0, state) };
     },
     readin_gmail_search: async (args) => {
       const a = parse(schemas.readin_gmail_search, args);
-      return call('search_gmail_messages', { query: a.query, page_size: a.max ?? 8 }, LIMITS.search);
+      return paged('search_gmail_messages', { query: a.query, page_size: a.max ?? 8, ...(a.page_token ? { page_token: a.page_token } : {}) }, PAGES.search, a.offset ?? 0);
     },
     readin_gmail_thread: async (args) => {
       const a = parse(schemas.readin_gmail_thread, args);
-      if (!deps.threadPage) return call('get_gmail_thread_content', { thread_id: a.thread_id }, LIMITS.thread);
-      if (!g) return unavailable('Google (Gmail/Drive)');
-      const offset = z.number().int().min(0).max(5_000_000).optional().parse((args as { offset?: unknown } | null)?.offset) ?? 0;
-      try {
-        const text = await g.call('get_gmail_thread_content', { thread_id: a.thread_id }, { signal: deps.signal, timeoutMs: 30_000 });
-        return { text: pageForModel(text || '(no results)', deps.threadPage, offset, state) };
-      } catch (err) {
-        return { text: `error: ${redactText(err instanceof Error ? err.message : String(err)).slice(0, 200)}`, isError: true };
-      }
+      return paged('get_gmail_thread_content', { thread_id: a.thread_id }, deps.threadPage ?? PAGES.thread, a.offset ?? 0);
     },
     readin_drive_search: async (args) => {
       const a = parse(schemas.readin_drive_search, args);
-      return call('search_drive_files', { query: a.query, page_size: a.max ?? 8 }, LIMITS.search);
+      return paged('search_drive_files', { query: a.query, page_size: a.max ?? 8, ...(a.page_token ? { page_token: a.page_token } : {}) }, PAGES.search, a.offset ?? 0);
     },
     readin_drive_read: async (args) => {
       const a = parse(schemas.readin_drive_read, args);
-      if (!g) return unavailable('Google (Gmail/Drive)');
-      try {
-        const text = await g.call('get_drive_file_content', { file_id: a.file_id }, { signal: deps.signal, timeoutMs: 30_000 });
-        return { text: pageForModel(text || '(no results)', deps.filePage ?? LIMITS.file, a.offset ?? 0, state) };
-      } catch (err) {
-        return { text: `error: ${redactText(err instanceof Error ? err.message : String(err)).slice(0, 200)}`, isError: true };
-      }
+      return paged('get_drive_file_content', { file_id: a.file_id }, deps.filePage ?? PAGES.file, a.offset ?? 0);
     },
     readin_finish: async (args) => {
       state.finishCalls += 1;

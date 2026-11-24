@@ -20,8 +20,8 @@ import s from './settings.module.css';
 const Loading = () => <Skeleton variant="block" className="mt-6 h-48 w-full" />;
 
 /** One paste-able line for a bug report or a "which version are you on?" thread. */
-export function versionReport(v: { version: string; sha: string | null; builtAt: string | null; migration: string | null; workerVersion: string | null; persona: { id: string; level: string } }): string {
-  return [`Control Center v${v.version}`, v.sha ? `(${v.sha})` : null, v.builtAt ? `built ${v.builtAt.slice(0, 16).replace('T', ' ')}Z` : null, `· migration ${v.migration ?? 'none'}`, `· worker ${v.workerVersion ? `v${v.workerVersion}` : 'not running'}`, `· persona ${v.persona.id}/${v.persona.level}`]
+export function versionReport(v: { version: string; sha: string | null; builtAt: string | null; migration: string | null; workerVersion: string | null; persona: { id: string; level: string }; dirty?: number }): string {
+  return [`Command Center v${v.version}`, v.sha ? `(${v.sha}${(v.dirty ?? 0) > 0 ? ', modified' : ''})` : (v.dirty ?? 0) > 0 ? '(modified)' : null, v.builtAt ? `built ${v.builtAt.slice(0, 16).replace('T', ' ')}Z` : null, `· migration ${v.migration ?? 'none'}`, `· worker ${v.workerVersion ? `v${v.workerVersion}` : 'not running'}`, `· persona ${v.persona.id}/${v.persona.level}`]
     .filter(Boolean)
     .join(' ');
 }
@@ -49,6 +49,11 @@ export function AboutSection() {
                 v{v.version}
               </span>
               {v.sha ? <span className={`${s.unit} tabular-nums`}>· {v.sha}</span> : null}
+              {v.dirty > 0 ? (
+                <span className="font-bold text-warning-700" data-testid="about-modified" title={`Built with ${v.dirty} locally changed file${v.dirty === 1 ? '' : 's'}`}>
+                  · modified
+                </span>
+              ) : null}
             </Row>
             <Row label="Built" help="When this copy was built (npm run build; in development, when the dev server started).">
               <span className="text-fg tabular-nums">{v.builtAt ? `${fmtDay(v.builtAt, tz)} ${fmtClock(v.builtAt, tz)}` : 'Unknown'}</span>
@@ -70,7 +75,7 @@ export function AboutSection() {
               </span>
             </Row>
             {warn ? (
-              <Row label="Needs a restart" help="Run the update command from the Control Center folder.">
+              <Row label="Needs a restart" help="Run the update command from the Command Center folder.">
                 <span className="inline-flex items-center gap-1.5 font-bold text-warning-700" data-testid="about-warning">
                   <Glyph name="warn" className={s.attnIcon} />
                   {warn}
@@ -96,7 +101,7 @@ export function AboutSection() {
             </Row>
             <Row label="What changed" help="Every release has a section, newest first. Majors list the manual step.">
               <code className="rounded bg-surface-muted px-1.5 py-0.5 text-caption text-fg">CHANGELOG.md</code>
-              <span className={s.unit}>in the Control Center folder · how releases work: docs/RELEASING.md</span>
+              <span className={s.unit}>in the Command Center folder · how releases work: docs/RELEASING.md</span>
             </Row>
             <Row label="README" help="Setup, personas, feedback, updating and where your data lives.">
               <Button variant="secondary" size="sm" onClick={openReadme}>

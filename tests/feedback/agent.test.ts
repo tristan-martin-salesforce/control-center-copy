@@ -119,13 +119,24 @@ describe('the repo path gate', () => {
     expect(no('Read', { file_path: 'docs/research/notes.md' })).toBe('private or generated folder');
     expect(no('Read', { file_path: 'tools/activity-autopilot/run.ts' })).toBe('private or generated folder');
     expect(no('Read', { file_path: '.git/config' })).toBe('private or generated folder');
-    expect(no('Read', { file_path: 'node_modules/zod/package.json' })).toBe('private or generated folder');
+    // node_modules is refused either way: a real folder by the deny list, a symlink out of the tree (agent worktrees
+    // link the main checkout's) because it resolves outside the repo. Which reason depends on this checkout.
+    const nmInside = !path.relative(fs.realpathSync(ROOT), fs.realpathSync(path.join(ROOT, 'node_modules'))).startsWith('..');
+    expect(no('Read', { file_path: 'node_modules/zod/package.json' })).toBe(nmInside ? 'private or generated folder' : 'outside the repo folder');
     expect(no('Grep', { pattern: 'x', path: '.' })).toMatch(/search or read under/);
     expect(no('Grep', { pattern: 'x', path: 'docs' })).toMatch(/holds private folders/);
     expect(no('Grep', { pattern: 'x', path: 'src', glob: '../**' })).toMatch(/may not climb/);
     expect(no('Glob', { pattern: '../../**/*', path: 'src' })).toMatch(/relative to the folder/);
     expect(no('Bash', { command: 'ls' })).toMatch(/not a code-reading tool/);
     expect(no('Write', { file_path: 'src/x.ts' })).toMatch(/not a code-reading tool/);
+  });
+
+  it('a real node_modules folder inside the repo is refused as private or generated (whatever this checkout has)', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'fb-repo-'));
+    fs.mkdirSync(path.join(repo, 'node_modules', 'zod'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'node_modules', 'zod', 'package.json'), '{}');
+    expect(checkCodeAccess(repo, 'Read', { file_path: 'node_modules/zod/package.json' })).toEqual({ ok: false, reason: 'private or generated folder' });
+    fs.rmSync(repo, { recursive: true, force: true });
   });
 
   it('follows symlinks: a link inside the repo that points outside is refused', () => {

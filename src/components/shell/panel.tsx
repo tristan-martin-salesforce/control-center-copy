@@ -1,6 +1,6 @@
 'use client';
 /**
- * v2 right-panel seam (docs/ui/DESIGN-V2.md principle 10, docs/ui/BUILD-V2.md "Seams").
+ * v2 right-panel seam (docs/archive/2026-build/DESIGN-V2.md principle 10, docs/archive/2026-build/BUILD-V2.md "Seams").
  *
  * The frame has ONE docked right panel, shared by item detail and the assistant, with two tabs:
  *   - Details: whatever was clicked (a work item, draft, gap, event…), rendered by a registered renderer;

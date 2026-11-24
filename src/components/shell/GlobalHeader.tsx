@@ -51,7 +51,7 @@ export function BudgetChip({ spend }: { spend?: HealthPayload['spend'] }) {
   if (!spend || spend.state === 'ok') return null;
   const capped = spend.state === 'capped';
   return (
-    <Tooltip content={capped ? 'Hard cap reached: scanners run deterministic-only until tomorrow.' : `${Math.round(spend.today.pct)}% of today's soft budget used.`}>
+    <Tooltip content={capped ? 'Hard cap reached: scans run on rules only (no AI) until tomorrow.' : `${Math.round(spend.today.pct)}% of today's soft budget used.`}>
       <AppLink
         href="/health"
         className={cn(

@@ -42,6 +42,7 @@
     ".next-*",
     ".claude",
     "tools",
-    ".shots"
+    ".shots",
+    "sample-data"
   ]
 }

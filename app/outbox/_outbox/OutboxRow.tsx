@@ -1,6 +1,6 @@
 'use client';
 /**
- * One Outbox row (UI-SPEC §12; design v2): a two-line LineRow.
+ * One Outbox row (UI-SPEC §12; design v2): a configuration of the kit's ActionRow (01-ui-audit R10).
  *
  *   ▌ Slack · #channel · thread ······························· For: the task · drafted 9m ago
  *   ▌ [status] the message's first line, rendered from the payload ··········· Approve & send
@@ -8,15 +8,21 @@
  * Pending and scheduled rows have a DASHED edge, so nothing looks sent before it is. The status badge is
  * the row's one colour (red failed, amber unverified, green verified, blue sending); a dry run says
  * "rendered, nothing sent". Space expands the message it replies to, the exact preview, the payload's history and
- * every attempt. Click or Enter opens the draft in the docked panel (the composer, with its own Send and confirm).
- * "Open in Slack" / "Open in Gmail" (o) opens the message it answers (tenet: Provenance on everything).
+ * every attempt (the row's expansion). Click or Enter opens the draft in the docked panel (the composer, with its own
+ * Send and confirm). "Open in Slack" / "Open in Gmail" (o, the row's source link) opens the message it answers
+ * (tenet: Provenance on everything). The page's list keys (a, e, j/k) stay on the page (useListKeys).
+ *
+ * D-90 (W12-7) release items (./release.ts): the row carries the version, the channel or Drive folder and the sha256
+ * short; the announcement's verb is the usual Approve & send; the upload hand-off's verbs are "Copy upload instructions"
+ * then "Mark uploaded" (no tool call: it records that you put the files in Drive). A missing folder or channel is said
+ * on the row, and its verb is off.
  */
 import { AppLink } from '@/components/shell/AppLink';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { OutboxItem } from '@/contract';
 import { destinationLabel, RecipientPreview } from '@/components/composer';
 import { StatusBadge, type Indicator } from '@/components/domain';
-import { LineRow, type LineRowAction } from '@/components/lists/LineRow';
+import { ActionRow, type ActionRowOverflow } from '@/components/kit';
 import { approveLabel, canApprove, lastDryRun, outboxStatus, sentResultUrl, stagedWhere } from '@/components/lists/outbox';
 import { fmtAgo, fmtClock, fmtDay, Icon } from '@/ui';
 import type { DocNode } from '@/lib/compose';
@@ -25,6 +31,8 @@ import { openInLabel } from '@/components/domain/lib/source-link';
 import { ReplyingTo } from '@/components/detail/ReplyingTo';
 import { openDeepLink } from '@/components/detail/nba/ClaudeLaunchPanel';
 import { copySlackbotPrompt, OpenResult, useCanvasPromptOf } from '@/components/domain/ResultLinks';
+import { handoffVerbs, releaseRowView } from './release';
+import { copyInstructions, ReleaseFacts } from './ReleaseParts';
 
 export interface RowFlow {
   phase: 'idle' | 'working' | 'error' | 'done';
@@ -53,6 +61,8 @@ export interface OutboxRowProps {
   onExpand: () => void;
   onRetryFlow: () => void;
   onDismissFlow: () => void;
+  /** D-90: "Mark uploaded" on a release upload hand-off (the page calls the server, then refetches). */
+  onMarkUploaded?: () => void;
 }
 
 /** The message a row answers, as "Open in Slack" / "Open in Gmail" (null when nothing links back). */
@@ -63,14 +73,16 @@ export function rowSource(item: Pick<OutboxItem, 'source'>): { url: string; labe
 
 const TONE_EDGE: Record<string, Indicator> = { risk: 'danger', warn: 'warning', ok: 'success', brand: 'now', neutral: 'none', ai: 'ai' };
 
-export function OutboxRow({ item, dryRun, now, tz, expanded, flow, busy, rowProps, selected, emphasis, inPanel, onApprove, onReject, onEdit, onOpen, onExpand, onRetryFlow, onDismissFlow }: OutboxRowProps) {
+export function OutboxRow({ item, dryRun, now, tz, expanded, flow, busy, rowProps, selected, emphasis, inPanel, onApprove, onReject, onEdit, onOpen, onExpand, onRetryFlow, onDismissFlow, onMarkUploaded }: OutboxRowProps) {
   const d = item.draft;
+  const rel = releaseRowView(d);
+  const [copied, setCopied] = useState(false);
   const status = outboxStatus(d, item.group, tz);
   const dry = lastDryRun(d);
   const approvable = canApprove(item.group);
   const sending = d.status === 'sending';
   // The message itself, on one line (a greeting alone says nothing): lines joined, cut by the row.
-  const firstLine = (item.previewText || d.plainText).split('\n').map((l) => l.trim()).filter(Boolean).join('  ');
+  const firstLine = rel ? rel.why : (item.previewText || d.plainText).split('\n').map((l) => l.trim()).filter(Boolean).join('  ');
 
   // One signal per row. Pending rows carry none (the section says "Approve"); a dry run is a neutral fact.
   const badge: ReactNode =
@@ -86,6 +98,10 @@ export function OutboxRow({ item, dryRun, now, tz, expanded, flow, busy, rowProp
       ) : null
     ) : sending ? (
       <StatusBadge tone="now">● Sending</StatusBadge>
+    ) : rel?.kind === 'upload' && item.group === 'sent' ? (
+      <StatusBadge tone="neutral" icon="check" title="You marked the files uploaded. The app sent nothing (its Drive access is read-only).">
+        Handed off
+      </StatusBadge>
     ) : (
       <StatusBadge tone={status.tone === 'risk' ? 'danger' : status.tone === 'warn' ? 'warning' : status.tone === 'ok' ? 'success' : 'neutral'} icon={status.tone === 'ok' ? 'check' : status.tone === 'risk' ? 'error' : status.tone === 'warn' ? 'warning' : item.group === 'scheduled' ? 'clock' : undefined}>
         {status.label}
@@ -103,99 +119,121 @@ export function OutboxRow({ item, dryRun, now, tz, expanded, flow, busy, rowProp
   const sentWhere = d.status === 'staged' ? 'the draft' : 'what you sent';
   const prompt = useCanvasPromptOf()(d);
   const actionTitle = d.destination.kind === 'action' ? d.destination.target.label : '';
-  const actions: LineRowAction[] = [
-    ...(src ? [{ label: src.label, k: 'o', icon: 'new_window', onClick: () => openDeepLink(src.url), title: `${src.label}: the message this answers (o)`, testId: 'row-source' }] : []),
-    ...(sentUrl ? [{ label: 'View sent', icon: 'new_window', onClick: () => openDeepLink(sentUrl), title: `Open ${sentWhere} in ${d.destination.kind === 'slack' ? 'Slack' : 'Gmail'}`, testId: 'row-sent' }] : []),
-    ...(result ? [{ label: 'Open the result', k: 'o', icon: 'new_window', onClick: () => openDeepLink(result), title: `Open it in ${d.destination.kind === 'action' ? actionApp(d.destination.action) : 'its app'} (o)`, testId: 'row-result' }] : []),
-    ...(applied && prompt ? [{ label: 'Copy Slackbot prompt', icon: 'copy', onClick: () => void copySlackbotPrompt(prompt, actionTitle), title: 'Copy the prompt that tells Slackbot to execute this canvas', testId: 'row-prompt' }] : []),
-    ...(item.group !== 'sent' ? [{ label: 'Edit in the panel', k: 'e', icon: 'edit', onClick: onEdit, testId: 'edit' }] : []),
-    { label: expanded ? 'Hide the preview' : 'Preview and history', k: 'Space', icon: 'preview', onClick: onExpand, testId: 'preview' },
+  // The source link is the row's own (on the why line, `o`); the rest are overflow verbs: three icons, then ⋯.
+  const overflow: ActionRowOverflow[] = [
+    ...(item.group !== 'sent' ? [{ id: 'edit', label: 'Edit in the panel', k: 'e', icon: 'edit', onClick: onEdit, testId: 'edit' }] : []),
+    { id: 'preview', label: expanded ? 'Hide the preview' : 'Preview and history', k: 'Space', icon: 'preview', onClick: onExpand, testId: 'preview' },
     ...(approvable && item.group !== 'failed'
-      ? [{ label: 'Reject', icon: 'close', onClick: onReject, title: 'Reject: it leaves the Outbox, nothing is sent, the task stays open (Undo on the toast)', testId: 'reject' }]
+      ? [{ id: 'reject', label: 'Reject', icon: 'close', onClick: onReject, title: 'Reject: it leaves the Outbox, nothing is sent, the task stays open (Undo on the toast)', testId: 'reject' }]
       : []),
+    ...(sentUrl ? [{ id: 'sent', label: 'View sent', icon: 'new_window', onClick: () => openDeepLink(sentUrl), title: `Open ${sentWhere} in ${d.destination.kind === 'slack' ? 'Slack' : 'Gmail'}`, testId: 'row-sent' }] : []),
+    ...(result ? [{ id: 'result', label: 'Open the result', icon: 'new_window', onClick: () => openDeepLink(result), title: `Open it in ${d.destination.kind === 'action' ? actionApp(d.destination.action) : 'its app'}`, testId: 'row-result' }] : []),
+    ...(applied && prompt ? [{ id: 'prompt', label: 'Copy Slackbot prompt', icon: 'copy', onClick: () => void copySlackbotPrompt(prompt, actionTitle), title: 'Copy the prompt that tells Slackbot to execute this canvas', testId: 'row-prompt' }] : []),
   ];
 
+  // D-90: the release items' verbs (the hand-off never sends: Copy upload instructions, then Mark uploaded)
+  const approveVerb = approvable
+    ? {
+        // an announcement is a post (sent), not an applied change
+        label: rel?.kind === 'announce' && item.group !== 'failed' ? 'Approve & send' : approveLabel(d, item.group, false),
+        kbd: 'a',
+        loading: busy,
+        onClick: onApprove,
+        disabled: !!rel?.missing,
+        title: rel?.missing ?? (dryRun ? 'Dry run: shows the exact payload, then renders it. Nothing is sent.' : 'Shows the exact payload first. Nothing is sent until you confirm.'),
+      }
+    : null;
+  const hv = rel?.kind === 'upload' ? handoffVerbs(copied, rel.missing) : null;
+  const copyVerb = { label: 'Copy upload instructions', icon: 'copy', onClick: () => void copyInstructions(d).then((ok) => ok && setCopied(true)), title: 'The exact prompt for Claude Code: upload the three files to the folder', testId: 'release-copy' };
+  const markVerb = { label: 'Mark uploaded', kbd: 'a', loading: busy, disabled: hv?.markDisabled, onClick: () => onMarkUploaded?.(), title: rel?.missing ?? 'You put the files in Drive: the app records the hand-off. Nothing is sent.', testId: 'release-mark' };
+  const verb = hv && approvable ? (hv.primary === 'mark' ? markVerb : copyVerb) : approveVerb;
+  const altVerb = hv && approvable ? (hv.primary === 'mark' ? copyVerb : markVerb) : null;
+  const chips = rel ? (
+    <span className="inline-flex flex-wrap items-center gap-1.5" data-testid="release-chips">
+      {rel.chips.map((c) => (
+        <span key={c} className="rounded-sm bg-surface-muted px-1.5 text-caption text-muted tabular-nums">
+          {c}
+        </span>
+      ))}
+    </span>
+  ) : undefined;
+
   return (
-    <>
-      <LineRow
-        rowId={d.id}
-        data-testid="outbox-row"
-        data-group={item.group}
-        data-guide={item.group === 'pending_approval' ? 'outbox-ready' : undefined}
-        data-draft-id={d.id}
-        {...rowProps}
-        title={destinationLabel(d.destination)}
-        why={<span data-testid="outbox-preview">{firstLine}</span>}
-        whyTitle={firstLine}
-        badge={badge}
-        meta={
-          <>
-            {src ? (
-              <a
-                href={src.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid="row-source-link"
-                title={`${src.label}: the message this answers in ${src.where} (o)`}
-                className="inline-flex shrink-0 items-center gap-1 font-bold text-link hover:underline focus-visible:shadow-focus focus-visible:outline-none"
-              >
-                <Icon name="new_window" size="xs" />
-                {src.label}
-              </a>
-            ) : null}
-            {sentUrl ? (
-              <a
-                href={sentUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid="row-sent-link"
-                title={`Open ${sentWhere} in ${d.destination.kind === 'slack' ? 'Slack' : 'Gmail'}`}
-                className="inline-flex shrink-0 items-center gap-1 font-bold text-link hover:underline focus-visible:shadow-focus focus-visible:outline-none"
-              >
-                View sent ↗
-              </a>
-            ) : null}
-            {item.workItem ? (
-              <AppLink href={`/work/${item.workItem.id}`} className="max-w-72 truncate text-muted hover:text-fg hover:underline" title={item.workItem.title}>
-                For: {item.workItem.title}
-              </AppLink>
-            ) : null}
-            {result ? <OpenResult href={result} label="Open" testId="row-result-link" /> : null}
-            {/* a pushed draft waits in its app for you to send it: where to find it */}
-            {item.group === 'sent' && d.status === 'staged' && stagedWhere(d.destination) ? <span data-testid="row-staged-where">find it {stagedWhere(d.destination)}</span> : null}
-            {d.userTouched ? <span>edited by you</span> : null}
-            <span className="tabular-nums" data-applied-by={d.appliedBy ?? undefined}>
-              {item.group === 'sent' ? `${d.appliedBy === 'autopilot' ? 'Applied automatically' : isAction ? 'applied' : 'sent'} ${fmtAgo(d.updatedAt, new Date(now))}` : `drafted ${fmtAgo(d.createdAt, new Date(now))}`}
-            </span>
-          </>
-        }
-        edge={edge}
-        dashed={!status.left && item.group !== 'failed'}
-        verb={
-          approvable
-            ? {
-                label: approveLabel(d, item.group, false),
-                kbd: 'a',
-                loading: busy,
-                onClick: onApprove,
-                title: dryRun ? 'Dry run: shows the exact payload, then renders it. Nothing is sent.' : 'Shows the exact payload first. Nothing is sent until you confirm.',
-              }
-            : null
-        }
-        actions={actions}
-        extra={<Inline status={status.detail} tone={status.tone} flow={flow} where={stagedWhere(d.destination)} onRetry={onRetryFlow} onDismiss={onDismissFlow} />}
-        selected={selected}
-        emphasis={emphasis}
-        inPanel={inPanel}
-        onOpen={onOpen}
-      />
-      {expanded ? (
-        <div className="cc-row-more grid gap-4 @container" data-testid="row-expansion">
+    <ActionRow
+      id={d.id}
+      data-testid="outbox-row"
+      data-group={item.group}
+      data-guide={item.group === 'pending_approval' ? 'outbox-ready' : undefined}
+      data-draft-id={d.id}
+      data-release={rel?.kind}
+      {...rowProps}
+      title={destinationLabel(d.destination)}
+      why={<span data-testid="outbox-preview">{firstLine}</span>}
+      whyTitle={firstLine}
+      chips={chips}
+      badge={badge}
+      meta={
+        <>
+          {sentUrl ? (
+            <a
+              href={sentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="row-sent-link"
+              title={`Open ${sentWhere} in ${d.destination.kind === 'slack' ? 'Slack' : 'Gmail'}`}
+              className="inline-flex shrink-0 items-center gap-1 font-bold text-link hover:underline focus-visible:shadow-focus focus-visible:outline-none"
+            >
+              View sent ↗
+            </a>
+          ) : null}
+          {item.workItem ? (
+            <AppLink href={`/work/${item.workItem.id}`} className="max-w-72 truncate text-muted hover:text-fg hover:underline" title={item.workItem.title}>
+              For: {item.workItem.title}
+            </AppLink>
+          ) : null}
+          {result ? <OpenResult href={result} label="Open" testId="row-result-link" /> : null}
+          {/* a pushed draft waits in its app for you to send it: where to find it */}
+          {item.group === 'sent' && d.status === 'staged' && stagedWhere(d.destination) ? <span data-testid="row-staged-where">find it {stagedWhere(d.destination)}</span> : null}
+          {d.userTouched ? <span>edited by you</span> : null}
+          <span className="tabular-nums" data-applied-by={d.appliedBy ?? undefined}>
+            {item.group === 'sent' ? `${d.appliedBy === 'autopilot' ? 'Applied automatically' : isAction ? 'applied' : 'sent'} ${fmtAgo(d.updatedAt, new Date(now))}` : `drafted ${fmtAgo(d.createdAt, new Date(now))}`}
+          </span>
+        </>
+      }
+      source={src ? { label: src.label, url: src.url } : null}
+      edge={edge}
+      dashed={!status.left && item.group !== 'failed'}
+      verb={verb}
+      altVerb={altVerb}
+      overflow={overflow}
+      extra={
+        rel?.missing && approvable && flow.phase !== 'error' ? (
+          <p role="alert" data-testid="release-missing" className="pb-1 text-body text-danger-700">
+            {rel.missing}
+          </p>
+        ) : (
+          <Inline status={status.detail} tone={status.tone} flow={flow} where={stagedWhere(d.destination)} onRetry={onRetryFlow} onDismiss={onDismissFlow} />
+        )
+      }
+      selected={selected}
+      emphasis={emphasis}
+      inPanel={inPanel}
+      onOpen={onOpen}
+      expanded={expanded}
+      onExpandedChange={onExpand}
+      expansion={
+        <div className="grid gap-4 @container" data-testid="row-expansion">
           <div className="grid gap-4 @4xl:grid-cols-[minmax(0,44rem)_minmax(0,1fr)]">
             <section className="min-w-0">
               {d.destination.kind !== 'action' ? <ReplyingTo draftId={d.id} compact className="mb-3 max-w-[44rem]" /> : null}
-              <h3 className="mb-1.5 text-caption font-bold text-muted">{d.destination.kind === 'action' ? `Exactly what changes in ${actionApp(d.destination.action)}` : `Exactly what ${d.destination.kind === 'slack' ? 'they' : 'the recipient'} will see`}</h3>
-              <RecipientPreview doc={d.doc as unknown as DocNode} destination={d.destination} className="max-w-[44rem]" />
+              {rel ? (
+                <ReleaseFacts draft={d} />
+              ) : (
+                <>
+                  <h3 className="mb-1.5 text-caption font-bold text-muted">{d.destination.kind === 'action' ? `Exactly what changes in ${actionApp(d.destination.action)}` : `Exactly what ${d.destination.kind === 'slack' ? 'they' : 'the recipient'} will see`}</h3>
+                  <RecipientPreview doc={d.doc as unknown as DocNode} destination={d.destination} className="max-w-[44rem]" />
+                </>
+              )}
             </section>
             <section className="min-w-0">
               <h3 className="mb-1.5 text-caption font-bold text-muted">History</h3>
@@ -219,8 +257,8 @@ export function OutboxRow({ item, dryRun, now, tz, expanded, flow, busy, rowProp
             </section>
           </div>
         </div>
-      ) : null}
-    </>
+      }
+    />
   );
 }
 
@@ -256,7 +294,7 @@ function Inline({ status, tone, flow, where, onRetry, onDismiss }: { status: str
   if (flow.phase === 'done' && flow.outcome) {
     return (
       <p role="status" className="pb-1 text-body text-fg">
-        {flow.outcome === 'staged' ? `Draft pushed${where ? `: find it ${where}` : ''}. Checking it landed…` : 'Sent. Checking it landed…'}
+        {flow.outcome === 'staged' ? `Draft saved${where ? `: find it ${where}` : ''}. Checking it landed…` : 'Sent. Checking it landed…'}
       </p>
     );
   }

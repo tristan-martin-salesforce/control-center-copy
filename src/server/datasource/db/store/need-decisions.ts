@@ -1,16 +1,16 @@
 /**
- * Needs-you decisions in Postgres (src/contract/needs.ts): one `user_settings` key per (rule, subject),
- * `cc.need/<rule>/<subjectId>`, the decision as its jsonb value. user_settings is audited (cc_audit_kv), so a decision
- * is one change set with Undo, like the mock's `needDecisions` collection. No migration: the key-value store is the
- * schema's place for small per-user state.
+ * Needs-you decisions in Postgres (src/contract/needs.ts). D-98 (0036): one `need_decisions` row per (rule, subject),
+ * audited, so a decision is one change set with Undo, like the mock's `needDecisions` collection. The callers still
+ * speak the kv shape (`cc.need/<rule>/<subjectId>` in the read model's kv map): the kv write helper routes the write to
+ * the table and loadKv overlays the rows (../needs-decisions.ts), so this module is unchanged for them.
  */
 import { NeedDecision } from '@/contract';
 import { needDecisionOrder } from '@/lib/need-decisions';
 
+import { NEED_KV_PREFIX, needKvKey } from '../needs-decisions';
 import { writeKv, type WriteCtx } from './common';
 
-export const NEED_KV_PREFIX = 'cc.need/';
-export const needKvKey = (rule: string, subjectId: string) => `${NEED_KV_PREFIX}${rule}/${subjectId}`;
+export { NEED_KV_PREFIX, needKvKey };
 
 /** Every stored decision (newest first); a value that no longer parses is left out, never thrown on. */
 export function needDecisionsOf(kv: ReadonlyMap<string, unknown>): NeedDecision[] {

@@ -146,7 +146,7 @@ export class PgEventBus implements EventBus {
   private async ensureListening(): Promise<void> {
     if (this.client || this.connecting) return this.connecting ?? undefined;
     this.connecting = (async () => {
-      const c = new Client({ connectionString: this.url, application_name: 'control-center-sse', options: '-c TimeZone=UTC' });
+      const c = new Client({ connectionString: this.url, application_name: 'command-center-sse', options: '-c TimeZone=UTC' });
       c.on('error', (err) => {
         console.error(`[db-bus] listen client error: ${err.message}`);
         this.dropped(c);

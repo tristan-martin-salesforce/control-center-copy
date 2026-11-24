@@ -19,8 +19,12 @@ export interface TriageConfig {
   escalateModel?: string;
   /** Messages that need a verdict, per batch. */
   batchSize: number;
-  /** Cap on batches per run (the rest is left to the traversal's own outcomes). */
-  maxBatches: number;
+  /**
+   * Batches per run; unset (the default) = every batch. Caps audit 2026-11-21: the default was 12 and the lines past
+   * it got no verdict and no flag, so a busy window's asks vanished. Each batch has its own cost cap and the daily hard
+   * cap still applies; a caller that sets this (a stress probe) sees the rest as `dropped`.
+   */
+  maxBatches?: number;
   maxTurns: number;
   costCapUsdPerBatch: number;
   escalateCostCapUsd: number;
@@ -34,7 +38,6 @@ export interface TriageConfig {
 export const DEFAULT_TRIAGE: Omit<TriageConfig, 'model' | 'escalateModel'> = {
   skillPath: 'skills/triage-slack.md',
   batchSize: 10,
-  maxBatches: 12,
   maxTurns: 16,
   costCapUsdPerBatch: 0.03,
   escalateCostCapUsd: 0.25,
@@ -264,8 +267,8 @@ export function selectSlackTriage(
     } else batches.push({ conversations: [ch], needs: n });
   }
   const needing = batches.reduce((a, b) => a + b.needs, 0);
-  const kept = batches.slice(0, cfg.maxBatches);
-  for (const b of batches.slice(cfg.maxBatches)) for (const c of b.conversations) for (const l of c.lines) if (l.needs) decisions.dropped.push(l.sourceItemId);
+  const kept = cfg.maxBatches == null ? batches : batches.slice(0, cfg.maxBatches);
+  for (const b of batches.slice(kept.length)) for (const c of b.conversations) for (const l of c.lines) if (l.needs) decisions.dropped.push(l.sourceItemId);
   return { batches: kept, qualifying, needing, trivial, handled, dropped: needing - kept.reduce((a, b) => a + b.needs, 0), decisions };
 }
 

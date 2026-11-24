@@ -6,25 +6,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { TimeSettings, DEFAULT_TIME_SETTINGS } from '@/contract';
-import {
-  airportBuffers,
-  bucketOf,
-  DEFAULT_ENGAGED_PARAMS,
-  diffRows,
-  dismissSourceOf,
-  durationUpdateCandidates,
-  engagedMinutes,
-  engagedStretches,
-  humanHours,
-  placeAcross,
-  proposeActivity,
-  rowsAfter,
-  buildTimeBlocks,
-  type ActivityConfig,
-  type EngagedAction,
-  type EvidenceBundle,
-  type RederiveRow,
-} from '@/engines/activity';
+import { airportBuffers } from '@/engines/activity/onsite';
+import { bucketOf, DEFAULT_ENGAGED_PARAMS, engagedMinutes, engagedStretches, type EngagedAction } from '@/engines/activity/engaged';
+import { diffRows, durationUpdateCandidates, rowsAfter, type RederiveRow } from '@/engines/activity/rederive';
+import { dismissSourceOf } from '@/engines/activity/internal';
+import { humanHours, buildTimeBlocks } from '@/engines/activity/blocks';
+import { placeAcross } from '@/engines/activity/placement';
+import { proposeActivity } from '@/engines/activity/propose';
+import type { ActivityConfig, EvidenceBundle } from '@/engines/activity/types';
 import { planWeek, type FixedEntry, type WeekInput } from '@/projections/activity';
 import { humanTurnsOf } from '@/projections/sessions';
 import { emailDomains } from '@/projections/run';

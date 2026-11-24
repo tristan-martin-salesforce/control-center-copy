@@ -11,21 +11,9 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { routes, Seed, type RouteKey, type RouteOutput } from '@/contract';
-import {
-  cleanNote,
-  DEFAULT_EVIDENCE_CONFIG,
-  NOTE_MAX,
-  noteSummaryKey,
-  noteSummaryRequest,
-  parseNoteSummary,
-  parseWorkOrder,
-  pickUseCase,
-  templateNote,
-  topicOf,
-  withCcKey,
-  type ActivityConfig,
-  type NoteFacts,
-} from '@/engines/activity';
+import { cleanNote, NOTE_MAX, noteSummaryKey, noteSummaryRequest, parseNoteSummary, pickUseCase, templateNote, topicOf, withCcKey, type NoteFacts } from '@/engines/activity/note';
+import { DEFAULT_EVIDENCE_CONFIG, type ActivityConfig } from '@/engines/activity/types';
+import { parseWorkOrder } from '@/engines/activity/canvas-parse';
 import { eventRow, renderWorkOrder } from '@/engines/activity/slackbot';
 import { planWeek, type WeekEvent, type WeekInput } from '@/projections/activity';
 import { Matcher, type MatchOpp } from '@/projections/matching';
@@ -132,7 +120,7 @@ describe('the CC# key stays at the end, exact (what the read-back joins on)', ()
   it('every ADD row of a work order ends its Description cell with its own exact CC#<uuid> token', () => {
     const ev = (id: string, note: string) => eventRow({ id, subject: 'ACCOUNT_1 | Discovery', start: '2026-11-04T16:00:00.000Z', end: '2026-11-04T17:00:00.000Z', durationH: 1, taskType: 'Customer Discovery', whatOrg62Id: '006XX0000000OPPAAA', origin: 'calendar', note });
     const ids = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'];
-    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: '2026-11-10T20:00:00.000Z', events: [ev(ids[0]!, 'Discovery session with the ACCOUNT_1 team.'), ev(ids[1]!, 'Workshop.')], updates: [], sourceLabel: 'Control Center' });
+    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: '2026-11-10T20:00:00.000Z', events: [ev(ids[0]!, 'Discovery session with the ACCOUNT_1 team.'), ev(ids[1]!, 'Workshop.')], updates: [], sourceLabel: 'Command Center' });
     const cells = parseWorkOrder(md).adds.map((r) => (r.kind === 'event' ? r.description : null));
     expect(cells).toEqual([`Discovery session with the ACCOUNT_1 team. · CC#${ids[0]}`, `Workshop. · CC#${ids[1]}`]);
   });

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { AccountRow, NeedDecision, Opportunity } from '@/contract';
 import { dcGapBaseline, dcGapOf, dealsNeeds, type GapOpp } from '@/engines/deals/needs';
 import { resurfaced, stillHides } from '@/lib/need-decisions';
+import { planNeedDecisions } from '@/server/deals/needs';
 
 const TODAY = '2026-11-11';
 const NOW = '2026-11-11T18:00:00.000Z';
@@ -83,6 +84,22 @@ describe('Not needed: per opp, until something material changes', () => {
     expect(fixRows(run([{ ...gap, isMine: true }], [d]))[0]!.opps.map((g) => g.oppId)).toEqual(['hrs']);
     expect(resurfaced('dc_gap', { onTeam: false, hoursQtd: 2 }, { onTeam: false, hoursQtd: 3.99 })).toBe(false);
     expect(resurfaced('dc_gap', { onTeam: true, hoursQtd: 2 }, { onTeam: true, hoursQtd: 2 })).toBe(false);
+  });
+
+  it('D-103 (d): comes back once on a call on its account after Not needed, says why, and a second Not needed hides it again', () => {
+    const withCalls = (decisions: NeedDecision[], call?: string) =>
+      dealsNeeds({ accounts: [acct()], opps: [gap], missed: [], requestedOppIds: new Set(), decisions, today: TODAY, now: NOW, timezone: 'UTC', calls: new Map(call ? [['acc_c1', call]] : []) });
+    // the stored baseline: the account's last call then, and when (the server reads it; the client never sends one)
+    const [d] = planNeedDecisions({ rule: 'dc_gap', subjectIds: ['hrs'], kind: 'not_needed', reason: 'Not my deal' }, new Date('2026-11-10T12:00:00.000Z'), [gap], 'UTC', new Map([['acc_c1', '2026-11-09T17:00:00.000Z']]));
+    expect(d!.baseline).toMatchObject({ onTeam: false, hoursQtd: 2, lastCallAt: '2026-11-09T17:00:00.000Z', at: '2026-11-10T12:00:00.000Z' });
+    expect(fixRows(withCalls([d!], '2026-11-09T17:00:00.000Z'))).toEqual([]); // the call it already saw
+    const back = fixRows(withCalls([d!], '2026-11-11T16:00:00.000Z'));
+    expect(back[0]!.opps[0]!.evidence[0]).toBe('You met CUSTOMER_1 on Nov 11, after you set this aside');
+    const [again] = planNeedDecisions({ rule: 'dc_gap', subjectIds: ['hrs'], kind: 'not_needed', reason: 'Not my deal' }, new Date(NOW), [gap], 'UTC', new Map([['acc_c1', '2026-11-11T16:00:00.000Z']]));
+    expect(fixRows(withCalls([again!], '2026-11-11T16:00:00.000Z'))).toEqual([]);
+    // an old baseline (no lastCallAt): a call after its decision time counts; one before it does not
+    expect(fixRows(withCalls([decided(gap)], '2026-11-09T17:00:00.000Z'))).toEqual([]);
+    expect(fixRows(withCalls([decided(gap)], '2026-11-11T16:00:00.000Z'))).toHaveLength(1);
   });
 
   it('a snooze hides until its date; Think ahead comes back on a new close date', () => {

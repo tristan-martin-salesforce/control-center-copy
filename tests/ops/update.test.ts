@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 
 import { majorOf, runUpdate } from '../../scripts/ops/lib/update.mjs';
 
-const WEB = 'com.controlcenter.web';
-const WORKER = 'com.controlcenter.worker';
+const WEB = 'com.commandcenter.web';
+const WORKER = 'com.commandcenter.worker';
 const CHANGELOG = '# Changelog\n\n## [2.0.0] - 2026-12-01\n### Changed\n- Run the new step.\n\n## [1.2.0] - 2026-11-20\n### Added\n- A feature.\n\n## [1.1.0] - 2026-11-13\n';
 
 interface FakeOpts {
@@ -20,6 +20,8 @@ interface FakeOpts {
   fail?: Partial<Record<'fetch' | 'merge' | 'install' | 'build' | 'migrate' | 'backup' | 'stop' | 'start', boolean>>;
   hasBuild?: boolean;
   elsewhere?: string[];
+  local?: { files: string[]; ahead: number };
+  saveFails?: boolean;
 }
 
 function fake(o: FakeOpts = {}) {
@@ -44,7 +46,11 @@ function fake(o: FakeOpts = {}) {
         merged = !o.fail?.merge;
         return step('merge', !o.fail?.merge);
       },
+      localChanges: () => o.local ?? { files: [], ahead: 0 },
+      discardLock: async () => step('discard-lock'),
+      saveLocal: async (branch: string) => step(`save:${branch}`, !o.saveFails),
     },
+    stamp: () => '20261120-0930',
     changelog: (text: string, from: string, to: string) => (text.includes(`## [${to}]`) ? [`## [${to}] (from ${from})`] : []),
     readLocal: () => CHANGELOG,
     confirm: async (q: string) => {
@@ -66,7 +72,7 @@ function fake(o: FakeOpts = {}) {
     backup: async () => {
       step('backup');
       if (o.fail?.backup) throw new Error('pg_dump: connection refused');
-      return { name: 'control_center-20261114-020000.dump', bytes: 4096, copied: null };
+      return { name: 'command_center-20261114-020000.dump', bytes: 4096, copied: null };
     },
   };
   return { deps, log, lines };
@@ -163,6 +169,20 @@ describe('npm run update (E1)', () => {
     expect(flagged.log.some((l) => l.startsWith('confirm:'))).toBe(false);
   });
 
+  it('UPG-4: a major update keeps its backup out of retention as pre-<major>.0 and says where; a minor one does not', async () => {
+    const major = fake({ to: '3.0.0' });
+    const kept: Array<[string, number]> = [];
+    const deps = { ...major.deps, keepForMajor: async (b: { name: string }, m: number) => (kept.push([b.name, m]), `/state/backups/pre-${m}.0/${b.name}`) };
+    expect((await runUpdate(deps, { yes: true })).status).toBe('updated');
+    expect(kept).toEqual([['command_center-20261114-020000.dump', 3]]);
+    expect(major.lines.join('\n')).toContain('the backup from before v3.0.0 is kept out of retention: /state/backups/pre-3.0/command_center-20261114-020000.dump');
+    const minor = fake();
+    const none: unknown[] = [];
+    await runUpdate({ ...minor.deps, keepForMajor: async (...a: unknown[]) => (none.push(a), 'x') }, {});
+    expect(none).toEqual([]);
+    expect(minor.lines.join('\n')).not.toMatch(/kept out of retention/);
+  });
+
   it('--no-restart leaves the agents alone; --no-backup skips the backup; --dry changes nothing', async () => {
     const nr = fake();
     await runUpdate(nr.deps, { restart: false });
@@ -187,11 +207,82 @@ describe('npm run update (E1)', () => {
   });
 
   it('refuses when the installed agents run another checkout: nothing changes, no agent stops', async () => {
-    const f = fake({ elsewhere: ['/Users/me/Projects/control-center'] });
+    const f = fake({ elsewhere: ['/Users/me/Projects/command-center'] });
     const r = await runUpdate(f.deps, {});
     expect(r).toMatchObject({ status: 'failed', failedAt: 'elsewhere' });
     expect(f.log).toEqual([]); // before anything: no fetch, no stop, no migrate
-    expect(f.lines.join('\n')).toMatch(/LaunchAgents run \/Users\/me\/Projects\/control-center, not this checkout: run npm run update there/);
+    expect(f.lines.join('\n')).toMatch(/LaunchAgents run \/Users\/me\/Projects\/command-center, not this checkout: run npm run update there/);
+  });
+
+  it('PKG-3: installs with npm ci, and a lockfile npm rewrote here is put back before the fast-forward', async () => {
+    const f = fake({ local: { files: ['package-lock.json'], ahead: 0 } });
+    const r = await runUpdate(f.deps, {});
+    expect(r.status).toBe('updated');
+    expect(f.log.slice(0, 3)).toEqual(['fetch', 'discard-lock', 'merge']);
+    expect(f.lines.join('\n')).toMatch(/install: npm ci/);
+    expect(f.log.some((l) => l.startsWith('confirm:'))).toBe(false);
+  });
+
+  it('PKG-3: other local changes stop it with the count and two options; no (or no terminal) changes nothing', async () => {
+    const f = fake({ local: { files: ['package-lock.json', 'src/a.ts', 'notes.txt'], ahead: 1 } });
+    const r = await runUpdate(f.deps, {});
+    expect(r.status).toBe('declined');
+    expect(f.log).toEqual(['fetch', 'confirm:Save your changes to cc-local-20261120-0930 and update?']);
+    const text = f.lines.join('\n');
+    expect(text).toMatch(/You changed the app's code here \(2 files changed and 1 local commit\)/);
+    expect(text).toMatch(/1\. Save your changes to the branch cc-local-20261120-0930 and update/);
+    expect(text).toMatch(/2\. Cancel: nothing changes/);
+    expect(text).toMatch(/Not updated\. Nothing changed/);
+  });
+
+  it('PKG-3: yes (or --save-local) saves them to the branch, then updates; a failed save changes nothing', async () => {
+    const yes = fake({ local: { files: ['src/a.ts'], ahead: 0 }, confirm: true });
+    expect((await runUpdate(yes.deps, {})).status).toBe('updated');
+    expect(yes.log.slice(0, 4)).toEqual(['fetch', 'confirm:Save your changes to cc-local-20261120-0930 and update?', 'save:cc-local-20261120-0930', 'merge']);
+    const flagged = fake({ local: { files: [], ahead: 2 } });
+    expect((await runUpdate(flagged.deps, { saveLocal: true })).status).toBe('updated');
+    expect(flagged.log.slice(0, 3)).toEqual(['fetch', 'save:cc-local-20261120-0930', 'merge']);
+    const broken = fake({ local: { files: ['src/a.ts'], ahead: 0 }, saveFails: true });
+    expect(await runUpdate(broken.deps, { saveLocal: true })).toMatchObject({ status: 'failed', failedAt: 'save' });
+    expect(broken.log).not.toContain('merge');
+    expect(broken.log.some((l) => l.startsWith('stop:'))).toBe(false);
+  });
+
+  it('PKG-3: --dry names the local changes and stops; nothing incoming leaves them alone', async () => {
+    const dry = fake({ local: { files: ['src/a.ts'], ahead: 0 } });
+    expect((await runUpdate(dry.deps, { dry: true })).status).toBe('declined');
+    expect(dry.log).toEqual([]);
+    expect(dry.lines.join('\n')).toMatch(/1 file changed.*\n.*cc-local-20261120-0930[\s\S]*--dry: stopping here/);
+    const lockDry = fake({ local: { files: ['package-lock.json'], ahead: 0 } });
+    await runUpdate(lockDry.deps, { dry: true });
+    expect(lockDry.lines.join('\n')).toMatch(/would put the committed package-lock.json back/);
+    expect(lockDry.log).toEqual([]);
+    const none = fake({ incoming: 0, to: '1.1.0', local: { files: ['src/a.ts'], ahead: 0 } });
+    expect((await runUpdate(none.deps, {})).status).toBe('up_to_date');
+    expect(none.log.some((l) => l.startsWith('save:') || l.startsWith('confirm:'))).toBe(false);
+  });
+
+  it('D-98: a 1.x Homebrew database moves after the backup, before db:migrate; a failed move undoes like a failed migration', async () => {
+    const ok = fake();
+    const moves: string[] = [];
+    const withDb = (f: ReturnType<typeof fake>, good: boolean) => ({ ...f.deps, database: { plan: () => ({ move: true }), move: async () => (f.log.push('move'), moves.push('x'), { ok: good }) } });
+    const r = await runUpdate(withDb(ok, true), {});
+    expect(r.status).toBe('updated');
+    expect(ok.log).toEqual(['fetch', 'merge', `stop:${WEB}`, `stop:${WORKER}`, 'install', 'snapshot', 'build', 'backup', 'move', 'migrate', 'drop:snap', `start:${WEB}`, `start:${WORKER}`]);
+    const bad = fake();
+    const b = await runUpdate(withDb(bad, false), {});
+    expect(b).toMatchObject({ status: 'failed', failedAt: 'move' });
+    expect(bad.log.slice(-4)).toEqual(['move', 'restore:snap', `start:${WEB}`, `start:${WORKER}`]);
+    expect(bad.log).not.toContain('migrate');
+    expect(bad.lines.join('\n')).toMatch(/your data stays in Homebrew Postgres, untouched/);
+    const dry = fake();
+    await runUpdate(withDb(dry, true), { dry: true });
+    expect(dry.lines.join('\n')).toMatch(/would: move the data from Homebrew Postgres/);
+    expect(dry.log).not.toContain('move');
+    const none = fake();
+    await runUpdate({ ...none.deps, database: { plan: () => ({ move: false, message: '--keep-homebrew: the database stays in Homebrew Postgres' }), move: async () => ({ ok: true }) } }, {});
+    expect(none.log).not.toContain('move');
+    expect(none.lines).toContain('--keep-homebrew: the database stays in Homebrew Postgres');
   });
 
   it('majorOf reads the major number', () => {

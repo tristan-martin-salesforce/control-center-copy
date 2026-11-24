@@ -23,6 +23,10 @@ const WHERE: Record<Relation, string> = {
   same_file: "the item's file",
   same_event: 'calendar event',
   same_account: 'same account',
+  ack: 'the asker acknowledging my line',
+  file_revision: "a revision of the item's file",
+  meeting_notes: 'meeting notes',
+  session: 'a Claude session',
 };
 
 const clip = (s: string | undefined, n: number) => {
@@ -57,6 +61,9 @@ function candidateText(c: Candidate): string {
     return clip(`Calendar event "${s.title ?? ''}" at ${minute(s.occurredAt)}${who ? ` with ${who}` : ''}. ${s.text ?? ''}`, 500);
   }
   if (s.connector === 'gmail') return clip(`Subject: ${s.title ?? ''}. ${s.text ?? ''}`, 700);
+  if (s.connector === 'gemini_notes') return clip(`Meeting notes "${s.title ?? ''}": ${s.text ?? ''}`, 900);
+  if (s.connector === 'claude_sessions') return clip(`Claude session "${s.title ?? ''}": ${s.text ?? ''}`, 600);
+  if (s.connector === 'drive') return clip(`File revision "${s.title ?? ''}": ${s.text ?? ''}`, 600);
   return clip(s.text || s.title, 700);
 }
 

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\") for the resolution check (skills/resolve-item.md), keyed by ledgerHash(model, skill, system, user). Re-key offline after a prompt or skill change: npx tsx tests/evals/scanner/record-resolution.ts.",
+  "entries": [
+    {
+      "hash": "f12e6cdf59c1ac852eef1cf2d321db75",
+      "label": "claude-haiku-5-5 | 2026-11-16 22:52Z | Confirm which IdP groups map to Agentforce permission sets, in writing",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"cite\": null, \"confidence\": 0.2, \"needs\": \"the group mapping in writing\"}]}"
+    }
+  ]
+}

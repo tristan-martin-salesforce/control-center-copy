@@ -6,7 +6,9 @@
  * "I created it, check now" for Org62 showing the record you created (after a short simulated read).
  */
 import type { Draft, ForecastPayload, ForecastRecordDetail, ForecastRow, PatchForecastRequest, RouteInput, RouteOutput, Settings, SpecialistForecast } from '@/contract';
-import { buildForecastView, DRAFT_CAP_USD, forecastCanvasIndex, NOTES_FIELD, quarterPair, ROLE_FIELD, updateKey, withForecast, type ForecastCheckInput } from '@/engines/forecast';
+import { buildForecastView, DRAFT_CAP_USD, withForecast, type ForecastCheckInput } from '@/engines/forecast/view';
+import { forecastCanvasIndex, NOTES_FIELD, ROLE_FIELD, updateKey } from '@/engines/forecast/canvas';
+import { quarterPair } from '@/engines/forecast/time';
 import { personaOf } from '@/personas';
 import { placeholderDraft, PLACEHOLDER_MODEL } from '@/server/forecast/draft';
 import { MOCK_OWNER_ORG62_ID, mockCreatedForecast, mockSpecialistForecasts } from '@/server/forecast/mock-records';
@@ -120,7 +122,6 @@ export class MockForecast {
       .all('events')
       .filter((e) => e.accountId === rec.accountId && e.start >= since && e.start <= now)
       .sort((a, b) => b.start.localeCompare(a.start) || a.id.localeCompare(b.id))
-      .slice(0, 12)
       .map((e) => ({ id: e.id, title: e.title, start: e.start }));
   }
 
@@ -212,7 +213,7 @@ export class MockForecast {
     const v = this.view();
     this.active(v);
     const nowIso = this.host.now().toISOString();
-    const plan = stagePlan(v, { ownerName: this.settings().profile.name || 'me', ownerOrg62Id: MOCK_OWNER_ORG62_ID, nowIso, sourceLabel: 'Control Center (mock) · forecast notes', ...(i.body.ids ? { ids: i.body.ids } : {}) });
+    const plan = stagePlan(v, { ownerName: this.settings().profile.name || 'me', ownerOrg62Id: MOCK_OWNER_ORG62_ID, nowIso, sourceLabel: 'Command Center (mock) · forecast notes', ...(i.body.ids ? { ids: i.body.ids } : {}) });
     if (!plan.destination) {
       if (plan.deferred.length) throw invalid('These notes are too long for one canvas: shorten them, then try again');
       return { entity: { draftId: null, title: null, notes: 0, roles: 0, waiting: plan.waiting, deferred: plan.deferred }, auditId: null };

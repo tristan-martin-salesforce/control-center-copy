@@ -1,5 +1,5 @@
 /*
- * The v2 list pages (Triage, Work, Outbox): docs/ui/DESIGN-V2.md, the Home and Today mockups' rows,
+ * The v2 list pages (Triage, Work, Outbox): docs/archive/2026-build/DESIGN-V2.md, the Home and Today mockups' rows,
  * sections and panels. Tokens from src/styles/brand.css only (no raw hex).
  *
  * Layout reacts to #cc-main (the `main` container) and its data-panel attribute, never to the viewport:

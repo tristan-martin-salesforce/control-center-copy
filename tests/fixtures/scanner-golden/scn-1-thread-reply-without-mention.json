@@ -1,0 +1,44 @@
+{
+  "id": "scn-1-thread-reply-without-mention",
+  "title": "SCN-1: an ask in a channel thread under my message, with no @-mention, is never fetched",
+  "storyline": "03-scanner-quality.md SCN-1 (Slack channel-thread replies to me are never fetched), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-10T15:00:00.000Z",
+      "seen_at": "2026-11-10T15:10:00.000Z",
+      "from_me": true,
+      "body": "Shared the v1 sizing for ACME in the deal folder: https://docs.google.com/spreadsheets/d/FILE_ACME_SIZING_01/edit",
+      "meta": { "channelId": "C0ACME0001", "channelType": "channel", "channelName": "acme-deal" }
+    },
+    {
+      "id": "s2",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-10T16:20:00.000Z",
+      "seen_at": "2026-11-10T16:30:00.000Z",
+      "from_me": false,
+      "thread_of": "s1",
+      "body": "thanks! can you send me the v2 with the EMEA numbers before Friday?",
+      "meta": { "channelId": "C0ACME0001", "channelType": "channel", "channelName": "acme-deal", "author": { "name": "PERSON_B", "email": "person_b@example.com", "externalId": "U0PERSONB" } },
+      "agent": [{ "propose": "i1" }]
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Send PERSON_B the v2 ACME sizing with the EMEA numbers",
+      "keywords": ["v2", "EMEA"],
+      "origin": "s2",
+      "ask_quote": "can you send me the v2",
+      "note": "S1 searches DMs, S2 @-mentions, S3/S4 my own messages: a channel thread reply addressed to me without a mention matches none of them; the recall sweep (src/scanner/resolution/recall.ts, R5) re-reads the thread"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "why": "the v2 was never sent" }
+  ]
+}

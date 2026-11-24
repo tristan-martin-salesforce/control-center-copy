@@ -1,7 +1,7 @@
 /**
  * Worker configuration from the environment (values are never logged).
  *
- *   DATABASE_URL         Postgres (default postgres://localhost:5432/control_center)
+ *   DATABASE_URL         Postgres (default postgres://localhost:5432/command_center)
  *   CC_LIVE              1 = real read-only fetchers (devbar Google, Claude sessions + file watch). Default: on when
  *                        NODE_ENV=production (launchd), off otherwise, so `npm run dev` in a lane never scans.
  *   CC_SCAN_LLM          1 = Haiku skill linking + Slack/Org62 traversal. Default like CC_LIVE. Off: deterministic

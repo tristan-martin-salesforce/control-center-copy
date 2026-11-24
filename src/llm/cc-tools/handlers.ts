@@ -14,6 +14,7 @@ import { broadcastOf } from '../../scanner/triage/slack-triage';
 import { DEFAULT_SCANNING_PREFS, type ConnectorId, type CoverageObject, type Cursor, type NormalizedSourceItem, type ScanContext, type ScannerStore, type TimeWindow } from '../../scanner/types';
 import { LOOP_BACK_PREFIX, isContextOnly, type BriefHighlightsInput, type ResolutionFields, type ScannerStoreWithBriefs } from '../../scanner/runtime/contract-ext';
 import { redact, redactPayload } from '../redact';
+import { EXCERPT_MAX_CHARS } from '../tool-digest';
 import { schemas, type CcInput, type CcToolName, sourceItemInput } from './schemas';
 
 export interface CcRunState {
@@ -212,7 +213,8 @@ export function normalizeItem(runConnector: ConnectorId, raw: z.infer<typeof sou
   const occurredAt = toIso(raw.occurredAt) ?? (isSlackTs(raw.externalId.split(':').pop() ?? '') ? toIso(raw.externalId.split(':').pop()!) : undefined);
   if (!occurredAt) throw new CcToolError(`occurredAt is not a timestamp for ${raw.externalId}`);
   const title = raw.title != null ? redact(raw.title) : undefined;
-  const ex = raw.excerpt != null ? redact(raw.excerpt.slice(0, 1000)) : undefined;
+  // R6: up to 4,000 chars (an ask past character 1,000 was lost, SCN-9); each prompt clips what it shows.
+  const ex = raw.excerpt != null ? redact(raw.excerpt.slice(0, EXCERPT_MAX_CHARS)) : undefined;
   const payload = raw.payload ? redactPayload(raw.payload) : undefined;
   const item: NormalizedSourceItem = {
     connector,
@@ -534,7 +536,8 @@ export function parseHighlightsBlock(summary: string | undefined, recorded: Map<
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.includes('|'));
-  const highlights = lines.slice(0, 12).map((line, i) => {
+  // every highlight line the run wrote (caps audit 2026-11-21: was the first 12); relevance still falls with the order
+  const highlights = lines.map((line, i) => {
     const [ts = '', , sentence = '', ...rest] = line.split('|');
     const kv = Object.fromEntries(rest.map((p) => p.split('=')).filter((p) => p.length >= 2).map(([k, ...v]) => [k!.trim(), v.join('=').trim()]));
     const ids = [...recorded.entries()].filter(([key]) => ts && key.endsWith(`:${ts.trim()}`)).map(([, id]) => id);

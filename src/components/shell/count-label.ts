@@ -5,6 +5,7 @@
 import type { NavCountKey } from './nav';
 
 export function quietCountWhat(kind: NavCountKey | undefined, count: number): string {
+  if (kind === 'needs') return count === 1 ? ' thing needs you' : ' things need you';
   if (kind === 'adminWaiting') return ' waiting on you: to log, or VDPs that need you';
   if (kind === 'assistantPending') return count === 1 ? ' card not applied yet' : ' cards not applied yet';
   return '';

@@ -30,6 +30,7 @@ import {
 } from '@/server/deals/dc-requests';
 
 import { draftStatusFromDb, type DbDraftStatus } from '../enums';
+import { readMemo } from '../reads/session';
 import type { WriteCtx } from './common';
 import { afterBookSync, clearStaleDcFlags, lastDcRead, rememberDcRead, withdrawVdpItemsOutOfScope } from './deals-sync';
 import { loadPersona } from './persona';
@@ -58,7 +59,12 @@ const iso = (d: Date | string) => (d instanceof Date ? d : new Date(d)).toISOStr
 const numOrNull = (v: string | number | null) => (v === null || v === undefined ? null : Number(v));
 
 /** The canvas items' DC rows (pending ones hold them, sent ones handed them off), from the drafts' stored payloads. */
-export async function loadDcHolds(db: DbOrTx, userId: string): Promise<DcHolds> {
+export function loadDcHolds(db: DbOrTx, userId: string): Promise<DcHolds> {
+  // GET /needs reads them twice (the DC requests and the waiting count): once per request inside the read memo
+  return readMemo(db, `dcHolds:${userId}`, () => readDcHolds(db, userId));
+}
+
+async function readDcHolds(db: DbOrTx, userId: string): Promise<DcHolds> {
   const r = await db.execute<{ id: string; status: DbDraftStatus; payload: Draft['destination'] | null; result_url: string | null }>(sql`
     select id, status::text as status, payload, result_url from drafts
      where owner_user_id = ${userId} and payload ->> 'action' = 'slack_canvas.create'`);
@@ -118,7 +124,13 @@ const recordOf = (x: Row): DcRequestRecord => ({
   outcome: DcRequestOutcome.safeParse(x.outcome).success ? (x.outcome as DcRequestRecord['outcome']) : null,
 });
 
-export async function loadDcRequests(db: DbOrTx, userId: string, holds?: DcHolds, mine?: Map<string, MyDc>): Promise<DcRequest[]> {
+export function loadDcRequests(db: DbOrTx, userId: string, holds?: DcHolds, mine?: Map<string, MyDc>): Promise<DcRequest[]> {
+  // Home reads them twice (the Deals needs and the waiting-for-a-canvas count): once per request (reads/session.ts)
+  if (!holds && !mine) return readMemo(db, `dcRequests:${userId}`, () => readDcRequests(db, userId));
+  return readDcRequests(db, userId, holds, mine);
+}
+
+async function readDcRequests(db: DbOrTx, userId: string, holds?: DcHolds, mine?: Map<string, MyDc>): Promise<DcRequest[]> {
   const rows = (
     await db.execute<Row>(sql`
       select r.id, r.opportunity_id, r.kind, r.role, r.split_percent, r.from_split, r.comment, r.status::text as status, r.approved_at, r.created_at, r.updated_at,

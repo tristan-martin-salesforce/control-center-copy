@@ -35,6 +35,7 @@ import { completeForApprove, rowLock } from './rows-derive';
 import { DescriptionInput, HoursField, LockNote, MeetingTypeField, OppField, RowEvidence, SuggestionLine, TaskTypeField, useRowSave, type Pickers } from './RowParts';
 import { LandingPill, WriteList } from './LandingParts';
 import { navigate } from '@/components/shell/router';
+import { hasTarget } from '@/lib/time-internal';
 
 export function ActivityPanel({ id, label }: { id: string; label?: string }) {
   const tz = useTimeZone();
@@ -50,11 +51,11 @@ export function ActivityPanel({ id, label }: { id: string; label?: string }) {
   if (!e) {
     return (
       <PanelShell from="Activity log row" title={label ?? 'Activity row'}>
-        <EmptyState size="inline" icon="clock" title="Not loaded here" body="Log rows load on the Activity page: its week, or the Ledger with every row." action={<Button size="sm" variant="secondary" onClick={() => navigate('/activity?view=log')}>Open the log</Button>} />
+        <EmptyState size="inline" icon="clock" title="Not loaded here" body="Log rows load on the Activity page: To log, or History with every row." action={<Button size="sm" variant="secondary" onClick={() => navigate('/activity?view=log')}>Open the log</Button>} />
       </PanelShell>
     );
   }
-  return <Loaded e={e} tz={tz} now={now} canvases={week.data?.logCanvases} pick={{ taskTypeRequired: wording.taskType, taskTypes: wording.taskTypes, internalActivity: wording.internal }} recordTypeName={wording.recordTypeName} openCanvas={(draftId) => open({ kind: 'draft', id: draftId, label: 'Logging canvas' })} />;
+  return <Loaded e={e} tz={tz} now={now} canvases={week.data?.logCanvases} pick={{ taskTypeRequired: wording.taskType, taskTypes: wording.taskTypes, internalActivity: wording.internal }} recordTypeName={wording.recordTypeName} openCanvas={(draftId) => open({ kind: 'draft', id: draftId, label: 'Logging batch' })} />;
 }
 
 function Loaded({ e, tz, now, canvases, pick, recordTypeName, openCanvas }: { e: ActivityEntry; tz?: string; now: string; canvases: Parameters<typeof rowLock>[1]; pick: Pickers; recordTypeName: string; openCanvas: (draftId: string) => void }) {
@@ -66,7 +67,7 @@ function Loaded({ e, tz, now, canvases, pick, recordTypeName, openCanvas }: { e:
   const lock = rowLock(e, canvases, tz);
   const locked = !!lock;
   const approve = completeForApprove(e, pick.taskTypeRequired) && !locked;
-  const needsOpp = !e.oppId && !e.internal;
+  const needsOpp = !hasTarget(e);
   return (
     <PanelShell
       testId="panel-activity"
@@ -75,7 +76,7 @@ function Loaded({ e, tz, now, canvases, pick, recordTypeName, openCanvas }: { e:
       sub={`${clock(e.start, tz)}–${clock(e.end, tz)} · ${e.durationH} h of your time · an Org62 ${recordTypeName.replace(/s$/, '')} once logged`}
       badge={
         e.canvasDraftId ? (
-          <StatusBadge tone="neutral">On a canvas: waiting for your Apply</StatusBadge>
+          <StatusBadge tone="neutral">In a batch: waiting for your Apply</StatusBadge>
         ) : rb ? (
           <StatusBadge tone={rb === 'missing' || rb === 'deleted' ? 'danger' : 'warning'} icon="warning">
             {READBACK_BADGE[rb]}
@@ -90,21 +91,21 @@ function Loaded({ e, tz, now, canvases, pick, recordTypeName, openCanvas }: { e:
         lock?.kind === 'on_canvas' && lock.canvas ? (
           <>
             <Button variant="primary" size="md" onClick={() => openCanvas(lock.canvas!.draftId)}>
-              Review & apply the canvas
+              Review & apply the batch
             </Button>
-            <span className="ml-auto text-caption text-muted">Edit or remove the row in the canvas review, then Apply.</span>
+            <span className="ml-auto text-caption text-muted">Edit or remove the row in the batch review, then Apply.</span>
           </>
         ) : rb === 'missing' || rb === 'deleted' ? (
           <>
             <RelogActions e={e} size="md" now={now} />
-            <span className="ml-auto text-caption text-muted">{rb === 'deleted' ? 'Its Org62 Event was deleted there.' : 'Its canvas ran, and Org62 has no Event for it.'} Log again puts it on the next canvas.</span>
+            <span className="ml-auto text-caption text-muted">{rb === 'deleted' ? 'Its Org62 Event was deleted there.' : 'Its batch ran, and Org62 has no Event for it.'} Log again puts it in the next batch.</span>
           </>
         ) : approve ? (
           <>
             <Button variant="primary" size="md" onClick={() => save({ status: 'approved' })} data-testid="panel-approve">
               Approve
             </Button>
-            <span className="ml-auto text-caption text-muted">It moves to Log it ▸ Ready to log. Fields save as you change them.</span>
+            <span className="ml-auto text-caption text-muted">It moves to To log ▸ Ready to log. Fields save as you change them.</span>
           </>
         ) : (
           <span className="text-caption text-muted">{locked ? 'Nothing here changes Org62.' : needsOpp ? 'Pick the opportunity (or Internal) above: it saves at once.' : 'Every field saves as you change it. Nothing is written to Org62 from here.'}</span>
@@ -123,6 +124,12 @@ function Loaded({ e, tz, now, canvases, pick, recordTypeName, openCanvas }: { e:
           <span className="text-caption text-muted">Opportunity</span>
           <span className="min-w-0" data-no-open>
             <OppField e={e} pick={pick} save={save} disabled={locked} />
+            {/* D-103 (c): why it logs there, one plain sentence from the facts */}
+            {e.groundwork ? (
+              <span className="mt-1 block text-caption text-muted" data-testid="row-groundwork" data-code={e.groundwork.code}>
+                {e.groundwork.text}
+              </span>
+            ) : null}
           </span>
           <span className="text-caption text-muted">Task type</span>
           <TaskTypeField e={e} pick={pick} disabled={locked} onSave={(t) => save({ taskType: t })} />
@@ -145,7 +152,7 @@ function Loaded({ e, tz, now, canvases, pick, recordTypeName, openCanvas }: { e:
       <PanelSection title="Where it stands">
         <Facts
           rows={[
-            ['Status', e.canvasDraftId ? `${statusLabel} · on a logging canvas waiting for your Apply` : statusLabel],
+            ['Status', e.canvasDraftId ? `${statusLabel} · in a batch waiting for your Apply` : statusLabel],
             ...(lock?.canvas && lock.kind !== 'on_canvas' ? [['Canvas', lock.canvas.title] as [string, string]] : []),
             ...(e.status === 'dismissed' ? [['Why excluded', EXCLUDED_REASON_LABEL[e.excludedReason ?? 'dismissed']] as [string, string]] : []),
             ...(e.fromOrg62 ? [['Org62', 'Read from an Org62 Event: logged, nothing to confirm'] as [string, string]] : e.loggedAt ? [['Logged', `${dayLabel(e.loggedAt, tz)} ${clock(e.loggedAt, tz)}`] as [string, string]] : []),
@@ -173,7 +180,7 @@ function WhereItLanded({ id, tz }: { id: string; tz?: string }) {
         <LandingPill dest="org62" landing={l} size="sm" />
         {l.externalId ? <span className="text-muted tabular-nums">{`Event ${l.externalId}`}</span> : null}
       </div>
-      <WriteList writes={l.writes} tz={tz} showLabel={false} showCanvas onCanvas={(draftId) => open({ kind: 'draft', id: draftId, label: 'Logging canvas' })} empty="Nothing written yet: it goes on your next canvas once it is ready." />
+      <WriteList writes={l.writes} tz={tz} showLabel={false} showCanvas onCanvas={(draftId) => open({ kind: 'draft', id: draftId, label: 'Logging batch' })} empty="Nothing written yet: it goes in your next batch once it is ready." />
     </PanelSection>
   );
 }
@@ -238,7 +245,7 @@ function NoteSection({ entry: e, locked }: { entry: ActivityEntry; locked: boole
       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted">
         {basis ? <span className={cn(!yours && e.logNoteBasis === 'summary' && 'text-ai-700')}>{basis}</span> : null}
         {editable ? <span className={cn('tabular-nums', text.length > NOTE_MAX && 'text-warning-700')}>{text.length} / {NOTE_MAX}</span> : null}
-        <span>{editable ? 'Logged with its CC# key at the end.' : e.canvasDraftId ? 'Read only here: it is on a canvas waiting for your Apply (edit it in the canvas review).' : 'Read only: it is on a canvas or in Org62 now.'}</span>
+        <span>{editable ? 'Logged with its CC# key at the end.' : e.canvasDraftId ? 'Read only here: it is in a batch waiting for your Apply (edit it in the batch review).' : 'Read only: it is in a batch or in Org62 now.'}</span>
         {editable ? <InlineStatus state={autosave.status.state} savedAt={autosave.status.savedAt} error={autosave.status.error} onRetry={() => void autosave.flush()} /> : null}
       </div>
     </PanelSection>

@@ -28,6 +28,7 @@ import {
   confirmDelivery,
   draftStatusOf,
   isOutcomeUnknown,
+  isReleaseItem,
   NotConfirmedError,
   OutboxDelivery,
   payloadHash,
@@ -43,8 +44,10 @@ import { invalid } from '@/server/errors';
 
 import { payloadFor, renditionFor } from '../mock/render';
 import { loadModel } from './model';
+import { everything } from './reads/scope';
 import type { WriteCtx } from './store/common';
 import { updateDraft } from './store/nba';
+import { recordMessageLanding } from './store/landings';
 import { loadSettingsSections } from './store/settings';
 import { dropCompanyLookups } from './store/vdp';
 
@@ -62,6 +65,8 @@ export interface DispatchPlan {
 export async function planDispatch(d: Draft, i: { mode: DispatchMode; confirmToken: string; expectedToken: string; dryRun: boolean; now: Date }): Promise<DispatchPlan> {
   if (DELIVERED_STATUSES.has(d.status)) throw invalid(`Draft is ${d.status}: it was already delivered, so nothing was sent again`);
   const payload = payloadFor(d.destination, d.doc, i.mode);
+  // D-90: a release announcement with no channel (or an empty post) says what to set; nothing is recorded or sent
+  if (isReleaseItem(d.destination) && typeof payload.invalid === 'string') throw invalid(`Not sent: ${payload.invalid}`);
   const rendition = renditionFor(d.destination, d.doc);
   let confirmation: DeliveryConfirmation;
   try {
@@ -80,7 +85,7 @@ export async function planDispatch(d: Draft, i: { mode: DispatchMode; confirmTok
 /** The attempt the dispatch change set appends (`id: '0'` = let the database number it). */
 export function dispatchAttempt(plan: DispatchPlan, at: string): Draft['attempts'][number] {
   if (plan.rec.dryRun) return { ...attemptOf(plan.rec, '0'), at };
-  const dest = plan.rec.channel === 'slack' || plan.rec.channel === 'slack_canvas' || plan.rec.channel === 'feedback' ? 'Slack' : plan.rec.channel === 'vdp' ? 'VDP' : 'Gmail';
+  const dest = plan.rec.channel === 'slack' || plan.rec.channel === 'slack_canvas' || plan.rec.channel === 'feedback' || plan.rec.channel === 'release' ? 'Slack' : plan.rec.channel === 'vdp' ? 'VDP' : 'Gmail';
   return { id: '0', at, mode: plan.rec.mode, dryRun: false, outcome: 'unconfirmed', detail: `Queued for delivery to ${dest}: nothing has left the machine yet` };
 }
 
@@ -103,7 +108,7 @@ export function dbOutboxPort(db: Db, userId: string, opts: DbOutboxPortOptions):
   const now = opts.now ?? (() => new Date());
   return {
     async load(p: OutboxJobPayload) {
-      const model = await loadModel(db, userId, now());
+      const model = await loadModel(db, userId, now(), { scope: everything('outbox gateway') });
       const draft = model.get('drafts', p.draftId);
       if (!draft) return null;
       const [row] = await db
@@ -150,7 +155,7 @@ export function dbOutboxPort(db: Db, userId: string, opts: DbOutboxPortOptions):
       const at = now();
       const reason = rec.state === 'failed' ? 'Outbox delivery failed' : rec.readback ? `Outbox read-back: ${rec.readback}` : rec.state === 'dry_run_delivered' ? 'Outbox dry-run delivered' : `Outbox delivered (${rec.mode})`;
       await withChangeSet({ db, userId, actor: actors.system('outbox.deliver'), reason, entity: { type: 'draft', id: p.draftId }, undoable: false }, async (tx, cs) => {
-        const model = await loadModel(tx as unknown as Db, userId, at);
+        const model = await loadModel(tx as unknown as Db, userId, at, { scope: everything('outbox gateway: in its transaction') });
         const cur = model.get('drafts', p.draftId);
         if (!cur) return;
         const w: WriteCtx = { tx, cs, userId, me: model.ctx.me, now: at, extractorId, timezone: model.settings().profile.timezone, kv: model.ctx.kv };
@@ -212,6 +217,8 @@ export function dbOutboxPort(db: Db, userId: string, opts: DbOutboxPortOptions):
             })
             .where(eq(drafts.id, p.draftId));
         }
+        // D-98 (09 R5): an Applied Slack / Gmail item is recorded as a landing in this same change set (nothing new is sent)
+        await recordMessageLanding(tx, userId, p.draftId, p.attemptId, rec);
       });
     },
   };

@@ -51,6 +51,7 @@ export function ThreadSwitcher({
   now,
   tz,
   streamingThreadId,
+  about,
 }: {
   threads: ChatThread[];
   threadId: string | null;
@@ -59,6 +60,8 @@ export function ThreadSwitcher({
   now: Date;
   tz?: string;
   streamingThreadId?: string | null;
+  /** Assistant v2: start a thread about what is open (its context rides on every turn of that thread). */
+  about?: { label: string; start: () => void } | null;
 }) {
   const [active, setActive] = useState(() => Math.max(0, threads.findIndex((t) => t.id === threadId)));
   const listRef = useRef<HTMLDivElement>(null);
@@ -103,6 +106,19 @@ export function ThreadSwitcher({
           </button>
         ))}
       </div>
+      {about ? (
+        <button
+          type="button"
+          className={s.seeAll}
+          onClick={() => {
+            about.start();
+            onClose();
+          }}
+          data-thread-about
+        >
+          New thread about {about.label} →
+        </button>
+      ) : null}
       <AppLink className={s.seeAll} href="/assistant">
         {threads.length > shown.length ? `All ${threads.length} threads, full page →` : 'Open the full page →'}
       </AppLink>
@@ -134,6 +150,8 @@ export interface AssistantPanelViewProps {
   timeZone?: string;
   initialThreadsOpen?: boolean;
   className?: string;
+  /** Assistant v2: "New thread about <the open item>" in the thread list. */
+  about?: { label: string; start: () => void } | null;
 }
 
 export function AssistantPanelView(p: AssistantPanelViewProps) {
@@ -186,7 +204,7 @@ export function AssistantPanelView(p: AssistantPanelViewProps) {
         </AppLink>
       </header>
       {threadsOpen ? (
-        <ThreadSwitcher threads={p.threads} threadId={p.threadId} onSelect={p.onSelectThread} onClose={() => setThreadsOpen(false)} now={now} tz={p.timeZone} streamingThreadId={p.streamingThreadId} />
+        <ThreadSwitcher threads={p.threads} threadId={p.threadId} onSelect={p.onSelectThread} onClose={() => setThreadsOpen(false)} now={now} tz={p.timeZone} streamingThreadId={p.streamingThreadId} about={p.about ?? null} />
       ) : null}
       {p.notice ? (
         <div className={s.notice} role="status">
@@ -246,6 +264,19 @@ function ConnectedPanel({ anchor, initialThreadsOpen, className }: AssistantPane
         timeZone={chat.timeZone}
         initialThreadsOpen={initialThreadsOpen}
         className={className}
+        about={
+          chat.autoContext
+            ? {
+                label: chat.autoContext.label,
+                start: () => {
+                  const ctx = chat.autoContext!;
+                  void chat.createThread({ title: ctx.label, context: [ctx] }).then((t) => {
+                    if (t) requestAnimationFrame(() => chat.composerRef.current?.focus());
+                  });
+                },
+              }
+            : null
+        }
       />
     </AssistantSurfaceContext.Provider>
   );

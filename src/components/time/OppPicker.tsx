@@ -19,6 +19,7 @@ import { useOptimisticMutation } from '@/client/optimistic/useOptimisticMutation
 import { cn, Combobox, Icon, Spinner } from '@/ui';
 import { INTERNAL_LABEL, MAX_LISTED, pickerList, type PickerItem } from './opp-picker-derive';
 import { pct } from './rows-derive';
+import { hasTarget } from '@/lib/time-internal';
 
 export { INTERNAL_LABEL } from './opp-picker-derive';
 
@@ -41,6 +42,8 @@ export interface OppPickerProps {
   onInternal?: () => void;
   /** The closed field's prompt when the row has no opp (default "Needs opp…"). */
   placeholder?: string;
+  /** An Org62 account hit the app has: the row logs to the account itself (no opportunity). Absent: account hits are not offered. */
+  onAccount?: (accountId: string, accountName: string) => void;
 }
 
 const fmtClose = (d: string | null) => (d ? new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : null);
@@ -56,7 +59,7 @@ function Meta({ parts }: { parts: Array<string | null | undefined> }) {
   );
 }
 
-export function OppPicker({ entry, disabled, className, onPick, triggerLabel, onAdded, onInternal, placeholder }: OppPickerProps) {
+export function OppPicker({ entry, disabled, className, onPick, triggerLabel, onAdded, onInternal, placeholder, onAccount }: OppPickerProps) {
   const [open, setOpen] = useState(false);
   const [intent, setIntent] = useState(false);
   const [q, setQ] = useState('');
@@ -86,10 +89,17 @@ export function OppPicker({ entry, disabled, className, onPick, triggerLabel, on
     const list: Opt[] = pickerList({ opps: opts.data?.opps ?? [], q, entry: { ...entry, suggestion }, internal: !!onInternal, bulk: !!triggerLabel, searched: found?.state === 'done', searching: found?.state === 'loading' });
     if (term.length >= 2 && found?.state === 'done') {
       const inList = new Set(list.flatMap((o) => (o.kind === 'opp' ? [o.opp.id] : [])));
-      for (const h of found.result!.hits) if (!h.oppId || !inList.has(h.oppId)) list.push({ key: `o62:${h.org62Id}`, label: `${h.name}${h.accountName ? `, ${h.accountName}` : ''} (Org62)`, kind: 'hit', hit: h, group: 'From Org62' });
+      for (const h of found.result!.hits) {
+        // an account hit logs the row to the account itself: only when the caller offers it and the app has the account
+        if (h.kind === 'account') {
+          if (onAccount) list.push({ key: `o62a:${h.org62Id}`, label: `${h.name} (the account, Org62)`, kind: 'hit', hit: h, group: 'Accounts in Org62', disabled: !h.accountId });
+          continue;
+        }
+        if (!h.oppId || !inList.has(h.oppId)) list.push({ key: `o62:${h.org62Id}`, label: `${h.name}${h.accountName ? `, ${h.accountName}` : ''} (Org62)`, kind: 'hit', hit: h, group: 'From Org62' });
+      }
     }
     return list;
-  }, [opts.data, q, term, entry, suggestion, found, triggerLabel, onInternal]);
+  }, [opts.data, q, term, entry, suggestion, found, triggerLabel, onInternal, onAccount]);
 
   const runSearch = (text: string) => {
     const my = ++seq.current;
@@ -108,6 +118,7 @@ export function OppPicker({ entry, disabled, className, onPick, triggerLabel, on
     if (o.kind === 'internal') return onInternal?.();
     if (o.kind === 'clear') return onPick(null, { oppName: null, accountName: entry.accountName });
     if (o.kind === 'opp') return onPick(o.opp.id, { oppName: o.opp.name, accountName: o.opp.accountName });
+    if (o.hit.kind === 'account') return o.hit.accountId ? onAccount?.(o.hit.accountId, o.hit.name) : 'keep';
     if (o.hit.oppId) return onPick(o.hit.oppId, { oppName: o.hit.name, accountName: o.hit.accountName });
     setAdding(o.hit.name);
     add.mutate({ params: { id: entry.id }, body: { ifVersion: add.versionOf(entry.id) ?? entry.version, org62Id: o.hit.org62Id } });
@@ -133,7 +144,7 @@ export function OppPicker({ entry, disabled, className, onPick, triggerLabel, on
     'Type to filter, or to search Org62 for an opportunity the app doesn’t have.'
   ) : null;
 
-  const needsOpp = !entry.oppId && !entry.internal;
+  const needsOpp = !hasTarget(entry);
   const value = adding ? (
     <span className="inline-flex items-center gap-1.5">
       <Spinner size="xs" /> {adding}
@@ -142,6 +153,9 @@ export function OppPicker({ entry, disabled, className, onPick, triggerLabel, on
     triggerLabel
   ) : entry.internal && !entry.oppId ? (
     <span className="text-muted">{INTERNAL_LABEL}</span>
+  ) : entry.accountId && !entry.oppId ? (
+    // D-103 (c): the row logs to the account itself
+    <span className="line-clamp-2 break-words whitespace-normal">{`${entry.accountName ?? 'The account'} (the account)`}</span>
   ) : needsOpp ? (
     (placeholder ?? 'Needs opp…')
   ) : (
@@ -195,6 +209,20 @@ export function OppPicker({ entry, disabled, className, onPick, triggerLabel, on
               {o.suggested && suggestion ? <SuggestedTag c={suggestion.confidence} /> : null}
             </span>
           );
+        if (o.kind === 'hit' && o.hit.kind === 'account') {
+          const h = o.hit;
+          return (
+            <span className="flex min-w-0 flex-1 items-center gap-3" data-option="org62-account">
+              <span className="min-w-0 flex-1">
+                <span className={cn('block truncate text-fg', s.active && 'font-bold')} title={h.name}>
+                  {h.name}
+                </span>
+                <Meta parts={['Log it to the account itself (no opportunity)', h.owner]} />
+              </span>
+              <span className={cn('shrink-0 text-caption', h.accountId ? 'text-link' : 'text-faint')}>{h.accountId ? 'Logs to the account' : 'Not in the app yet'}</span>
+            </span>
+          );
+        }
         if (o.kind === 'hit') {
           const h = o.hit;
           return (

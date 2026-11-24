@@ -13,7 +13,7 @@ export default defineConfig({
   schema: './src/db/schema.ts',
   out: './src/db/migrations',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgres://localhost:5432/control_center',
+    url: process.env.DATABASE_URL ?? 'postgres://localhost:5432/command_center',
   },
   casing: 'snake_case',
   strict: true,

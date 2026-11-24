@@ -60,7 +60,7 @@ export function planScrub(rows: Row[], refs: Array<{ id: string; value: string }
 async function run(argv: string[]): Promise<number> {
   const apply = argv.includes('--apply');
   const url = resolveDatabaseUrl();
-  const handle = createDb({ url, max: 2, applicationName: 'control-center-scrub' });
+  const handle = createDb({ url, max: 2, applicationName: 'command-center-scrub' });
   try {
     const u = await handle.db.execute<{ id: string }>(sql`select id from users where is_active order by created_at limit 1`);
     const userId = u.rows[0]?.id;

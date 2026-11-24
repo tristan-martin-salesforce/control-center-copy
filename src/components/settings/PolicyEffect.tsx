@@ -52,8 +52,9 @@ function RankItem({ row, mode, selected, onPick }: { row: CompareRow; mode: 'now
       className={cn(s.rk, row.rank > 5 && s.outside, selected && s.rkSel)}
       data-rank-row={row.id}
       tabIndex={0}
-      role="button"
-      aria-pressed={selected}
+      // a pick in a list: an option of its listbox (an li can't be a button, and a list holds only list items)
+      role="option"
+      aria-selected={selected}
       title={row.title}
       onClick={() => onPick(row.id)}
       onKeyDown={(e) => {
@@ -84,7 +85,11 @@ function RankList({ rows, mode, n, selected, onPick, label }: { rows: CompareRow
       );
     out.push(<RankItem key={r.id} row={r} mode={mode} selected={r.id === selected} onPick={onPick} />);
   });
-  return <ol aria-label={label}>{out}</ol>;
+  return (
+    <ol role="listbox" aria-label={label}>
+      {out}
+    </ol>
+  );
 }
 
 function SlopeLines({ cmp, n, rowH, selected }: { cmp: RankCompare; n: number; rowH: number; selected: string | null }) {

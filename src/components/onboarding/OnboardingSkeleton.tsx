@@ -43,7 +43,7 @@ export function OnboardingSkeleton() {
             </span>
           ))}
         </nav>
-        <div className={o.main}>
+        <main className={o.main}>
           <div className={o.scroll}>
             <section className={o.sec}>
               <header className={o.head}>
@@ -60,7 +60,7 @@ export function OnboardingSkeleton() {
           <footer className={o.foot} aria-hidden>
             <span className={o.footState}> </span>
           </footer>
-        </div>
+        </main>
         <aside className={o.aside} aria-label="What this changes">
           <div className="flex flex-col gap-4" aria-hidden>
             <Skeleton variant="line" className="w-40" />

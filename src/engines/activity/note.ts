@@ -13,7 +13,7 @@
  *
  * Pure: no I/O, no clock.
  */
-import { redactText } from '@/llm/redact';
+import { redactText } from '@/lib/redact';
 
 /** The longest note the app writes (the user's own edit may be longer). */
 export const NOTE_MAX = 300;

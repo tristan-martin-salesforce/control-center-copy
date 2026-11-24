@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "e9f740f1fdd7738d9aa6701b5fff5b61",
+      "label": "classify | D0PERSONE1:1794495600.000000 , D0PERSONE1:1794495720.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0PERSONE1:1794495600.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Share the ACME deck with PERSON_F\", \"who\": \"PERSON_E\", \"deliverable\": \"deck\", \"due\": null, \"conf\": 0.93, \"cite\": \"Can you share the ACME deck with PERSON_F before the call?\", \"link\": null, \"why\": \"direct ask in a DM\"}, {\"ref\": \"D0PERSONE1:1794495720.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Review the ACME deck for PERSON_F\", \"who\": \"PERSON_E\", \"deliverable\": \"deck\", \"due\": \"2026-11-13\", \"conf\": 0.92, \"cite\": \"can you review the ACME deck for PERSON_F's team? They want your comments by Friday\", \"link\": null, \"why\": \"a second ask in the DM: a review, due Friday\"}]}"
+    }
+  ]
+}

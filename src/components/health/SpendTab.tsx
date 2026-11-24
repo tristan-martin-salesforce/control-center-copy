@@ -10,6 +10,7 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, Responsiv
 import type { HealthPayload } from '@/contract';
 import { useApi } from '@/client/hooks';
 import { cn, EmptyState, PanelError, SegmentedToggle, Skeleton, usePanelState } from '@/ui';
+import { usualCost } from '@/llm/spend/first-scan';
 import { budgetSegments, topWithOther, usd } from './derive';
 import { RaiseCapButton, RaiseHistory } from './RaiseCap';
 import { SpendAudit } from './SpendAudit';
@@ -110,9 +111,15 @@ export function SpendTab() {
     <div className="cc-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-4 [scrollbar-gutter:stable]" data-health-spend>
       <Card title="Today">
         <BudgetBar today={s.today} />
+        {s.background ? (
+          <p className="mt-2 text-caption text-muted" data-testid="spend-background">
+            Background scanning: {usualCost(s.background.p50, s.background.p90, usd)} a day ({s.background.basis === 'default' ? 'estimated until there are 5 measured days' : 'last 14 days'})
+            {s.background.heldUsd > 0 ? ` · ${usd(s.background.heldUsd)} held by runs in progress` : ''}
+          </p>
+        ) : null}
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <RaiseCapButton spend={s} variant={s.state === 'ok' ? 'quiet' : 'secondary'} />
-          <p className="min-w-0 flex-1 text-caption text-muted">At the soft budget the sidebar turns amber; at the hard cap scanners run deterministic-only until tomorrow, unless you raise today’s cap.</p>
+          <p className="min-w-0 flex-1 text-caption text-muted">At the soft budget the sidebar turns amber; at the hard cap scans run on rules only (no AI) until tomorrow, unless you raise today’s cap.</p>
         </div>
         <RaiseHistory last7d={s.last7d} className="mt-4" />
       </Card>

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\"), keyed by the completion pass ledger hash. Re-key offline after a prompt or skill change: npm run eval:record. Replace with live replies: npm run eval:record -- --live --yes-spend (costs money).",
+  "entries": [
+    {
+      "hash": "386f5c9d2439eee4e73f5d8630dd9b64",
+      "label": "2026-11-16 22:52Z | Confirm which IdP groups map to Agentforce permission sets, in writing",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"confidence\": 0.15, \"reason\": \"only a promise to confirm the mapping later\"}]}"
+    }
+  ]
+}

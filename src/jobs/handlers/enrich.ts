@@ -21,6 +21,7 @@ import { accountMatcher } from '@/projections/run';
 import { extKey, putKv } from '@/server/datasource/db/ext';
 
 import type { JobHandlerDef } from '../types';
+import { projectionStore } from '@/server/datasource/db/store/projections.run';
 
 export const ENRICH_JOB_KIND = 'enrich';
 export const ENRICH_QUEUE = 'engine';
@@ -79,7 +80,7 @@ export async function enrichWorkItem(db: Db, userId: string, itemId: string, o: 
 
   const text = [item.title, item.purpose].filter(Boolean).join(' ');
   const locked = new Set(item.locked ?? []);
-  const { matcher } = await accountMatcher(db, userId);
+  const { matcher } = await accountMatcher(projectionStore(db), userId);
   let accountId = item.account_id;
   let oppId = item.opportunity_id;
   let accountSet = false;

@@ -8,14 +8,14 @@
  *
  * Inputs, later wins: `profile.json` in the state folder (written by `npm run setup`; `--profile` for another
  * file), CC_USER_EMAIL, then the flags. Without an email anywhere it falls back to `git config user.email`.
- * Uses DATABASE_URL (default postgres://localhost:5432/control_center). Idempotent: it only fills in what is
+ * Uses DATABASE_URL (default postgres://localhost:5432/command_center). Idempotent: it only fills in what is
  * missing and never overwrites a value (see src/server/datasource/db/bootstrap.ts). It writes no mock data.
  * Prints the database name and what it wrote (names only), never the URL or profile values.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { homeStateDir } from '../../src/lib/state-folder';
 
 import { createDb, databaseName, resolveDatabaseUrl } from '../../src/db/client';
 import { DbError, mapPgError } from '../../src/db/errors';
@@ -54,7 +54,7 @@ function gitEmail(): string | undefined {
 }
 
 export function profileInput(argv: string[], env: NodeJS.ProcessEnv = process.env): { input: Partial<BootstrapProfileInput>; emailFrom: string } {
-  const stateDir = env.CC_STATE_DIR ?? join(homedir(), 'Library', 'Application Support', 'control-center');
+  const stateDir = env.CC_STATE_DIR ?? homeStateDir();
   const file = arg(argv, '--profile') ?? join(stateDir, 'profile.json');
   let input: Partial<BootstrapProfileInput> = {};
   let emailFrom = 'flag';
@@ -114,7 +114,7 @@ async function main() {
     throw new Error(`profile incomplete (${fields.join('; ')}). Run npm run setup, or pass --name/--email/--tz`);
   }
   const url = resolveDatabaseUrl();
-  const handle = createDb({ url, max: 2, applicationName: 'control-center-bootstrap' });
+  const handle = createDb({ url, max: 2, applicationName: 'command-center-bootstrap' });
   try {
     const res = await bootstrapUser({ db: handle.db, profile: parsed.data });
     console.log(`[bootstrap] ${databaseName(url)}: ${res.status} (email from ${emailFrom})${res.wrote.length ? `; wrote ${res.wrote.join(', ')}` : ''}`);

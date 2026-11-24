@@ -11,7 +11,7 @@ mcp_servers: []                   # empty for the Gmail/Calendar run; the Slack 
 allowed_tools: [cc_get_context, cc_record_source_items, cc_find_candidates, cc_link_evidence, cc_propose_item, cc_propose_initiative, cc_flag_unlinked, cc_report_coverage, cc_finish]
 slack_allowed_tools: [mcp__slack__slack_read_channel, mcp__slack__slack_search_public_and_private, mcp__slack__slack_read_thread]
 fetcher: src/connectors/google/trainings.ts
-spec: docs/ui/SCANNER.md
+spec: docs/reference/SCANNER.md
 requirements: [R-UI-2]
 cadence: daily
 ---

@@ -15,6 +15,12 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { brewPrefix } from '../ops/brew';
+import { resolveClaudeBin } from '../ops/claude-bin';
+
+/** The `claude` binary every child process runs; doctor checks the same one (src/ops/claude-bin.ts, PKG-6). */
+export function claudeExecutable(source: NodeJS.ProcessEnv = process.env): string {
+  return resolveClaudeBin({ env: source });
+}
 
 /** Host-session variables a child Claude process must not inherit. */
 export const HOST_SESSION_VARS = [
@@ -64,7 +70,7 @@ const isHostVar = (k: string) => (HOST_SESSION_VARS as readonly string[]).includ
  * Inherit-style child env (drop-in for `complete.ts`): the parent env minus host-session and parent-auth
  * variables, plus the gateway env. Use `scannerEnv()` for the stricter allowlist the scanners use.
  */
-export function childEnv(gatewayEnv: Record<string, string>, source: NodeJS.ProcessEnv = process.env, app = 'control-center/0.1'): Record<string, string> {
+export function childEnv(gatewayEnv: Record<string, string>, source: NodeJS.ProcessEnv = process.env, app = 'command-center/0.1'): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(source)) if (typeof v === 'string' && !isHostVar(k)) env[k] = v;
   return { ...env, ...gatewayEnv, CLAUDE_AGENT_SDK_CLIENT_APP: app };
@@ -87,7 +93,7 @@ export function scannerEnv(gatewayEnv: Record<string, string> = {}, source: Node
   env.PATH = [path.join(home, '.local/bin'), path.join(home, '.devbar/bin'), path.join(brewPrefix(), 'bin'), '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']
     .filter((p, i, a) => a.indexOf(p) === i)
     .join(':');
-  return { ...env, ...gatewayEnv, CLAUDE_AGENT_SDK_CLIENT_APP: 'control-center-scanner/1', ...extra };
+  return { ...env, ...gatewayEnv, CLAUDE_AGENT_SDK_CLIENT_APP: 'command-center-scanner/1', ...extra };
 }
 
 /** Options fragment for `query()`: env + apiKeyHelper. Spread into Options. */
@@ -96,4 +102,20 @@ export function gatewayQueryOptions(gw: GatewayConfig = claudeGatewayConfig(), m
     env: mode === 'scanner' ? scannerEnv(gw.env) : childEnv(gw.env),
     ...(gw.apiKeyHelper ? { settings: { apiKeyHelper: gw.apiKeyHelper } } : {}),
   };
+}
+
+/**
+ * COST-8 (review 04 §4.6 #3): scanners and relays load no Claude settings files. With `['user']` a teammate's
+ * `~/.claude/settings.json` (hooks, plugins, output style, env) applied to every scan call, so cost and behaviour
+ * drifted per machine (tenet: Low upkeep, team-portable). What the runs need from those settings is passed explicitly
+ * instead: the gateway `env` block and `apiKeyHelper` (claudeGatewayConfig), and the MCP servers (strictMcpConfig).
+ *
+ * Fallback: `CC_SCANNER_SETTING_SOURCES=user` (comma-separated: user, project, local) restores the old behaviour if
+ * MCP OAuth resolution turns out to need the user settings on some machine. Unknown values are ignored.
+ */
+export function scannerSettingSources(source: NodeJS.ProcessEnv = process.env): Array<'user' | 'project' | 'local'> {
+  const raw = (source.CC_SCANNER_SETTING_SOURCES ?? '').trim();
+  if (!raw) return [];
+  const ok = new Set(['user', 'project', 'local']);
+  return [...new Set(raw.split(',').map((x) => x.trim()).filter((x): x is 'user' | 'project' | 'local' => ok.has(x)))];
 }

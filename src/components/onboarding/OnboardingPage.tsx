@@ -13,6 +13,7 @@ import { ONBOARDING_STEPS, type IdentityKind, type OnboardingHistory, type Onboa
 import { api, ApiError, queryKey } from '@/client/api';
 import { toast } from '@/client/toast/store';
 import { Button } from '@/ui';
+import { BlockHeadingLevel } from '@/components/settings/heading-level';
 import { activatedLabels, fieldErrors, localIssues, nextStep, personaChoice, prevStep, prioritiesFor, profileRole, starterOf, STEP_META, stepIndex, stepSummary, templateOf, toggleSource } from './derive';
 import { writeOnboarded } from './flag';
 import { useOnboardingState } from './OnboardingGate';
@@ -297,7 +298,7 @@ function Wizard({ initial }: { initial: OnboardingState }) {
           </div>
         </nav>
 
-        <div className={o.main} onKeyDown={onKeyDown} data-testid="onboarding-main">
+        <main className={o.main} onKeyDown={onKeyDown} data-testid="onboarding-main">
           <div className={o.scroll} ref={scrollRef}>
             <section className={o.sec} aria-labelledby="onboarding-step-title">
               <StepHead
@@ -311,12 +312,15 @@ function Wizard({ initial }: { initial: OnboardingState }) {
                   ) : null
                 }
               />
-              {step === 'role' ? <RoleStep value={choice} onChange={pickRole} errors={errors} /> : null}
-              {step === 'you' ? <YouStep value={you} onChange={setYou} errors={errors} locked={state.locked} /> : null}
-              {step === 'priorities' ? <PrioritiesStep value={pri} pack={pack} onChange={setPriorities} errors={errors} /> : null}
-              {step === 'sources' ? <SourcesStep query={sources} onRefresh={() => void refreshSources()} refreshing={refreshing} mode={state.mode} identity={identity} activation={activation} /> : null}
-              {step === 'history' ? <HistoryStep value={history} onChange={setHistory} cost={state.cost} errors={errors} /> : null}
-              {step === 'review' ? <ReviewStep role={choice} overrides={overrides} you={you} priorities={pri} pack={pack} history={history} cost={state.cost} sources={sources.data} mode={state.mode} onEdit={(s) => void go(s)} /> : null}
+              {/* the step's h1 is right above: settings Blocks inside a step title with h2 */}
+              <BlockHeadingLevel.Provider value={2}>
+                {step === 'role' ? <RoleStep value={choice} onChange={pickRole} errors={errors} /> : null}
+                {step === 'you' ? <YouStep value={you} onChange={setYou} errors={errors} locked={state.locked} /> : null}
+                {step === 'priorities' ? <PrioritiesStep value={pri} pack={pack} onChange={setPriorities} errors={errors} /> : null}
+                {step === 'sources' ? <SourcesStep query={sources} onRefresh={() => void refreshSources()} refreshing={refreshing} mode={state.mode} identity={identity} activation={activation} /> : null}
+                {step === 'history' ? <HistoryStep value={history} onChange={setHistory} cost={state.cost} errors={errors} /> : null}
+                {step === 'review' ? <ReviewStep role={choice} overrides={overrides} you={you} priorities={pri} pack={pack} history={history} cost={state.cost} sources={sources.data} mode={state.mode} onEdit={(s) => void go(s)} /> : null}
+              </BlockHeadingLevel.Provider>
             </section>
           </div>
           <footer className={o.foot}>
@@ -340,7 +344,7 @@ function Wizard({ initial }: { initial: OnboardingState }) {
               )}
             </div>
           </footer>
-        </div>
+        </main>
 
         <aside className={o.aside} aria-label="What this changes" data-testid="onboarding-aside">
           {step === 'role' ? <RoleAside value={choice} /> : null}
@@ -371,7 +375,7 @@ function SetUp({ state }: { state: OnboardingState }) {
   return (
     <div className={o.root} data-testid="onboarding-done">
       <OnboardingTopBar />
-      <div className={o.done}>
+      <main className={o.done}>
         <div className={o.doneCard}>
           <h1>{cli ? 'This database is already set up' : 'You’re set up'}</h1>
           <p>{cli ? 'It was set up with npm run setup. Your choices live in Settings.' : (state.firstScan?.message ?? 'Your choices are saved. Change them any time in Settings.')}</p>
@@ -389,7 +393,7 @@ function SetUp({ state }: { state: OnboardingState }) {
             ) : null}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -401,7 +405,7 @@ export function OnboardingPage() {
       return (
         <div className={o.root}>
           <OnboardingTopBar />
-          <div className={o.done}>
+          <main className={o.done}>
             <div className={o.doneCard}>
               <h1>Couldn’t load setup</h1>
               <p>{q.error.message}</p>
@@ -411,7 +415,7 @@ export function OnboardingPage() {
                 </Button>
               </div>
             </div>
-          </div>
+          </main>
         </div>
       );
     return <OnboardingSkeleton />;

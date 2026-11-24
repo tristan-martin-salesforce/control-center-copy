@@ -112,10 +112,12 @@ function RaiseCapDialog({ spend, onClose }: { spend: Spend; onClose: () => void 
   );
 }
 
-/** Raises, newest first, with the day's spend when it's within the last 7 days. */
+/** Raises, newest first, with the day's spend when it's within the last 7 days; `limit` first, then Show all N (caps audit F-13). */
 export function RaiseHistory({ last7d, limit = 8, className }: { last7d?: Spend['last7d']; limit?: number; className?: string }) {
   const settings = useApi('getSettings');
-  const raises: BudgetRaise[] = [...(settings.data?.budgets.raises ?? [])].reverse().slice(0, limit);
+  const [all, setAll] = useState(false);
+  const every: BudgetRaise[] = [...(settings.data?.budgets.raises ?? [])].reverse();
+  const raises = all ? every : every.slice(0, limit);
   if (!raises.length) return null;
   const spentOn = new Map((last7d ?? []).map((d) => [d.day, d.usd]));
   return (
@@ -135,6 +137,11 @@ export function RaiseHistory({ last7d, limit = 8, className }: { last7d?: Spend[
           </li>
         ))}
       </ul>
+      {every.length > limit ? (
+        <button type="button" className="rounded-sm text-caption font-bold text-link hover:underline focus-visible:outline-none focus-visible:shadow-focus" onClick={() => setAll((v) => !v)} data-testid="raise-history-all">
+          {all ? 'Show fewer' : `Show all ${every.length}`}
+        </button>
+      ) : null}
     </section>
   );
 }

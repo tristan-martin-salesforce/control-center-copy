@@ -1,5 +1,5 @@
 /**
- * Command Center primitives (FE-1a, restyled v2 by V2-TOKENS: docs/ui/DESIGN-V2.md, brief 14). Dark-first,
+ * Command Center primitives (FE-1a, restyled v2 by V2-TOKENS: docs/archive/2026-build/DESIGN-V2.md, brief 14). Dark-first,
  * colour as indicator only, quiet actions and loud selection.
  * Names and props are a contract other lanes build on: change them only through the orchestrator.
  * Tokens come from src/styles/brand.css only; no raw hex.

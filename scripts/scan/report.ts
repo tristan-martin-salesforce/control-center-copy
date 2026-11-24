@@ -6,12 +6,27 @@
  * whole on one model before SPEND-1 are split by their pass trace rows (the line says how many and how much).
  *
  *   npm run scan:report -- [--since 24h | 90m | 7d | <ISO>] [--json]
+ *
+ * `--yield` (holistic review 04 §4.5) prints what each skill's dollars bought instead (and the spend governor's holds:
+ * asked, approved, denied, median overrun): per skill and source, $, calls,
+ * runs, $/run, % empty runs, cache hit %, % of model requests past the long-prompt tier (0027 measurement), $/item
+ * found (proposed + linked) and $/item closed (work_item transitions to likely_done / done whose reason cites the
+ * run, or whose evidence the run recorded), the escalation's changed verdicts, and the first scan's $/source/day. Then
+ * one line per scan mode (fetch-then-interpret vs agentic: src/scanner/interpret/yield-mode.ts) with $ per item found.
+ *
+ *   npm run scan:report -- --yield [--since 7d] [--json]
  */
 import { sql } from 'drizzle-orm';
 
 import { decisionLabel, type SpendAuditPayload, type SpendSlice as AuditSlice } from '../../src/contract/spend-audit';
 import { scanReport, type SpendSlice } from '../../src/scanner/trace/queries';
 import { loadSpendAudit } from '../../src/server/datasource/db/store/spend-audit';
+import { aggregateYield, firstScanPerSourceDay, renderYield, type FirstScanSpend, type YieldCall, type YieldRun } from '../../src/engines/spend-audit/yield';
+import { DbSpendStore, holdsLine, spendHoldsPayload } from '../../src/server/datasource/db/spend';
+import { resolutionYield } from '../../src/server/datasource/db/resolution';
+import { resolutionYieldLine } from '../../src/engines/resolution/explain';
+import { renderModeYield, yieldByMode } from '../../src/scanner/interpret/yield-mode';
+import type { Db } from '../../src/db/client';
 
 import { arg, has, main, open, sinceOf, usd } from './lib';
 
@@ -55,10 +70,95 @@ function printAudit(a: SpendAuditPayload) {
   if (se.escalated) console.log(`  settle escalation: changed ${se.changed} of ${se.escalated} verdicts (${se.changedPct ?? 0}%), same ${se.same}, no usable answer ${se.invalid}, ${usd(se.extraUsd)} extra`);
 }
 
+const UUID_IN_TEXT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const num = (v: unknown) => (v == null ? 0 : Number(v));
+const opt = (v: unknown) => (v == null ? null : Number(v));
+
+/** The rows `--yield` needs, read-only: the period's calls, their scan runs (with found and closed items), first-scan spend. */
+async function loadYield(db: Db, userId: string, since: Date) {
+  const calls = await db.execute<Record<string, unknown>>(sql`
+    select coalesce(l.skill_key, l.purpose::text) as skill, k.kind::text as connector, l.cost_usd, l.input_tokens, l.output_tokens,
+           l.cache_read_tokens, l.cache_write_tokens, l.outcome, l.scan_run_id, l.turns, l.long_tier_requests, l.items_out, l.items_in,
+           l.escalation_changed_items
+      from llm_calls l
+      left join scan_runs r on r.id = l.scan_run_id
+      left join connectors k on k.id = r.connector_id
+     where l.owner_user_id = ${userId} and l.started_at >= ${since.toISOString()}::timestamptz`);
+  // Closures attributed to a run: the transition's reason cites the run id, or its evidence is a source item the run
+  // recorded last. One closure per (run, work item); undone transitions do not count.
+  const runs = await db.execute<Record<string, unknown>>(sql`
+    with my as (
+      select distinct l.scan_run_id as id from llm_calls l
+       where l.owner_user_id = ${userId} and l.started_at >= ${since.toISOString()}::timestamptz and l.scan_run_id is not null
+    ), closes as (
+      select t.work_item_id, substring(t.reason from ${UUID_IN_TEXT})::uuid as by_reason, s.last_scan_run_id as by_evidence
+        from work_item_transitions t
+        join work_items w on w.id = t.work_item_id and w.owner_user_id = ${userId}
+        left join work_item_evidence e on e.id = t.evidence_id
+        left join source_items s on s.id = e.source_item_id
+       where t.to_status in ('likely_done', 'done') and t.undone_at is null and t.occurred_at >= ${since.toISOString()}::timestamptz
+    ), attributed as (
+      select by_reason as run_id, work_item_id from closes where by_reason is not null
+      union
+      select by_evidence as run_id, work_item_id from closes where by_evidence is not null
+    )
+    select r.id, r.items_new + r.items_updated as changed, r.candidates_created + r.links_created as found,
+           (select count(distinct a.work_item_id) from attributed a where a.run_id = r.id) as closed
+      from scan_runs r join my on my.id = r.id`);
+  const first = await db.execute<Record<string, unknown>>(sql`
+    select k.kind::text as connector, sum(l.cost_usd) as usd, min(r.window_start) as w_from, max(r.window_end) as w_to
+      from llm_calls l
+      left join scan_runs r on r.id = l.scan_run_id
+      left join connectors k on k.id = r.connector_id
+     where l.owner_user_id = ${userId} and l.budget = 'first_scan'
+     group by k.kind`);
+  const iso = (v: unknown) => (v == null ? null : new Date(v as string).toISOString());
+  return {
+    calls: calls.rows.map(
+      (c): YieldCall => ({
+        skill: String(c.skill),
+        connector: c.connector == null ? null : String(c.connector),
+        usd: num(c.cost_usd),
+        inputTokens: num(c.input_tokens),
+        outputTokens: num(c.output_tokens),
+        cacheReadTokens: num(c.cache_read_tokens),
+        cacheWriteTokens: num(c.cache_write_tokens),
+        outcome: c.outcome == null ? null : String(c.outcome),
+        runId: c.scan_run_id == null ? null : String(c.scan_run_id),
+        turns: opt(c.turns),
+        longTierRequests: opt(c.long_tier_requests),
+        itemsOut: opt(c.items_out),
+        itemsIn: opt(c.items_in),
+        escalationChangedItems: opt(c.escalation_changed_items),
+      }),
+    ),
+    runs: runs.rows.map((r): YieldRun => ({ id: String(r.id), changed: num(r.changed), found: num(r.found), closed: num(r.closed) })),
+    first: first.rows.map((f): FirstScanSpend => ({ connector: f.connector == null ? null : String(f.connector), usd: num(f.usd), from: iso(f.w_from), to: iso(f.w_to) })),
+  };
+}
+
 void main(async (argv) => {
-  const since = sinceOf(arg(argv, '--since'));
+  const since = sinceOf(arg(argv, '--since') ?? (has(argv, '--yield') ? '7d' : undefined));
   const { handle, db, userId, dbName } = await open();
   try {
+    if (has(argv, '--yield')) {
+      const y = await loadYield(db, userId, since);
+      const rows = aggregateYield(y.calls, y.runs);
+      const first = firstScanPerSourceDay(y.first);
+      // Spend governor (H-5): what the holds of the period did (asked, approved, denied, median overrun past the hold)
+      const holds = spendHoldsPayload(await new DbSpendStore({ db, userId }).listHolds({ since: since.toISOString(), limit: 100_000 }).catch(() => []), []).summary;
+      // H-7: what the resolution check's dollars bought (closure_checks)
+      const rc = await resolutionYield(db, userId, since.toISOString());
+      if (has(argv, '--json')) {
+        console.log(JSON.stringify({ since: since.toISOString(), until: new Date().toISOString(), rows, firstScan: first, holds, resolutionChecks: rc, byMode: yieldByMode(y.calls, y.runs) }, null, 2));
+        return 0;
+      }
+      for (const l of renderYield(rows, first, { since: since.toISOString(), until: new Date().toISOString(), dbName })) console.log(l);
+      console.log(holdsLine(holds));
+      console.log(resolutionYieldLine(rc));
+      console.log(renderModeYield(yieldByMode(y.calls, y.runs)));
+      return 0;
+    }
     const r = await scanReport(db, userId, since);
     // D0: the ledger's Spend & decisions for the same days (whole local days from --since to today).
     const tz = (await db.execute<{ tz: string | null }>(sql`select timezone as tz from users where id = ${userId}`)).rows[0]?.tz ?? 'UTC';

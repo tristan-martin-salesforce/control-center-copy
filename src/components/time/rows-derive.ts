@@ -5,10 +5,9 @@
  *   rowLock        a row is editable, or read only with the reason ("On “Activity log · Nov 3–Nov 12”, waiting for
  *                  your Apply: edit it in that canvas’s review", "In Org62 since Nov 12: change it there")
  *   acceptPatch    the patch that takes a row's suggestion (an opp, or internal work), through fixPatch: a held row the
- *                  pick completes is approved with it, so it moves to Log it ▸ Ready to log
+ *                  pick completes is approved with it, so it moves to To log ▸ Ready to log
  *   canvasRun      a logging canvas as a run: staged → applied → Slackbot told → in Org62, its status word and tone,
  *                  what to do next, and why its rows are read only
- *   splitRuns      the runs still going (open, not all in Org62) and the finished ones (Show more)
  */
 import type { ActivityEntry, ActivitySuggestion, LogCanvas } from '@/contract';
 import { LOG_AGAIN_FLAG } from '@/engines/activity/org62-check';
@@ -44,11 +43,11 @@ export function rowLock(e: ActivityEntry, canvases?: readonly LogCanvas[], tz?: 
   const ref = c ? { draftId: c.draftId, title: c.title, url: c.url } : null;
   if (e.fromOrg62) return { kind: 'from_org62', why: 'Read from an Org62 Event: change it in Org62, the app follows', canvas: null };
   if (e.status === 'logged' || e.status === 'verified') return { kind: 'in_org62', why: `In Org62${e.verifiedAt ? ` (checked ${fmtDay(e.verifiedAt, tz)})` : e.loggedAt ? ` since ${fmtDay(e.loggedAt, tz)}` : ''}: change it in Org62, the app follows`, canvas: ref };
-  if (e.canvasDraftId) return { kind: 'on_canvas', why: `On ${c ? `“${c.title}”` : 'a canvas'}, waiting for your Apply: edit or remove it in that canvas’s review`, canvas: ref };
-  if (e.status === 'verify_failed') return { kind: 'relog', why: 'Not in Org62 after its canvas ran: Log again puts it on the next canvas, Leave out drops it', canvas: ref };
+  if (e.canvasDraftId) return { kind: 'on_canvas', why: `On ${c ? `“${c.title}”` : 'a batch'}, waiting for your Apply: edit or remove it in that batch’s review`, canvas: ref };
+  if (e.status === 'verify_failed') return { kind: 'relog', why: 'Not in Org62 after its batch ran: Log again puts it in the next batch, Leave out drops it', canvas: ref };
   // D-65: a row you put back with Log again is yours again (it goes on the next canvas)
-  if (e.status === 'synced_to_canvas' || (c && c.state !== 'pending' && c.state !== 'retry' && (e.status === 'approved' || e.status === 'proposed') && !e.issues.includes(LOG_AGAIN_FLAG))) return { kind: 'handed_off', why: `Handed to Slackbot on ${c ? `“${c.title}”` : 'a canvas'}: it can’t change here now. Org62 has the last word once Slackbot runs it`, canvas: ref };
-  if (e.status === 'dismissed') return { kind: 'dismissed', why: `${EXCLUDED_REASON_SHORT[e.excludedReason ?? 'dismissed']}: not logged. Restore it from the Ledger`, canvas: null };
+  if (e.status === 'synced_to_canvas' || (c && c.state !== 'pending' && c.state !== 'retry' && (e.status === 'approved' || e.status === 'proposed') && !e.issues.includes(LOG_AGAIN_FLAG))) return { kind: 'handed_off', why: `Handed to Slackbot on ${c ? `“${c.title}”` : 'a batch'}: it can’t change here now. Org62 has the last word once Slackbot runs it`, canvas: ref };
+  if (e.status === 'dismissed') return { kind: 'dismissed', why: `${EXCLUDED_REASON_SHORT[e.excludedReason ?? 'dismissed']}: not logged. Restore it from History`, canvas: null };
   return null;
 }
 
@@ -67,6 +66,11 @@ export const pct = (c: number) => `${Math.round(c * 100)}%`;
 /** How sure, in a word (the tone stays the AI color; the word says how much to trust it). */
 export function sureWord(c: number): 'sure' | 'likely' | 'a guess' {
   return c >= 0.85 ? 'sure' : c >= 0.65 ? 'likely' : 'a guess';
+}
+
+/** The row's confidence chip (ActionRow `confidence`, Sure / Likely / Guess): the same cut-offs as sureWord. */
+export function confidenceOf(c: number): 'sure' | 'likely' | 'guess' {
+  return c >= 0.85 ? 'sure' : c >= 0.65 ? 'likely' : 'guess';
 }
 
 /** The patch that takes the row's suggestion (null when it has none). */
@@ -112,7 +116,6 @@ export interface CanvasRun {
   rowsNote: string;
   /** "3 rows · 4.5 h · 2 DCs" */
   counts: string;
-  finished: boolean;
 }
 
 const CREATED: ReadonlySet<LogCanvas['state']> = new Set(['applied', 'verified', 'unverified']);
@@ -141,7 +144,7 @@ export function canvasRun(c: LogCanvas, tz?: string): CanvasRun {
   const steps: RunStep[] = [
     { id: 'staged', label: 'Staged', state: 'done' },
     { id: 'applied', label: applyState === 'done' ? 'Applied' : c.state === 'applying' ? 'Applying' : c.state === 'retry' ? 'Apply again' : 'Apply', state: applyState },
-    { id: 'told', label: tellState === 'done' ? 'Slackbot told' : 'Tell Slackbot', state: tellState },
+    { id: 'told', label: tellState === 'done' ? 'Slackbot told' : 'Send to Org62 via Slackbot', state: tellState },
     { id: 'org62', label: org62State === 'done' ? 'In Org62' : org62State === 'problem' ? 'Missing in Org62' : org62State === 'current' ? 'Checking Org62' : 'In Org62', state: org62State },
   ];
   const applied = c.appliedAt ? `Applied ${fmtDay(c.appliedAt, tz)}` : 'Applied';
@@ -155,14 +158,8 @@ export function canvasRun(c: LogCanvas, tz?: string): CanvasRun {
   else if (finished) [status, tone, next] = ['In Org62', 'done', 'none'];
   else if (missing) [status, tone, next] = [`Missing in Org62${p?.events.missing ? `: ${plural(p.events.missing, 'Event')}` : c.org62?.missing ? `: ${plural(c.org62.missing, 'row')}` : ''}`, 'danger', 'relog'];
   else if (told) [status, tone, next] = ['Slackbot told: checking Org62', 'waiting', 'check'];
-  else if (c.state === 'unverified') [status, tone, next] = ['Created, not read back: open it, then tell Slackbot', 'warning', 'tell'];
-  else [status, tone, next] = ['Created: tell Slackbot', 'act', 'tell'];
+  else if (c.state === 'unverified') [status, tone, next] = ['Created, not read back: open it, then send it to Org62 via Slackbot', 'warning', 'tell'];
+  else [status, tone, next] = ['Created: send it to Org62 via Slackbot', 'act', 'tell'];
   const rowsNote = c.state === 'pending' || (c.state === 'retry' && !c.maybeCreated) ? 'Waiting for your Apply: edit or remove its rows in the review' : c.state === 'retry' ? 'The last Apply may have made it already: its rows can’t change until you check Slack' : lockedNote;
-  return { canvas: c, steps, status, tone, next, rowsNote, counts: runCounts(c), finished };
-}
-
-/** The runs still going (newest first) and the finished ones (Show more). */
-export function splitRuns(canvases: readonly LogCanvas[] | undefined, tz?: string): { active: CanvasRun[]; finished: CanvasRun[] } {
-  const runs = (canvases ?? []).map((c) => canvasRun(c, tz));
-  return { active: runs.filter((r) => !r.finished), finished: runs.filter((r) => r.finished) };
+  return { canvas: c, steps, status, tone, next, rowsNote, counts: runCounts(c) };
 }

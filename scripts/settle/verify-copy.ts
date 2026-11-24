@@ -6,7 +6,7 @@ import { sql } from 'drizzle-orm';
 import { createDb, databaseName, resolveDatabaseUrl } from '../../src/db/client';
 import { DbDataSource } from '../../src/server/datasource/db';
 const url = resolveDatabaseUrl();
-if (databaseName(url) === 'control_center') throw new Error('refusing to run on the live database');
+if (['command_center', 'control_center'].includes(databaseName(url))) throw new Error('refusing to run on the live database');
 const handle = createDb({ url, max: 2, applicationName: 'settle-verify' });
 const u = (await handle.db.execute<{ id: string }>(sql`select id from users where is_active limit 1`)).rows[0]!;
 const ds = new DbDataSource({ handle, userId: u.id });

@@ -81,17 +81,25 @@ export function DayRibbon({ r, tz, nowMs, plan = null }: { r: HomeRibbon; tz: st
             const t = ribbonTarget(b);
             if (t) panel.openDetails(t);
           };
+          // WCAG 2.5.3: the name starts with what the block shows; the full line follows when the block shows less
+          // (or more: the ▲ prep mark) than its title
+          const shown = p.band ? '' : stacked ? [time, glyph, n].filter(Boolean).join(' ') : [marks ? `${time} ${marks}` : time, n].filter(Boolean).join(' ');
+          const name = !shown || b.fullTitle.startsWith(shown) ? b.fullTitle : `${shown}: ${b.fullTitle}`;
           const inner = p.band ? null : stacked ? (
             <>
               <span className="t">
                 <span className="tm">{time}</span>
+                {glyph ? ' ' : null}
                 {glyph ? <span className="mk">{glyph}</span> : null}
               </span>
+              {n ? ' ' : null}
               {n ? <span className="n">{n}</span> : null}
             </>
           ) : (
             <>
               <span className="t">{marks ? `${time} ${marks}` : time}</span>
+              {/* a space between the time and the name, so the visible label is a part of the name (WCAG 2.5.3) */}
+              {n ? ' ' : null}
               {n ? <span className="n">{n}</span> : null}
             </>
           );
@@ -99,14 +107,14 @@ export function DayRibbon({ r, tz, nowMs, plan = null }: { r: HomeRibbon; tz: st
             // the hover card replaces the native title tooltip; the accessible name keeps the full line
             return (
               <MeetingHover key={b.id} eventId={b.eventId} title={b.fullTitle}>
-                <button type="button" className={cls} style={style} data-tone={b.state ?? undefined} data-lane={stacked ? `${p.lane + 1}/${p.lanes}` : undefined} data-event-id={b.eventId} aria-label={b.fullTitle} onClick={open}>
+                <button type="button" className={cls} style={style} data-tone={b.state ?? undefined} data-lane={stacked ? `${p.lane + 1}/${p.lanes}` : undefined} data-event-id={b.eventId} aria-label={name} onClick={open}>
                   {inner}
                 </button>
               </MeetingHover>
             );
           }
           return clickable ? (
-            <button key={b.id} type="button" className={cls} style={style} data-tone={b.state ?? undefined} data-lane={stacked ? `${p.lane + 1}/${p.lanes}` : undefined} title={b.fullTitle} aria-label={b.fullTitle} onClick={open}>
+            <button key={b.id} type="button" className={cls} style={style} data-tone={b.state ?? undefined} data-lane={stacked ? `${p.lane + 1}/${p.lanes}` : undefined} title={b.fullTitle} aria-label={name} onClick={open}>
               {inner}
             </button>
           ) : (

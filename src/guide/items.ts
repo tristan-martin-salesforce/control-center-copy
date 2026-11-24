@@ -7,9 +7,8 @@
  * Anchors are `data-guide` ids where the page had no stable selector (tests/handoff/guide.test.ts checks each one
  * exists in the components).
  */
-import type { ChecklistItemId } from '@/contract';
 import type { ResolvedPersona } from '@/personas';
-import { batchKind, PERSONA_REVIEWED_KEY } from './checklist';
+import { batchKind, PERSONA_REVIEWED_KEY, type GuideItemId } from './checklist';
 import type { CoachMarkDef } from './pages';
 
 export interface GuideStepDef extends Omit<CoachMarkDef, 'feature' | 'personas'> {
@@ -19,7 +18,7 @@ export interface GuideStepDef extends Omit<CoachMarkDef, 'feature' | 'personas'>
   confirm?: { label: string; seen: readonly string[] };
 }
 
-type GuideKey = Exclude<ChecklistItemId, 'batch'> | 'batch.logging' | 'batch.forecast';
+type GuideKey = Exclude<GuideItemId, 'batch'> | 'batch.logging' | 'batch.forecast';
 
 export const ITEM_GUIDES: Record<GuideKey, readonly GuideStepDef[]> = {
   sources: [
@@ -98,6 +97,16 @@ export const ITEM_GUIDES: Record<GuideKey, readonly GuideStepDef[]> = {
       side: 'left',
     },
   ],
+  dc: [
+    {
+      id: 'guide.dc',
+      selector: '[aria-label="Your DCs"]',
+      fallback: ['[data-testid="dc-requests-empty"]'],
+      title: 'Your deal contributions',
+      text: 'The DCs Org62 has for you and your requests in flight. Claim an opp from its account page; it goes in your next batch.',
+      side: 'left',
+    },
+  ],
   feedback: [
     {
       id: 'guide.feedback',
@@ -110,7 +119,7 @@ export const ITEM_GUIDES: Record<GuideKey, readonly GuideStepDef[]> = {
 };
 
 /** The tip for one action item, for this persona (a batch is forecast notes for an AE, the activity log otherwise). */
-export function itemGuideFor(id: ChecklistItemId, persona: ResolvedPersona | null): GuideStepDef[] {
+export function itemGuideFor(id: GuideItemId, persona: ResolvedPersona | null): GuideStepDef[] {
   if (id === 'batch') return [...ITEM_GUIDES[persona && batchKind(persona) === 'forecast' ? 'batch.forecast' : 'batch.logging']];
   return [...ITEM_GUIDES[id]];
 }

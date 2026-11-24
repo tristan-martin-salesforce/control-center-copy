@@ -3,7 +3,9 @@
  * Every Home action. Quiet verbs reuse the existing routes and flows; nothing here sends anything:
  * - done / snooze / not-now (a card's reason) / confirm-done / not-done (LD-1, the Looks done group): POST /items/:id/actions/:verb, optimistic (the row leaves Home at once), rollback with an
  *   inline "Couldn't … · Retry", Undo toast through the audit id;
- * - Open in Claude: POST /agents/launch, then the claude:// deep link, on an explicit click only;
+ * - Open in Claude: POST /agents/launch, then Review prompt (the whole prompt, "runs with your permissions"; SEC-10,
+ *   components/agents/LaunchReview) and only its Open in Claude click opens the claude:// link; a waiting session's
+ *   continue link carries no prompt and opens on the click;
  * - re-auth: POST /connectors/:id/reauth (the health flow), result in a toast; the Health page has the rest;
  * - review / send / draft / nudge / confirm / map / plan / open: navigate to the verb's href (Outbox review
  *   link, the item's composer, the nudge draft, Time, Deals…).
@@ -12,7 +14,8 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { HomeCard, HomeDayRef, HomeItemRef, HomePayload, HomeVerb, NotNowReason } from '@/contract';
 import { api, ApiError } from '@/client/api';
 import { useOptimisticMutation, type OptimisticCache } from '@/client/optimistic';
-import { toast } from '@/client/toast';
+import { toast, toastStore } from '@/client/toast';
+import { useLaunchReview } from '@/components/agents/LaunchReview';
 import { leavesHome, notNowToast, stripItem } from './model';
 import { navigate } from '@/components/shell/router';
 
@@ -42,7 +45,7 @@ export interface HomeActionError {
   retry: () => void;
 }
 
-const VERB_TEXT: Record<string, string> = { snooze: 'snooze', 'confirm-done': 'confirm', 'not-done': 'mark not done', 'not-now': 'set it aside' };
+const VERB_TEXT: Record<string, string> = { snooze: 'snooze', 'confirm-done': 'confirm', 'not-done': 'mark not done', 'not-now': 'set it aside', reopen: 'reopen' };
 const short = (t: string, n = 60) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
 const errText = (err: unknown) => (err instanceof ApiError ? (err.code === 'upstream_unavailable' ? 'the server is unavailable' : err.message) : String(err));
 
@@ -133,6 +136,16 @@ export function useHomeActions(moveTo: HomeDayRef | null = null) {
     [item, setError],
   );
 
+  /** Undo a close for you from Home (a card closed while Home was open): the same reopen Triage ▸ Closed for you runs. */
+  const reopen = useCallback(
+    (ref: HomeItemRef, title: string) => {
+      labels.current.set(ref.id, `Reopened: ${short(title)}`);
+      setError(ref.id, null);
+      item.mutate({ params: { id: ref.id, verb: 'reopen' }, body: { ifVersion: item.versionOf(ref.id) ?? ref.version, note: 'Reopened from Home (closed for you)' } });
+    },
+    [item, setError],
+  );
+
   /**
    * A card's "Not now" reason: the same `not-now` action Details runs (done elsewhere closes it, not mine dismisses
    * it, later snoozes it to the day "Move to …" uses, wrong account unlinks it), optimistic with an Undo toast.
@@ -148,6 +161,12 @@ export function useHomeActions(moveTo: HomeDayRef | null = null) {
   );
 
   // ---- Claude Code ---------------------------------------------------------------------------------
+  // SEC-10: a prepared session (claude://code/new, with its prompt) opens only from Review prompt's Open in Claude
+  const openClaude = useCallback((url: string) => {
+    toast({ key: `claude:${url}`, title: 'Opening Claude Code…', durationMs: 4000 });
+    openExternal(url);
+  }, []);
+  const { review: reviewLaunch, dialog: launchDialog } = useLaunchReview(openClaude);
   const launch = useOptimisticMutation({
     route: 'launchAgent',
     topics: ['home', 'agents', 'item'],
@@ -155,7 +174,9 @@ export function useHomeActions(moveTo: HomeDayRef | null = null) {
     writeBack: false,
     onSuccess: (res, input) => {
       if (input.body?.workItemId) setError(input.body.workItemId, null);
-      openExternal(res.url);
+      // the review is on screen now: "Preparing the Claude Code session…" would sit over it, saying the wrong thing
+      if (input.body?.workItemId) toastStore.dismissKey(`claude:${input.body.workItemId}`);
+      reviewLaunch(res.url, res.run.title);
     },
     onError: (err, input) => {
       const id = input.body?.workItemId ?? 'home:launch';
@@ -165,11 +186,13 @@ export function useHomeActions(moveTo: HomeDayRef | null = null) {
   const openInClaude = useCallback(
     (card: HomeCard | undefined, itemId: string, title: string) => {
       const link = card?.now?.run?.kind === 'claude_session' ? card.now.run.deepLink : null;
-      toast({ key: `claude:${itemId}`, title: 'Opening Claude Code…', body: short(title, 80), durationMs: 4000 });
-      if (link && /^claude:\/\/code\/(continue|needs-input)/.test(link) && card?.now?.run?.state === 'waiting_on_you') openExternal(link);
-      else launch.mutate({ body: { workItemId: itemId, title } });
+      if (link && /^claude:\/\/code\/(continue|needs-input)/.test(link) && card?.now?.run?.state === 'waiting_on_you') openClaude(link);
+      else {
+        toast({ key: `claude:${itemId}`, title: 'Preparing the Claude Code session…', body: short(title, 80), durationMs: 4000 });
+        launch.mutate({ body: { workItemId: itemId, title } });
+      }
     },
-    [launch],
+    [launch, openClaude],
   );
 
   // ---- connectors (the health re-auth flow) -----------------------------------------------------------
@@ -218,8 +241,8 @@ export function useHomeActions(moveTo: HomeDayRef | null = null) {
   const clearError = useCallback((id: string) => setError(id, null), [setError]);
 
   return useMemo(
-    () => ({ done, snooze, confirmDone, notDone, notNow, run, errors, busy, clearError, launching: launch.isPending }),
-    [done, snooze, confirmDone, notDone, notNow, run, errors, busy, clearError, launch.isPending],
+    () => ({ done, snooze, confirmDone, notDone, notNow, reopen, run, errors, busy, clearError, launching: launch.isPending, reviewLaunch, launchDialog }),
+    [done, snooze, confirmDone, notDone, notNow, reopen, run, errors, busy, clearError, launch.isPending, reviewLaunch, launchDialog],
   );
 }
 

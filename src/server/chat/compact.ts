@@ -119,7 +119,7 @@ export function compactHealth(h: HealthPayload) {
 
 export function compactDetail(d: WorkItemDetail) {
   return {
-    item: { ...itemHit(d.item), purpose: clip(d.item.purpose, 2000), notes: clip(d.item.notes, 2000), effort: d.item.effort, version: d.item.version, resolution: d.item.resolution, sources: d.item.sources.map((s) => ({ kind: s.kind, label: clip(s.label, 80), url: s.url ?? null })) },
+    item: { ...itemHit(d.item), purpose: d.item.purpose, notes: d.item.notes, effort: d.item.effort, version: d.item.version, resolution: d.item.resolution, sources: d.item.sources.map((s) => ({ kind: s.kind, label: clip(s.label, 80), url: s.url ?? null })) },
     nba: d.nba ? { verb: d.nba.verb, title: clip(d.nba.title, 140), why: clip(d.nba.why, 160), status: d.nba.status } : null,
     draft: d.draft ? { id: d.draft.id, status: d.draft.status, preview: clip(d.draft.plainText, 160) } : null,
     initiative: d.initiative ? { id: d.initiative.id, title: clip(d.initiative.title, 100), purpose: clip(d.initiative.purpose, 160) } : null,
@@ -148,15 +148,19 @@ export function buildContextPack(o: { now: Date; timezone: string; today: TodayP
       moreToday: today.moreToday.items.slice(0, 7).map(itemHit),
       moreTodayCount: today.moreToday.count,
       triageCount: today.triageCount,
+      // a per-turn prompt budget, never a hidden cut: each list carries its whole count and the read tools have the rest
       promises: today.shelves.promises.slice(0, 4).map((s) => ({ id: s.item.id, title: clip(s.item.title, 100), hint: clip(s.hint, 80) })),
+      promisesCount: today.shelves.promises.length,
       fitIns: today.shelves.fitIns.slice(0, 4).map((s) => ({ id: s.item.id, title: clip(s.item.title, 100), hint: clip(s.hint, 80) })),
+      fitInsCount: today.shelves.fitIns.length,
       navCounts: today.navCounts,
     },
     calendar: today.spine.events.slice(0, 14).map(eventRow),
+    calendarCount: today.spine.events.length,
     outbox: (() => {
       const c = compactOutbox(o.outbox);
       // the newest applied canvases / VDP changes / feedback posts with their link, and what still waits on Time
-      return { dryRun: c.dryRun, counts: c.counts, applied: c.applied.slice(0, 5), waitingOnTime: c.waitingOnTime.length };
+      return { dryRun: c.dryRun, counts: c.counts, applied: c.applied.slice(0, 5), appliedCount: c.applied.length, waitingOnTime: c.waitingOnTime.length };
     })(),
     health: {
       worst: o.health.summary.worst,
@@ -173,11 +177,12 @@ export function buildContextPack(o: { now: Date; timezone: string; today: TodayP
 export const TOOL_JSON_MAX = 64_000;
 
 /**
- * JSON for a tool result, credential-redacted, always valid JSON: no array or depth cut (reads page instead), and a
+ * JSON for a tool result, credential-redacted, always valid JSON: no array, depth or string cut (reads page instead; a
+ * long string in a read names its `field`, ASSIST-5), and a
  * result over `max` comes back as a stub that says so and how to narrow it, never cut mid-JSON (A1, 2026-11-13).
  */
 export function toolJson(v: unknown, max = TOOL_JSON_MAX): string {
-  const s = JSON.stringify(redactPayload(v, { maxDepth: 24, maxString: 4000, maxArray: Number.POSITIVE_INFINITY }).value);
+  const s = JSON.stringify(redactPayload(v, { maxDepth: 24, maxString: max, maxArray: Number.POSITIVE_INFINITY }).value);
   if (s.length <= max) return s;
   // the result's own top-level facts (staged, proposalId, status, counts) survive; the rest is a valid stub
   const facts = v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(redactPayload(v, { maxDepth: 1, maxString: 300 }).value as Record<string, unknown>).filter(([, x]) => x === null || ['string', 'number', 'boolean'].includes(typeof x))) : {};

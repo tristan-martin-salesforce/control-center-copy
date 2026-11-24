@@ -1,0 +1,91 @@
+{
+  "items": [
+    {
+      "connector": "gmail",
+      "kind": "email",
+      "externalId": "18f0000000000004",
+      "dedupeKey": "gmail:18f0000000000004",
+      "contentHash": "7059511165cedf31",
+      "occurredAt": "2026-03-10T16:55:00.000Z",
+      "author": {
+        "name": "ME",
+        "email": "me@example.com",
+        "isMe": true,
+        "isExternal": false
+      },
+      "participants": [
+        {
+          "name": "AE_1",
+          "email": "ae.one@example.com",
+          "isMe": false,
+          "isExternal": false
+        },
+        {
+          "name": "SE_2",
+          "email": "se.two@example.com",
+          "isMe": false,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://mail.google.com/mail/u/0/#all/18f0000000000004",
+      "title": "Re: ACME_CORP data cloud workshop agenda",
+      "excerpt": "Hi AE_1, Deck attached, see also https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit. The architecture slide now shows the zero-copy flow. Thanks, ME",
+      "redacted": false,
+      "threadRef": "gmail-thread:18f00000000000b1",
+      "fileRefs": [
+        "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+      ],
+      "payload": {
+        "direction": "sent",
+        "scope": "sent",
+        "subject": "Re: ACME_CORP data cloud workshop agenda",
+        "from": "ME <me@example.com>",
+        "to": "AE_1 <ae.one@example.com>",
+        "cc": "SE_2 <se.two@example.com>",
+        "toMe": false,
+        "ccMe": false,
+        "replyTo": "<msg-0001@mail.example.com>",
+        "messageIdHeader": "<msg-0004@mail.example.com>",
+        "snippet": "Hi AE_1, Deck attached, see also https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit. The architecture slide now shows the zero-copy flow. Thanks, ME",
+        "bodyNew": "Hi AE_1,\n\nDeck attached, see also https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit. The architecture slide now shows the zero-copy flow.\n\nThanks,\nME",
+        "bodyFull": "Hi AE_1,\n\nDeck attached, see also https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit. The architecture slide now shows the zero-copy flow.\n\nThanks,\nME\n\nOn Tue, Mar 10, 2026 at 4:05 PM AE_1 <ae.one@example.com> wrote:\n> Can you send the updated deck for the workshop by Thursday?",
+        "urls": [
+          "https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit"
+        ],
+        "hasAttachment": false,
+        "mentionsAttachment": true,
+        "bulk": false,
+        "calendarNotice": false
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "kind": "mailbox_range",
+      "ref": "gmail:sent",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T18:00:00.000Z",
+      "meta": {
+        "query": "in:sent after:1773161400 before:1773165600",
+        "listed": 1,
+        "fetched": 1,
+        "listTruncated": false
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18f0000000000004",
+      "from": "2026-03-10T16:55:00.000Z",
+      "to": "2026-03-10T16:55:00.000Z",
+      "meta": {
+        "threadId": "18f00000000000b1",
+        "scope": "sent"
+      }
+    }
+  ],
+  "nextCursor": {
+    "value": "{\"lastEpoch\":1773161700,\"seen\":{\"18f0000000000004\":1773161700}}",
+    "at": "2026-03-10T18:00:00.000Z"
+  },
+  "complete": true
+}

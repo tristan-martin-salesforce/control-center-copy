@@ -31,7 +31,7 @@ describe('Work verb sections', () => {
       TZ,
     );
     expect(groups.map((g) => [g.label, g.items.map((i) => i.id)])).toEqual([
-      ['Do now', ['now', 'now2']],
+      ['Due today', ['now', 'now2']],
       ['Do this week', ['week']],
       ['Think ahead', ['later']],
       ['Fit in', ['fit']],

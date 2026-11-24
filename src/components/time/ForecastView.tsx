@@ -28,7 +28,8 @@ import type { ForecastCheck, ForecastPayload, ForecastRow, PersonaFeature } from
 import { queryKey } from '@/client/api';
 import { useApi } from '@/client/hooks';
 import { useLiveFollow } from '@/client/live';
-import { ContextHead, ContextPage, Pane, SectionHead, useDetails } from '@/components/deals/context-frame';
+import { ContextPage, Pane, SectionHead, useDetails } from '@/components/deals/context-frame';
+import { ActivityHead } from './ActivityHead';
 import { useDraftQueueSource } from '@/components/detail/lib/draft-queue';
 import { StatusBadge } from '@/components/domain';
 import { clock, dayLabel } from '@/components/domain/lib/time';
@@ -83,8 +84,7 @@ export function ForecastView({ tabs }: { tabs: ReactNode }) {
   }, [v, tz]);
 
   const head = (
-    <ContextHead
-      title="Time"
+    <ActivityHead
       tabs={tabs}
       sentence={forecastSentence(v)}
       actions={
@@ -170,7 +170,7 @@ function Waiting({ v, onOpen }: { v: ForecastPayload; onOpen: (id: string, label
           <li key={c.draftId} className="flex min-w-0 items-center gap-3 px-5 py-2.5" data-canvas-id={c.draftId}>
             <div className="min-w-0 flex-1">
               <p className="truncate font-bold text-fg-heading">{`Slack canvas · ${c.title}`}</p>
-              <p className="truncate text-caption text-muted">{[c.notes ? plural(c.notes, 'forecast note') : null, c.roles ? plural(c.roles, 'Deal Role') : null].filter(Boolean).join(' · ')} · SpecialistForecast__c UPDATE rows</p>
+              <p className="truncate text-caption text-muted">{[c.notes ? plural(c.notes, 'forecast note') : null, c.roles ? plural(c.roles, 'Deal Role') : null].filter(Boolean).join(' · ')} · updates to the Specialist Forecast</p>
             </div>
             {c.status === 'failed' || c.status === 'verify_failed' ? (
               <StatusBadge tone="danger" icon="error">

@@ -15,6 +15,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Ref
 import { isLocalChange } from '@/client/intent';
 import { departuresOf, mergeLive, survivorOf, type LiveMerge } from './live-merge';
 
+/** `CSS.escape` where the environment has it (every browser); jsdom has none, so quote-escape the id there. */
+const cssEscape = (s: string): string => (typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(s) : s.replace(/["\\]/g, '\\$&'));
+
 /** How long a row that left elsewhere stays on screen (fading, then collapsing). Matches cc-live-out. */
 export const LINGER_MS = 1_800;
 /** How long an arrival keeps its mark (the highlight fades within it). Matches cc-live-in. */
@@ -145,7 +148,7 @@ export function useLiveList<T extends { id: string }>(data: T[] | undefined, res
       const first = scrollTo.current;
       scrollTo.current = null;
       if (first && typeof document !== 'undefined')
-        requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(first)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+        requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-item-id="${cssEscape(first)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     }
     // One timer for the next fade or mark to expire.
     let next = Infinity;

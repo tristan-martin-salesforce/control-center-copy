@@ -27,7 +27,8 @@ import { renderAll } from '@/server/datasource/mock/render';
 const dcRowCheck: CanvasRowCheck = (r, ctx) => {
   const live = ctx.dcLive as DcLiveState | undefined;
   if (!live) return null;
-  const [row] = dcCanvasRows(`${r.section === 'update' ? '# UPDATE' : '# ADD'}\n${r.text}`);
+  // the row in the legacy cell layout (canvasRowsOf gives every table that one, WO-1)
+  const [row] = dcCanvasRows(`${r.section === 'update' ? '# UPDATE' : '# ADD'}\n|${r.cells.join('|')}|`);
   if (!row) return null;
   const v = dcRowStillNeeded(row, live);
   return v.keep ? null : v.conflict ? `refused, Org62 holds another value: ${v.reason}` : v.reason;

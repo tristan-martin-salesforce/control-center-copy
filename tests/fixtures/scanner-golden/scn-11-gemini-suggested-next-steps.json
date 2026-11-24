@@ -1,0 +1,55 @@
+{
+  "id": "scn-11-gemini-suggested-next-steps",
+  "title": "SCN-11: Gemini notes with a \"Suggested next steps\" heading and no checkboxes yield no step (the checkbox form does)",
+  "storyline": "03-scanner-quality.md SCN-11 (Gemini next steps parse fragilely); notes shapes as tests/fixtures/scanner/gemini/notes.md and sample-data meeting notes, placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "gemini_notes",
+      "kind": "gemini_note",
+      "occurred_at": "2026-11-10T17:30:00.000Z",
+      "seen_at": "2026-11-10T17:45:00.000Z",
+      "from_me": false,
+      "title": "INT: ACME_CORP deal planning",
+      "body": "# Quick notes\n\n## INT: ACME_CORP deal planning\n\nTeam aligned on the workshop scope and the Private Connect question.\n\n## Next steps\n\n- [ ] [PERSON_A] Confirm the customer attendee list: before Tuesday.\n- [ ] [Pat Example] Send the updated workshop deck: with the refreshed architecture slide.\n\n# Full notes\n\n### Summary\n\nTeam aligned on the workshop scope and the Private Connect question.\n\n### Next steps\n\n- [ ] [PERSON_A] Confirm the customer attendee list: before Tuesday.\n- [ ] [Pat Example] Send the updated workshop deck: with the refreshed architecture slide.\n",
+      "meta": { "fileId": "DOC_GEMINI_CHECKBOX_01", "eventId": "ev-acme-planning", "participants": [{ "name": "PERSON_A", "email": "person_a@example.com" }] },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "gemini_notes",
+      "kind": "gemini_note",
+      "occurred_at": "2026-11-12T18:45:00.000Z",
+      "seen_at": "2026-11-12T19:00:00.000Z",
+      "from_me": false,
+      "title": "Saltmere weekly sync - Notes by Gemini",
+      "body": "# Saltmere weekly sync - Notes by Gemini\n\n## Summary\nWalked through the claims status demo for the contact-center leads. Leads asked to see a denied claim next time.\n\n## Decisions\n- Next demo includes a denied-claim handoff\n\n## Suggested next steps\n- [Pat Example] Send PERSON_M the denied-claim scenario outline (Friday)\n- [PERSON_T] Book the architecture board slot\n",
+      "meta": { "fileId": "DOC_GEMINI_SUGGESTED_01", "eventId": "ev-saltmere-sync", "participants": [{ "name": "PERSON_M", "email": "person_m@example.com" }, { "name": "PERSON_T", "email": "person_t@example.com" }] },
+      "agent": [{ "propose": "i2" }]
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "commitment",
+      "title": "Send the updated workshop deck",
+      "keywords": ["workshop deck"],
+      "origin": "s1",
+      "ask_quote": "send the updated workshop deck"
+    },
+    {
+      "id": "i2",
+      "kind": "commitment",
+      "title": "Send PERSON_M the denied-claim scenario outline",
+      "keywords": ["denied-claim", "outline"],
+      "origin": "s2",
+      "ask_quote": "send person_m the denied-claim scenario outline",
+      "note": "parseNextSteps needs a heading exactly `Next steps` and `- [ ]` checkboxes; this shape returns 0 steps while the notes still count as found"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "why": "the deck has not been sent" },
+    { "item": "i2", "expect": "open", "class": "still_owed", "why": "the outline has not been sent" }
+  ]
+}

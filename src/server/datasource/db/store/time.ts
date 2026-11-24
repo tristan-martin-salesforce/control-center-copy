@@ -16,9 +16,10 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { ActivityEntry, ActivityLockableField, TimelineBlock } from '@/contract';
 import { lockableActivityFields } from '@/contract';
-import { activityEntries, activityEntryTimeBlocks, opportunities, org62PicklistValues, seTaskTypes, timeBlocks, users } from '@/db/schema';
+import { accounts, activityEntries, activityEntryTimeBlocks, opportunities, org62PicklistValues, seTaskTypes, timeBlocks, users } from '@/db/schema';
 import { dismissSourceOf, isRuleDismissal } from '@/engines/activity/internal';
 import { ORG62_CHECK_PREFIX } from '@/engines/activity/org62-check';
+import { accountTargetWhat } from '@/engines/attribution/target';
 import { isInternalEntry } from '@/lib/time-internal';
 import { org62RecordUrl, sourceItemUrl } from '@/projections/links';
 
@@ -66,10 +67,13 @@ export interface Vocab {
   meetingTypeByValue: Map<string, string>;
 }
 
-export async function loadVocab(db: ReadCtx['db'] | WriteCtx['tx'], userId: string): Promise<Vocab> {
-  const [u] = await db.select({ teamPackId: users.teamPackId }).from(users).where(eq(users.id, userId));
-  const teamPackId = u?.teamPackId ?? null;
-  if (!teamPackId) return { teamPackId, taskTypeById: new Map(), taskTypeByName: new Map(), meetingTypeById: new Map(), meetingTypeByValue: new Map() };
+/** A vocabulary with no task or meeting types (no team pack, or a read model whose scope reads no activity). */
+export const emptyVocab = (teamPackId: string | null): Vocab => ({ teamPackId, taskTypeById: new Map(), taskTypeByName: new Map(), meetingTypeById: new Map(), meetingTypeByValue: new Map() });
+
+/** `known`: the user's team pack when the caller already read the users row (the read model's base): no second read. */
+export async function loadVocab(db: ReadCtx['db'] | WriteCtx['tx'], userId: string, known?: { teamPackId: string | null }): Promise<Vocab> {
+  const teamPackId = known ? known.teamPackId : ((await db.select({ teamPackId: users.teamPackId }).from(users).where(eq(users.id, userId)))[0]?.teamPackId ?? null);
+  if (!teamPackId) return emptyVocab(teamPackId);
   const tts = await db.select({ id: seTaskTypes.id, name: seTaskTypes.name }).from(seTaskTypes).where(eq(seTaskTypes.teamPackId, teamPackId));
   const mts = await db.select({ id: org62PicklistValues.id, value: org62PicklistValues.value }).from(org62PicklistValues).where(and(eq(org62PicklistValues.teamPackId, teamPackId), eq(org62PicklistValues.field, 'Meeting_Type__c')));
   return {
@@ -104,8 +108,10 @@ function linkedSource(src: ActivityEntry['sources'][number]): ActivityEntry['sou
   return url ? { ...src, url } : src;
 }
 
-export async function loadActivity(rc: ReadCtx, vocab: Vocab, oppName: (id: string) => { name: string; accountName: string | null } | null): Promise<ActivityEntry[]> {
-  const rows = await rc.db.select().from(activityEntries).where(eq(activityEntries.ownerUserId, rc.userId)).orderBy(asc(activityEntries.createdAt), asc(activityEntries.id));
+/** `ids`: only those rows (a page scope's window, reads/rows.ts); omitted = every row. */
+export async function loadActivity(rc: ReadCtx, vocab: Vocab, oppName: (id: string) => { name: string; accountName: string | null } | null, ids?: readonly string[]): Promise<ActivityEntry[]> {
+  if (ids && !ids.length) return [];
+  const rows = await rc.db.select().from(activityEntries).where(ids ? and(eq(activityEntries.ownerUserId, rc.userId), inArray(activityEntries.id, [...ids])) : eq(activityEntries.ownerUserId, rc.userId)).orderBy(asc(activityEntries.createdAt), asc(activityEntries.id));
   return rows.map((r): ActivityEntry => {
     const x = ext<ActivityExt>(rc, 'activity_entries', r.id);
     const opp = r.opportunityId ? oppName(r.opportunityId) : null;
@@ -137,12 +143,16 @@ export async function loadActivity(rc: ReadCtx, vocab: Vocab, oppName: (id: stri
       verifiedAt: r.verifiedAt ? isoReq(r.verifiedAt) : null,
       internal: false,
       dismissSource: dismissSourceOf(r.dedupeKey, r.subject) ?? x.dismissSource ?? null,
-      logNote: x.logNote ?? null,
+      // D-98: the columns first (log_note, log_note_basis), the ext object as the kv fallback
+      logNote: r.logNote ?? x.logNote ?? null,
       // a note you edited is yours: no app basis
-      logNoteBasis: r.userLockedFields.includes(LOCK_COL.logNote) ? null : (x.logNoteBasis ?? null),
+      logNoteBasis: r.userLockedFields.includes(LOCK_COL.logNote) ? null : ((r.logNoteBasis as ActivityExt['logNoteBasis'] | null) ?? x.logNoteBasis ?? null),
       // the engine's reason for the row (its type pick, an estimate): Details ▸ How it came in
       why: r.reason || null,
       suggestion: null,
+      // D-103 (c): a row that logs to the account itself (no opportunity)
+      // (an engine fallback still asking for an opp is not one: its flag says so)
+      ...(r.whatKind === 'account' && !r.opportunityId && r.accountId && !r.flags.some((f) => /^NEEDS WhatId|^WhatId = account fallback/.test(f)) ? { accountId: r.accountId } : {}),
     };
     // D-64: internal-only work: no opp, no account, no WhatId, no CF / CR, an internal task type
     e.internal = isInternalEntry(e) && !r.whatOrg62Id && !r.accountId && r.whatKind === 'none';
@@ -236,6 +246,15 @@ export async function whatOfOpp(w: Pick<WriteCtx, 'tx' | 'userId'>, oppId: strin
   };
 }
 
+/** The WhatId columns of an account target (D-103 (c)): kind account, the account's Org62 id through accountTargetWhat. */
+export async function whatOfAccount(w: Pick<WriteCtx, 'tx' | 'userId'>, accountId: string): Promise<{ whatKind: 'account'; whatOrg62Id: string | null; whatName: string | null; accountId: string; opportunityId: null }> {
+  const [a] = await w.tx
+    .select({ org62: accounts.org62AccountId, name: accounts.name })
+    .from(accounts)
+    .where(and(eq(accounts.ownerUserId, w.userId), eq(accounts.id, uuidFor(accountId))));
+  return { whatKind: 'account', whatOrg62Id: accountTargetWhat(a?.org62)?.whatId ?? null, whatName: a?.name ?? null, accountId: uuidFor(accountId), opportunityId: null };
+}
+
 export async function insertActivity(w: WriteCtx, vocab: Vocab, a: ActivityEntry, oppAccount: string | null): Promise<string> {
   const { tt, mt } = await typeIds(w, vocab, a);
   const cols = { ...activityColumns(a, w, tt, mt), ...(a.oppId ? await whatOfOpp(w, a.oppId, a.oppName) : {}) };
@@ -275,6 +294,8 @@ export async function updateActivity(w: WriteCtx, vocab: Vocab, cur: ActivityEnt
   }
   // the WhatId follows a changed opp (PATCH /activity/:id, the Assistant's edit_activities, an Org62 pick)
   if ((cur.oppId ?? null) !== (next.oppId ?? null)) Object.assign(patch, await whatOfOpp(w, next.oppId, next.oppName));
+  // D-103 (c): an account target: the account's own WhatId (accountTargetWhat decides it, B-117)
+  if (next.accountId && !next.oppId && next.accountId !== (cur.accountId ?? null)) Object.assign(patch, await whatOfAccount(w, next.accountId));
   // D-64: made internal: no WhatId at all (an account fallback goes too), neither customer-facing nor related
   if (next.internal && !cur.internal) Object.assign(patch, { whatKind: 'none', whatOrg62Id: null, whatName: null, opportunityId: null, accountId: null, customerFacing: false, customerRelated: false });
   // stamps follow the contract updatedAt the first time a status is reached
@@ -304,8 +325,10 @@ function laneOf(source: string): TimeBlockRec['lane'] {
   return 'focus';
 }
 
-export async function loadTimeBlocks(rc: ReadCtx): Promise<TimeBlockRec[]> {
-  const rows = await rc.db.select().from(timeBlocks).where(eq(timeBlocks.ownerUserId, rc.userId)).orderBy(asc(timeBlocks.createdAt), asc(timeBlocks.id));
+/** `ids`: only those blocks (a page scope's window, reads/rows.ts); omitted = every block. */
+export async function loadTimeBlocks(rc: ReadCtx, ids?: readonly string[]): Promise<TimeBlockRec[]> {
+  if (ids && !ids.length) return [];
+  const rows = await rc.db.select().from(timeBlocks).where(ids ? and(eq(timeBlocks.ownerUserId, rc.userId), inArray(timeBlocks.id, [...ids])) : eq(timeBlocks.ownerUserId, rc.userId)).orderBy(asc(timeBlocks.createdAt), asc(timeBlocks.id));
   if (!rows.length) return [];
   const joins = await rc.db.select().from(activityEntryTimeBlocks).where(inArray(activityEntryTimeBlocks.timeBlockId, rows.map((r) => r.id)));
   return rows

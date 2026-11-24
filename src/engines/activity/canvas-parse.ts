@@ -3,7 +3,8 @@
  *
  *  - Review canvas: ticks and `=>` marks (port of canvas.parse_marks / apply_marks).
  *  - App edit -> canvas diff: `diffEntries` + `markFor` produce the `=> …` text for changed rows.
- *  - Work-order canvas: `parseWorkOrder` reads the ADD/UPDATE tables back into rows (also accepts
+ *  - Work-order canvas: `parseWorkOrder` reads the tables back into rows (WO-1's per-object tables via
+ *    `legacyShape`, or a legacy canvas's ADD/UPDATE; also accepts
  *    Slack's normalized tables, which blank the "#" header cell and pad the separator), and
  *    `diffWorkOrder` reports what changed in the canvas since the render.
  *
@@ -14,6 +15,7 @@ import { ccKeyOf } from './org62-check';
 import { TAXONOMY, TYPES_LOWER, isNeither, roundQuarter } from './taxonomy';
 import { HOUR, toIsoSec, toMs } from './time';
 import type { ActivityEntry } from './types';
+import { legacyShape } from '@/lib/canvas/tables';
 
 // ------------------------------------------------------------------ review canvas marks
 
@@ -223,7 +225,7 @@ export function parseWorkOrder(md: string): ParsedWorkOrder {
   const out: ParsedWorkOrder = { adds: [], updates: [] };
   let section: 'add' | 'update' | null = null;
   let seenHeader = false;
-  for (const line of md.split(/\r?\n/)) {
+  for (const line of legacyShape(md.replace(/\r\n?/g, '\n')).split('\n')) {
     if (/^#\s+ADD\b/.test(line)) {
       section = 'add';
       seenHeader = false;

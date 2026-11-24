@@ -10,12 +10,16 @@
  *                                              stays under the hard cap (one conditional UPDATE, so parallel jobs
  *                                              can't both pass a check-then-spend); release() after the spend is booked
  *
+ *   measurement (0027, review 04 §4.5)         CallMeasurement: per-request prompt sizes, long-tier requests, turns,
+ *                                              tools and their schema tokens, prefix hash, items in / by rules / out,
+ *                                              the call an escalation re-did and the verdicts it changed
+ *
  * Privacy (tenet: Local data, privacy-safe logs): ids, codes, counts and hashes only. `contentHash` hashes the prompt
  * and its input; the prompt itself is never stored.
  */
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 
 import type { DbOrTx } from './client';
 
@@ -29,12 +33,8 @@ export function tierOf(model: string | null | undefined): ModelTier {
   return 'none';
 }
 
-/** sha256 of the parts (first 32 hex chars): what makes two calls "the same call". */
-export function ledgerHash(...parts: Array<string | number | boolean | null | undefined>): string {
-  const h = createHash('sha256');
-  for (const p of parts) h.update(`${p ?? ''}\u0000`);
-  return h.digest('hex').slice(0, 32);
-}
+/** sha256 of the parts (first 32 hex chars), in the shared layer so engines can stamp a contentHash too. */
+export { ledgerHash } from '@/lib/ledger-hash';
 
 /** The audit fields every booked call carries (D0). */
 export interface CallAudit {
@@ -57,6 +57,69 @@ export interface RequiredAudit {
   modelReason: string;
   outcome: string;
   contentHash: string;
+}
+
+/**
+ * What a call measured (0027, holistic review 04 §4.5, COST-12). Every field is optional: a writer books what it
+ * knows and the rest stays null. Counts, ids and hashes only.
+ */
+export interface CallMeasurement {
+  /** Prompt tokens (uncached + cache read + cache write) of the first model request. */
+  firstPromptTokens?: number | null;
+  /** The largest prompt of any one request (the long-prompt tier is per request). */
+  maxPromptTokens?: number | null;
+  /** Requests past the model's long-prompt threshold (models.ts longPromptThresholdOf). */
+  longTierRequests?: number | null;
+  /** Model requests in the call. */
+  turns?: number | null;
+  /** Tools in the model's context, and their schema tokens. */
+  toolCount?: number | null;
+  toolSchemaTokens?: number | null;
+  /** ledgerHash of everything before the cache boundary (model, tool names, static system prompt). */
+  prefixHash?: string | null;
+  /** Items given or read; items rules settled without the model; items proposed or linked. */
+  itemsIn?: number | null;
+  itemsDecidedByRules?: number | null;
+  itemsOut?: number | null;
+  /** An escalation: the cheaper call it re-did. */
+  escalatedFromCallId?: number | null;
+  /** An escalation: escalated items whose verdict the stronger model changed (D4). */
+  escalationChangedItems?: number | null;
+}
+
+const MEASURE_KEYS = ['firstPromptTokens', 'maxPromptTokens', 'longTierRequests', 'turns', 'toolCount', 'toolSchemaTokens', 'prefixHash', 'itemsIn', 'itemsDecidedByRules', 'itemsOut', 'escalatedFromCallId', 'escalationChangedItems'] as const;
+
+const optInt = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.round(v)) : typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) ? Math.max(0, Math.round(Number(v))) : null);
+
+/** A measurement from untrusted input (a trace payload's `m`): known keys only, numbers clamped, hash clipped. */
+export function measurementOf(raw: unknown): CallMeasurement | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: CallMeasurement = {};
+  for (const k of MEASURE_KEYS) {
+    if (k === 'prefixHash') {
+      if (typeof r[k] === 'string' && r[k]) out.prefixHash = String(r[k]).slice(0, 64);
+    } else {
+      const v = optInt(r[k]);
+      if (v != null) out[k] = v;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** The measurement columns, in the order of measurementValues (for writers that build their own insert). */
+export const MEASUREMENT_COLUMNS = sql.raw(
+  'first_prompt_tokens, max_prompt_tokens, long_tier_requests, turns, tool_count, tool_schema_tokens, prefix_hash, items_in, items_decided_by_rules, items_out, escalated_from_call_id, escalation_changed_items',
+);
+
+/** The measurement's values (nulls for what it does not carry), matching MEASUREMENT_COLUMNS. */
+export function measurementValues(m: CallMeasurement | null | undefined, escalatedFrom?: SQL): SQL {
+  const x = measurementOf(m) ?? {};
+  const i = (v: number | null | undefined) => (v == null ? null : v);
+  return sql`${i(x.firstPromptTokens)}::integer, ${i(x.maxPromptTokens)}::integer, ${i(x.longTierRequests)}::integer, ${i(x.turns)}::integer,
+             ${i(x.toolCount)}::integer, ${i(x.toolSchemaTokens)}::integer, ${x.prefixHash ?? null}::text, ${i(x.itemsIn)}::integer,
+             ${i(x.itemsDecidedByRules)}::integer, ${i(x.itemsOut)}::integer,
+             ${escalatedFrom ?? sql`(select c.id from llm_calls c where c.id = ${i(x.escalatedFromCallId)}::bigint)`}, ${i(x.escalationChangedItems)}::integer`;
 }
 
 export interface LlmCallRow extends RequiredAudit {
@@ -87,6 +150,8 @@ export interface LlmCallRow extends RequiredAudit {
   finishedAt?: Date;
   /** Add the cost to the daily roll-up (llm_budget_days) when the budget is daily. Default true. */
   rollup?: boolean;
+  /** 0027: what the call measured (null columns for what it leaves out). */
+  measure?: CallMeasurement | null;
 }
 
 const int = (n: number | undefined | null) => Math.max(0, Math.round(Number.isFinite(n as number) ? (n as number) : 0));
@@ -102,14 +167,14 @@ export async function insertLlmCall(db: DbOrTx, r: LlmCallRow): Promise<number |
   const res = await db.execute<{ id: string }>(sql`
     insert into llm_calls (owner_user_id, purpose, model, model_tier, skill_key, prompt_version, request_hash, job_id, scan_run_id, chat_message_id, status, error_code,
                            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd, cost_estimated, latency_ms,
-                           budget_day, budget, started_at, finished_at, trigger, model_reason, content_hash, outcome)
+                           budget_day, budget, started_at, finished_at, trigger, model_reason, content_hash, outcome, ${MEASUREMENT_COLUMNS})
     values (${r.ownerUserId}, ${r.purpose}, ${r.model}, ${tierOf(r.model)}, ${r.skillKey}, ${r.promptVersion ?? null},
             ${r.requestHash ?? `${r.skillKey ?? r.purpose}:${r.jobId ?? r.scanRunId ?? 'none'}:${randomUUID()}`},
             ${r.jobId ?? null}, ${r.scanRunId ?? null}::uuid, (select m.id from chat_messages m where m.id = ${r.chatMessageId ?? null}::uuid), ${r.status}, ${r.errorCode ?? null},
             ${int(r.inputTokens)}, ${int(r.outputTokens)}, ${int(r.cacheReadTokens)}, ${int(r.cacheWriteTokens)}, ${cost}, ${!!r.costEstimated},
             ${r.latencyMs ?? Math.max(0, finished.getTime() - started.getTime())}, ${r.budgetDay}::date, ${budget},
             ${started.toISOString()}::timestamptz, ${finished.toISOString()}::timestamptz,
-            ${clip(r.trigger)}, ${clip(r.modelReason)}, ${r.contentHash ?? null}, ${clip(r.outcome)})
+            ${clip(r.trigger)}, ${clip(r.modelReason)}, ${r.contentHash ?? null}, ${clip(r.outcome)}, ${measurementValues(r.measure)})
     returning id`);
   if (budget === 'daily' && cost > 0 && r.rollup !== false) {
     await db.execute(sql`
@@ -132,11 +197,14 @@ const clip = (s: string | null | undefined, n = 80) => (s == null ? null : Strin
  * What a booked call is missing: an audit field (trigger, model reason, outcome, content hash), or tokens on a call
  * that cost money. Empty when the row is complete.
  */
-export function ledgerGaps(r: Partial<CallAudit> & { costUsd: number; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }): string[] {
+export function ledgerGaps(r: Partial<CallAudit> & { costUsd: number; inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; measure?: CallMeasurement | null }): string[] {
   const out: string[] = [];
   for (const k of ['trigger', 'modelReason', 'outcome', 'contentHash'] as const) if (!r[k]) out.push(`no ${k}`);
   const tokens = (r.inputTokens ?? 0) + (r.outputTokens ?? 0) + (r.cacheReadTokens ?? 0) + (r.cacheWriteTokens ?? 0);
   if (r.costUsd > 0 && !(tokens > 0)) out.push('cost without tokens');
+  // 0027: a call that says it made model requests knows how big the first one was (the per-request prompt sizes are
+  // what proves the long-tier and prefix savings).
+  if ((r.measure?.turns ?? 0) > 0 && !((r.measure?.firstPromptTokens ?? 0) > 0)) out.push('turns without first_prompt_tokens');
   return out;
 }
 

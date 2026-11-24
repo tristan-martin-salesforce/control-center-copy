@@ -8,14 +8,17 @@
  *    `canUseTool` fallback, a scan of assistant `tool_use` blocks, and the result's `permission_denials`.
  *  - `permissionMode: 'dontAsk'`, so nothing outside the allowlist can be approved by a classifier.
  *  - Budget: `maxTurns`, SDK `maxBudgetUsd`, and a running estimate from per-message usage that aborts the moment the
- *    per-read-in cap is crossed. A watchdog, and the job's AbortSignal (cancel = superseded by new evidence).
+ *    per-read-in cap is crossed. With a spend gate (the job's governor hold, caps audit 26 F-4) the estimate is reported
+ *    after every request instead; past the hold the run raises a hand and ends `paused_for_spend` (the job queues its
+ *    continuation), and the SDK budget and turns are the runaway guard only. A watchdog, and the job's AbortSignal
+ *    (cancel = superseded by new evidence).
  *  - Clean env (scannerEnv: never the parent Claude's session variables) + the user's gateway config.
  *  - Logs carry ids, tool names and codes only.
  */
 import fs from 'node:fs';
 
 import {
-  query as sdkQuery,
+  agentQuery as sdkQuery,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
   type CanUseTool,
   type EffortLevel,
@@ -24,9 +27,10 @@ import {
   type McpServerConfig,
   type Options,
   type SDKMessage,
-} from '@anthropic-ai/claude-agent-sdk';
+} from '@/llm/provider';
 
 import { claudeGatewayConfig, scannerEnv, type GatewayConfig } from '@/llm/claude-env';
+import { PAUSED_FOR_SPEND, RUNAWAY_TURNS, type SpendGate } from '@/llm/spend';
 import { defaultClaudeExecutable, defaultScannerCwd } from '@/llm/env';
 import { classifyError, classifyMcpStatus, errorText, type ErrorClass } from '@/llm/errors';
 import { assertReadOnly, disallowedFor } from '@/llm/mcp-config';
@@ -55,6 +59,10 @@ export interface ResearchRunInput {
   state: ReadInToolState;
   maxTurns: number;
   costCapUsd: number;
+  /** F-4: the job's spend hold. Present: `costCapUsd` and `maxTurns` are only floors of the runaway guard. */
+  spend?: SpendGate | null;
+  /** With a spend hold: the user budget the run never passes (the day lines that are left); the SDK budget stops there. */
+  userLineUsd?: number;
   signal: AbortSignal;
   /** Called on every allowed tool call (progress for the UI). */
   onTool?: (fullName: string) => void;
@@ -176,8 +184,8 @@ export class SdkResearchAgent implements ResearchAgent {
       settingSources: ['user'],
       skills: [],
       persistSession: false,
-      maxTurns: input.maxTurns,
-      maxBudgetUsd: input.costCapUsd,
+      maxTurns: input.spend ? Math.max(input.maxTurns, RUNAWAY_TURNS) : input.maxTurns,
+      maxBudgetUsd: input.spend ? Math.min(input.userLineUsd ?? Number.POSITIVE_INFINITY, Math.max(input.costCapUsd, input.spend.ceilingUsd())) : input.costCapUsd,
       systemPrompt: input.systemPrompt,
       env: scannerEnv(gateway.env),
       ...(gateway.apiKeyHelper ? { settings: { apiKeyHelper: gateway.apiKeyHelper } } : {}),
@@ -221,7 +229,16 @@ export class SdkResearchAgent implements ResearchAgent {
               if (prompt > (this.o.prefixTripwireTokens ?? 40_000)) fail({ code: 'prefix_tripwire', message: `first prompt ${prompt} tokens`, errorClass: 'config' });
             }
             const est = [...usage.values()].reduce((a, c) => a + c, 0);
-            if (est > input.costCapUsd) fail({ code: 'cost_cap', message: `cost cap exceeded: est $${est.toFixed(4)} > $${input.costCapUsd}`, errorClass: 'config' });
+            if (input.spend) {
+              // a user budget (the day line left) stays a line
+              if (input.userLineUsd != null && est > input.userLineUsd) fail({ code: 'cost_cap', message: `the day's budget is reached: est $${est.toFixed(4)} > $${input.userLineUsd.toFixed(4)}`, errorClass: 'config' });
+              // H-5: past the hold, raise a hand and stop here (what was read stays booked; the continuation reruns it)
+              else if (!error && input.spend.observe(est) === 'ask') {
+                await input.spend.ask({ pctDone: null }).catch(() => undefined);
+                log({ event: 'paused', code: PAUSED_FOR_SPEND, costUsd: est });
+                fail({ code: PAUSED_FOR_SPEND, message: `paused for spend: $${est.toFixed(4)} of a $${input.spend.hold.heldUsd.toFixed(4)} hold`, errorClass: 'config' });
+              }
+            } else if (est > input.costCapUsd) fail({ code: 'cost_cap', message: `cost cap exceeded: est $${est.toFixed(4)} > $${input.costCapUsd}`, errorClass: 'config' });
           }
         } else if (msg.type === 'user') {
           // Tool results from the external servers (Slack, Org62): remember their links so the output may cite them.

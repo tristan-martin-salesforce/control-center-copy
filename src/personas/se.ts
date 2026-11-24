@@ -41,5 +41,32 @@ export const SE_PERSONA: PersonaDefinition = {
     { id: 'dc_strong_evidence', text: 'Claim a Deal Contribution only with strong evidence: a deck, demo, model or estimate built for that opportunity, or hours logged on it', enabled: true, feature: 'dealContributions' },
     { id: 'vdp_current', text: 'An engaged opportunity has a VDP with its use cases, assets and owners filled in', enabled: true, feature: 'vdp' },
   ],
+  // priority@2 (lane 07 §4.4): an SE's value is the customer and the deal behind the work; prep for customer demos,
+  // POCs and workshops inherits the meeting; logging hours and deal contributions are the pay-linked admin
+  priority: {
+    template: 'se_ic@2',
+    weights: { who: 30, deal: 25, kind: 20, importance: 15, goal: 10 },
+    customerFacingTiers: ['customer', 'customer_exec'],
+    dealTiersUsd: [1, 100_000, 500_000, 1_000_000, 3_000_000],
+    dealTierValues: [0, 0.3, 0.5, 0.7, 0.9, 1],
+    replySlaWorkH: { customer_exec: 4, leader: 8, customer: 8, manager: 24, ae: 24, partner: 24, teammate: 48 },
+    prepRules: [
+      { id: 'customer_build', meetingTitlePattern: 'demo|poc|workshop|onsite|architecture|walkthrough', customerFacing: true, importance: 'high', readyBeforeMin: 30 },
+      { id: 'exec_readout', meetingTitlePattern: '\\b(qbr|readout|exec|board)\\b', importance: 'critical', readyBeforeMin: 60 },
+    ],
+    admin: {
+      classes: [
+        { id: 'training', kinds: ['training'] },
+        { id: 'logging', titlePattern: '^log\\b|\\blog (this|last) week|\\blogging\\b|\\btime log\\b' },
+        { id: 'vdp', titlePattern: '\\bVDP\\b' },
+        { id: 'dc', titlePattern: 'deal[- ]contribution' },
+        { id: 'use_case', titlePattern: '\\badd use cases?\\b' },
+        { id: 'expense', titlePattern: '\\bexpense' },
+        { id: 'sweep', titlePattern: 'sweep reminder' },
+      ],
+      payLinked: ['logging', 'dc'],
+      promoteWithinH: 48,
+    },
+  },
   thresholds: [{ key: 'missedOppMinAmountUsd', label: 'Missed opps: smallest deal to check', unit: 'usd', default: 10_000, min: 0, feature: 'missedOpps' }],
 };

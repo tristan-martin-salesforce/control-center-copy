@@ -5,7 +5,8 @@
  * - Only today-scoped, hands-on minutes count (`youMin`): due today, start-by today, or pinned to today.
  * - Agent time runs in the background, in parallel: shown as a quiet violet note, never against the day.
  * - "Over" only when it is true: today's hands-on time is greater than the free time outside meetings.
- *   Only then does the bar get a hatched amber overflow and the word "Over by ~Nh".
+ *   Only then does the bar get a hatched amber overflow and the one wording everywhere: "Overbooked by N min"
+ *   (priority@2 capacity honesty, `overbookedLabel`).
  *
  * `inline` is Home's lead-head line; `bar` is Today's header block (badge, open time, bar, legend).
  */
@@ -13,6 +14,7 @@ import type { ReactNode } from 'react';
 import { cn } from '@/ui';
 import { AiMark, StatusBadge } from './lib';
 import { hm } from './lib/v2';
+import { overbookedLabel } from '@/engines/priority/v2/capacity';
 
 export interface CapacityMeterProps {
   /** Today-scoped hands-on minutes. */
@@ -45,7 +47,7 @@ export function CapacityMeter({ youMin, freeMin, agentMin = 0, agentRuns, dayLab
   const overBy = Math.max(0, youMin - freeMin);
   const verdict = over ? (
     <StatusBadge tone="warning" icon="warning">
-      {variant === 'bar' ? 'Over' : `Over by ${approx(overBy)}`}
+      {overbookedLabel(overBy)}
     </StatusBadge>
   ) : (
     <StatusBadge tone="success" icon="check">
@@ -58,7 +60,7 @@ export function CapacityMeter({ youMin, freeMin, agentMin = 0, agentRuns, dayLab
         {agentRuns ? `${agentRuns} agent run${agentRuns === 1 ? '' : 's'}` : `Agent ${approx(agentMin)}`} in the background
       </AiMark>
     ) : null;
-  const aria = `Capacity${later ? ` for ${dayLabel}` : ''}: about ${hm(approxMin(youMin))} of your work, about ${hm(approxMin(freeMin))} free outside meetings, ${over ? `over by about ${hm(approxMin(overBy))}` : `about ${hm(approxMin(open))} open`}`;
+  const aria = `Capacity${later ? ` for ${dayLabel}` : ''}: about ${hm(approxMin(youMin))} of your work, about ${hm(approxMin(freeMin))} free outside meetings, ${over ? overbookedLabel(overBy).toLowerCase() : `about ${hm(approxMin(open))} open`}`;
   const wrap = (cls: string, children: ReactNode) =>
     onOpen ? (
       <button type="button" onClick={onOpen} className={cn(cls, 'rounded-md text-left hover:bg-surface-muted focus-visible:outline-none focus-visible:shadow-focus', className)}>

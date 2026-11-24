@@ -14,7 +14,8 @@ import type { EntityType } from '@/contract';
 import { focusChat } from '@/components/chat';
 import { IconButton } from '@/ui/Button';
 import { cn } from '@/ui/cn';
-import { KbdHint } from '@/ui/Kbd';
+import { ariaKeyShortcuts, KbdHint } from '@/ui/Kbd';
+import { useIsMac } from '@/client/keyboard/KeyboardProvider';
 import { PanelBoundary } from '@/ui/PanelBoundary';
 import { EmptyState } from '@/ui/states';
 import { Tooltip } from '@/ui/Tooltip';
@@ -114,6 +115,7 @@ export function RightPanelView({ assistant, width, specimen, className }: RightP
   const panel = useRightPanel();
   const internals = usePanelInternals();
   const tabRefs = useRef<Partial<Record<PanelTab, HTMLButtonElement | null>>>({});
+  const isMac = useIsMac();
   const { source } = internals;
 
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
@@ -134,7 +136,9 @@ export function RightPanelView({ assistant, width, specimen, className }: RightP
       style={{ width }}
       className={cn('relative flex min-h-0 shrink-0 flex-col border-l border-line bg-surface', className)}
     >
-      <div role="tablist" aria-label="Panel" className="flex h-14 shrink-0 items-center gap-1 border-b border-line pr-3 pl-4">
+      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-line pr-3 pl-4">
+        {/* the tablist holds only its tabs; Close sits beside it */}
+        <div role="tablist" aria-label="Panel" className="flex items-center gap-1">
         {TABS.map((t) => {
           const sel = panel.tab === t.id;
           return (
@@ -148,6 +152,7 @@ export function RightPanelView({ assistant, width, specimen, className }: RightP
               id={`${ids}-tab-${t.id}`}
               aria-selected={sel}
               aria-controls={`${ids}-${t.id}`}
+              aria-keyshortcuts={t.kbd ? ariaKeyShortcuts(t.kbd, isMac) : undefined}
               tabIndex={sel ? 0 : -1}
               // On /assistant the page is the assistant: its tab focuses the page composer instead.
               onClick={() => (t.id === 'assistant' && internals.assistantHere ? focusChat() : panel.setTab(t.id))}
@@ -158,10 +163,11 @@ export function RightPanelView({ assistant, width, specimen, className }: RightP
               )}
             >
               {t.label}
-              {t.kbd ? <KbdHint combo={t.kbd} tone="quiet" /> : null}
+              {t.kbd ? <KbdHint combo={t.kbd} tone="quiet" decorative /> : null}
             </button>
           );
         })}
+        </div>
         <span className="flex-1" />
         <Tooltip content={<span className="inline-flex items-center gap-1.5">Close <KbdHint combo="escape" tone="inverse" /></span>} side="bottom">
           <IconButton icon="close" label="Close panel" onClick={internals.closeAndRestore} />

@@ -1,0 +1,56 @@
+[
+  {
+    "kind": "record_snapshot",
+    "externalId": "Event:00UXX0000000001EAA@2026-11-04T02:54:04.000+0000",
+    "occurredAt": "2026-11-04T02:54:04.000+0000",
+    "title": "ACME – POV readout",
+    "excerpt": "type=Customer Presentation; meeting_type=; rt=Solutions Event; hrs=0.5; what=ACME – Data 360 Expansion",
+    "oppHints": [
+      "006XX0000000001AAA"
+    ],
+    "accountHints": [],
+    "payload": {
+      "StartDateTime": "2026-10-07T19:00:00.000+0000",
+      "EndDateTime": "2026-10-07T19:25:00.000+0000",
+      "DurationInMinutes": null,
+      "Duration__c": 0.5,
+      "SE_Task_Type__c": "Customer Presentation",
+      "Meeting_Type__c": null,
+      "RecordTypeName": "Solutions Event",
+      "WhatId": "006XX0000000001AAA",
+      "WhatName": "ACME – Data 360 Expansion",
+      "WhatType": null,
+      "AccountId": null,
+      "CreatedDate": null,
+      "ccKey": null,
+      "rec": "auto"
+    }
+  },
+  {
+    "kind": "record_snapshot",
+    "externalId": "Event:00UXX0000000002EAA@2026-11-04T02:54:04.000+0000",
+    "occurredAt": "2026-11-04T02:54:04.000+0000",
+    "title": "BLOCK - UMBRELLA sizing",
+    "excerpt": "type=Solution Creation; meeting_type=; rt=Solutions Event; hrs=1; what=UMBRELLA – Data 360 Flex Credits",
+    "oppHints": [
+      "006XX0000000003AAA"
+    ],
+    "accountHints": [],
+    "payload": {
+      "StartDateTime": "2026-10-07T22:30:00.000+0000",
+      "EndDateTime": "2026-10-07T23:30:00.000+0000",
+      "DurationInMinutes": null,
+      "Duration__c": 1,
+      "SE_Task_Type__c": "Solution Creation",
+      "Meeting_Type__c": null,
+      "RecordTypeName": "Solutions Event",
+      "WhatId": "006XX0000000003AAA",
+      "WhatName": "UMBRELLA – Data 360 Flex Credits",
+      "WhatType": null,
+      "AccountId": null,
+      "CreatedDate": null,
+      "ccKey": null,
+      "rec": "auto"
+    }
+  }
+]

@@ -1,0 +1,28 @@
+{
+  "name": "friday-blueprint",
+  "description": "Fri 2026-11-20 07:30 MT, the Friday blueprint day (CAST storyline 1). Thursday happened: the Elderglen demo and its prep, the Oakhallow call, the Ferrowpay session, Thursday's asks and the morning's quick items are done. Left: the $1.25M Saltmere blueprint due 17:00 (dry run 10:00), the Cascadia onsite agenda due 16:00 (onsite Monday), the mandatory privacy refresh due Saturday, the weekly time log due 16:00 (admin).",
+  "now": "2026-11-20T14:30:00.000Z",
+  "timezone": "America/Denver",
+  "workingHours": { "start": "07:30", "end": "17:30", "days": [1, 2, 3, 4, 5] },
+  "overrides": {
+    "wi-093": { "state": "done" }, "wi-015": { "state": "done" }, "wi-103": { "state": "done" }, "wi-061": { "state": "done" },
+    "wi-060": { "state": "done" }, "wi-031": { "state": "done" }, "wi-032": { "state": "done" }, "wi-105": { "state": "done" },
+    "wi-030": { "state": "done" }, "wi-006": { "state": "done" }, "wi-014": { "state": "done" }, "wi-066": { "state": "done" },
+    "wi-099": { "state": "done" }, "wi-039": { "state": "done" }, "wi-058": { "state": "done" }
+  },
+  "firstScreen": 5,
+  "goldenTop3": [["wi-003"], ["wi-029"], ["wi-053"]],
+  "expectations": [
+    { "kind": "inTop3", "anyOf": ["wi-003"], "note": "the blueprint is due 17:00 and gates the architecture board" },
+    { "kind": "inTop3", "anyOf": ["wi-029"], "note": "ready for the 10:00 dry run" },
+    { "kind": "inTop3", "anyOf": ["wi-053"], "note": "the Cascadia agenda is due 16:00, the onsite is Monday" },
+    { "kind": "notFirstScreen", "ids": ["wi-044", "wi-042"], "note": "still gone quiet: re-date rows" },
+    { "kind": "notFirstScreen", "ids": ["wi-027", "wi-037", "wi-072", "wi-096", "wi-097", "wi-098"], "note": "VDP and sweep admin stay quiet" },
+    { "kind": "order", "above": "wi-003", "below": "wi-090", "note": "the customer deliverable above the weekly time log" },
+    { "kind": "order", "above": "wi-003", "below": "wi-018", "note": "today's blueprint above Tuesday's security questionnaire" },
+    { "kind": "capacity", "is": "fits", "note": "blueprint (4 h) + agenda (1.5 h) + dry-run prep + the log + the training: about 8 h of work against 9 h free (the dry run is the only busy hour; focus holds are for this work). It fits, just" },
+    { "kind": "whyContains", "id": "wi-003", "phrases": ["Priyanka", "$1.25M"] },
+    { "kind": "whyContains", "id": "wi-042", "phrases": ["4 d late", "re-date or drop"] },
+    { "kind": "whyContains", "id": "wi-029", "phrases": ["10:00"] }
+  ]
+}

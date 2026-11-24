@@ -7,6 +7,7 @@
  * ("not in your role's preconfiguration") and can be activated per person in Settings ▸ Role & rules.
  */
 import type { PersonaFeature, PersonaId, PersonaLevel } from '@/contract';
+import type { PriorityConfig, PriorityConfigInput } from '@/engines/priority/v2/config';
 import type { ConnectorId } from '@/scanner/types';
 
 export const ALL_CONNECTORS: readonly ConnectorId[] = ['slack', 'org62', 'gmail', 'calendar', 'drive', 'gemini_notes', 'claude_sessions', 'trainings', 'watch', 'vdp'];
@@ -96,6 +97,12 @@ export interface PersonaDefinition {
   duties: readonly PersonaDuty[];
   rules: readonly PersonaRule[];
   thresholds: readonly PersonaThreshold[];
+  /**
+   * priority@2's weights and rules for this role (lane 07 §4.4): what "customer-facing" and "deal tier" mean, the
+   * owed-reply SLAs, prep rules, the admin classes and what is pay-linked. The engine reads it; it holds no
+   * persona-specific code (*Config over code*). Anything left out takes src/engines/priority/v2/config.ts's default.
+   */
+  priority: PriorityConfigInput;
 }
 
 export interface ResolvedRule {
@@ -133,4 +140,6 @@ export interface ResolvedPersona {
   duties: (PersonaDuty & { active: boolean })[];
   rules: ResolvedRule[];
   thresholds: Record<string, number | string>;
+  /** priority@2's config for this role (the preset's block over the defaults). */
+  priority: PriorityConfig;
 }

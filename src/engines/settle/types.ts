@@ -1,5 +1,5 @@
 /**
- * The Settle pass (docs/ui/SCANNER.md §4.11): one cheap, tool-less model call per work item with the whole
+ * The Settle pass (docs/reference/SCANNER.md §4.11): one cheap, tool-less model call per work item with the whole
  * conversation around it, oldest first, plus calendar events and sibling items. It answers "does this still need me?"
  * with one verdict, a cited line and a plain reason. The policy (policy.ts) turns that into close / ask / leave.
  */

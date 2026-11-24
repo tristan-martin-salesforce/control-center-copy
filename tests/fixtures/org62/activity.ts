@@ -2,8 +2,8 @@
  * PLACEHOLDER fixtures shaped from the real autopilot formats. No real names, ids or amounts:
  * ACME / Globex / Initech, user@example.com, 005/006/001 + PLACEHOLDER ids.
  */
-import type { ActivityConfig, ActivityEntry, ActivityMappings, CalendarEvidence, Org62EventRow } from '@/engines/activity';
-import { newEntry } from '@/engines/activity';
+import type { ActivityConfig, ActivityEntry, ActivityMappings, CalendarEvidence, Org62EventRow } from '@/engines/activity/types';
+import { newEntry } from '@/engines/activity/entry';
 
 export const OWNER = '005PLACEHOLDER0001';
 export const RT = '012PLACEHOLDER0001';

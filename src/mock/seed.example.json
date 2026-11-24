@@ -113,6 +113,14 @@
       "email": "kim.tran@example.com",
       "slackHandle": "U0KIM",
       "accountId": null
+    },
+    {
+      "id": "p_morgan",
+      "name": "Morgan Hale",
+      "role": "Specialist AE · Data Cloud",
+      "email": "morgan.hale@example.com",
+      "slackHandle": "U0MORGAN",
+      "accountId": null
     }
   ],
   "accounts": [
@@ -242,6 +250,7 @@
       "vdpLinked": true,
       "hoursQtd": 30,
       "nextStep": "Phase 2 demo today 13:00",
+      "nextStepRead": true,
       "products": [
         "Data 360",
         "Agentforce"
@@ -252,14 +261,15 @@
         "role": "AE · ACME"
       },
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppacmep20AAA/view",
-      "forecastCategory": "Best Case",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0001AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Best Case",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_acme_af",
@@ -274,6 +284,7 @@
       "vdpLinked": false,
       "hoursQtd": 11.5,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Agentforce"
       ],
@@ -283,14 +294,15 @@
         "role": "AE · ACME"
       },
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppacmeaf0AAA/view",
-      "forecastCategory": "Pipeline",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0002AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Pipeline",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_globex_d360",
@@ -305,6 +317,7 @@
       "vdpLinked": true,
       "hoursQtd": 22,
       "nextStep": "Revised SOW pricing to Marcus",
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
@@ -314,14 +327,15 @@
         "role": "AE · Globex"
       },
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppglobexdAAA/view",
-      "forecastCategory": "Commit",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0003AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Commit",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_globex_renew",
@@ -336,6 +350,7 @@
       "vdpLinked": false,
       "hoursQtd": 0,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
@@ -345,7 +360,9 @@
         "role": "AE · Globex"
       },
       "org62Url": null,
+      "myDc": null,
       "forecastCategory": "Best Case",
+      "isWon": false,
       "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
@@ -361,19 +378,21 @@
       "vdpLinked": false,
       "hoursQtd": 6.5,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
       "owner": null,
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppinitechAAA/view",
-      "forecastCategory": "Pipeline",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0004AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Pipeline",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_umbrella_c360",
@@ -388,19 +407,21 @@
       "vdpLinked": true,
       "hoursQtd": 15,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
       "owner": null,
       "org62Url": null,
-      "forecastCategory": "Best Case",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 50,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0005AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Best Case",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_umbrella_af",
@@ -415,11 +436,15 @@
       "vdpLinked": false,
       "hoursQtd": 4.25,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Agentforce"
       ],
       "owner": null,
       "org62Url": null,
+      "myDc": null,
+      "forecastCategory": null,
+      "isWon": false,
       "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
@@ -435,13 +460,16 @@
       "vdpLinked": false,
       "hoursQtd": 12,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Agentforce",
         "Data 360"
       ],
       "owner": null,
       "org62Url": null,
+      "myDc": null,
       "forecastCategory": "Pipeline",
+      "isWon": false,
       "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
@@ -457,12 +485,23 @@
       "vdpLinked": false,
       "hoursQtd": 0,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
       "owner": null,
+      "team": [
+        {
+          "id": "p_morgan",
+          "name": "Morgan Hale",
+          "role": "Specialist AE · Data Cloud",
+          "org62UserId": "005XX0000SEEDMHAAA"
+        }
+      ],
       "org62Url": null,
+      "myDc": null,
       "forecastCategory": "Pipeline",
+      "isWon": false,
       "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
@@ -478,19 +517,21 @@
       "vdpLinked": false,
       "hoursQtd": 0,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
       "owner": null,
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppglobmcdAAA/view",
-      "forecastCategory": "Pipeline",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0006AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Pipeline",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_nexus",
@@ -505,19 +546,21 @@
       "vdpLinked": false,
       "hoursQtd": 0,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
       "owner": null,
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppnexuscdAAA/view",
-      "forecastCategory": "Pipeline",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0007AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Pipeline",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_cyberdyne",
@@ -532,19 +575,21 @@
       "vdpLinked": false,
       "hoursQtd": 0,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Agentforce"
       ],
       "owner": null,
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppcyberdyAAA/view",
-      "forecastCategory": "Pipeline",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0008AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Pipeline",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     },
     {
       "id": "opp_soylent",
@@ -559,19 +604,21 @@
       "vdpLinked": false,
       "hoursQtd": 0,
       "nextStep": null,
+      "nextStepRead": true,
       "products": [
         "Data 360"
       ],
       "owner": null,
       "org62Url": "https://org62.example.test/lightning/r/Opportunity/006XXoppsoylentAAA/view",
-      "forecastCategory": "Pipeline",
-      "updatedAt": "2026-11-05T00:00:00.000Z",
       "myDc": {
         "split": 100,
         "role": "AI + Data Architect",
         "org62DcId": "a0XXSEEDDC0009AAA",
         "lastSeenAt": "2026-11-04T13:00:00.000Z"
-      }
+      },
+      "forecastCategory": "Pipeline",
+      "isWon": false,
+      "updatedAt": "2026-11-05T00:00:00.000Z"
     }
   ],
   "missedOpps": [
@@ -593,6 +640,7 @@
       "status": "new",
       "dismissReason": null,
       "claimedWorkItemId": null,
+      "dcRequestId": null,
       "foundAt": "2026-11-05T09:00:00.000Z"
     },
     {
@@ -613,6 +661,7 @@
       "status": "new",
       "dismissReason": null,
       "claimedWorkItemId": null,
+      "dcRequestId": null,
       "foundAt": "2026-11-05T09:00:00.000Z"
     },
     {
@@ -634,6 +683,7 @@
       "status": "new",
       "dismissReason": null,
       "claimedWorkItemId": null,
+      "dcRequestId": null,
       "foundAt": "2026-11-05T09:00:00.000Z"
     },
     {
@@ -652,6 +702,7 @@
       "status": "dismissed",
       "dismissReason": "Marketing SE owns it",
       "claimedWorkItemId": null,
+      "dcRequestId": null,
       "foundAt": "2026-10-29T09:00:00.000Z"
     }
   ],
@@ -4191,8 +4242,8 @@
       "toolAdapterId": null,
       "toolInputs": null,
       "claudeLaunch": {
-        "url": "claude://code/new?folder=%2FUsers%2Fexample%2FProjects%2Fcontrol-center&q=Build%20the%20ACME%20Phase%202%20demo%20org%20%5Bcc%3Aw_acme_build%5D",
-        "folder": "/Users/example/Projects/control-center",
+        "url": "claude://code/new?folder=%2FUsers%2Fexample%2FProjects%2Fcommand-center&q=Build%20the%20ACME%20Phase%202%20demo%20org%20%5Bcc%3Aw_acme_build%5D",
+        "folder": "/Users/example/Projects/command-center",
         "promptPreview": "Build the ACME Phase 2 demo org: load unified profiles, wire the headless portal… [cc:w_acme_build]"
       },
       "runId": "run_acme_build",
@@ -4703,8 +4754,8 @@
       "toolAdapterId": null,
       "toolInputs": null,
       "claudeLaunch": {
-        "url": "claude://code/new?folder=%2FUsers%2Fexample%2FProjects%2Fcontrol-center&q=Package%20the%20Beacon%20app%20for%20Ravi%20%5Bcc%3Aw_promise_beacon%5D",
-        "folder": "/Users/example/Projects/control-center",
+        "url": "claude://code/new?folder=%2FUsers%2Fexample%2FProjects%2Fcommand-center&q=Package%20the%20Beacon%20app%20for%20Ravi%20%5Bcc%3Aw_promise_beacon%5D",
+        "folder": "/Users/example/Projects/command-center",
         "promptPreview": "Package the Beacon app for Ravi… [cc:w_promise_beacon]"
       },
       "runId": null,
@@ -4779,12 +4830,12 @@
           }
         ]
       },
-      "plainText": "Hi Dana, confirmed for today at 13:00. Scope:\n- Unified profiles grounding the agent answers\n- Headless rendering in your React portal\n- Service-agent handoff moves to Phase 3, as agreed on Tuesday\nRaj will follow up with pricing after the demo.",
+      "plainText": "Hi Dana, confirmed for today at 13:00. Scope:\n- Unified profiles grounding the agent answers\n- Headless rendering in your React portal\n- Service-agent handoff moves to Phase 3, as agreed on Tuesday\n\nRaj will follow up with pricing after the demo.",
       "rendered": {
         "slack_mrkdwn": {
           "format": "slack_mrkdwn",
-          "body": "Hi Dana, confirmed for today at 13:00. Scope:\n- Unified profiles grounding the agent answers\n- Headless rendering in your React portal\n- Service-agent handoff moves to Phase 3, as agreed on Tuesday\nRaj will follow up with pricing after the demo.",
-          "text": "Hi Dana, confirmed for today at 13:00. Scope:\n- Unified profiles grounding the agent answers\n- Headless rendering in your React portal\n- Service-agent handoff moves to Phase 3, as agreed on Tuesday\nRaj will follow up with pricing after the demo.",
+          "body": "Hi Dana, confirmed for today at 13:00. Scope:\n- Unified profiles grounding the agent answers\n- Headless rendering in your React portal\n- Service-agent handoff moves to Phase 3, as agreed on Tuesday\n\nRaj will follow up with pricing after the demo.",
+          "text": "Hi Dana, confirmed for today at 13:00. Scope:\n- Unified profiles grounding the agent answers\n- Headless rendering in your React portal\n- Service-agent handoff moves to Phase 3, as agreed on Tuesday\n\nRaj will follow up with pricing after the demo.",
           "lossy": []
         }
       },
@@ -4833,7 +4884,8 @@
       "scheduledFor": null,
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_globex_sow",
@@ -4908,12 +4960,12 @@
           }
         ]
       },
-      "plainText": "Hi Marcus,\nAttached is the revised SOW with the updated Data 360 pricing. The main change is the consumption tier, which now matches the volumes from your team’s estimate.\nElena will confirm the discount approval today.\nBest,\nJordan",
+      "plainText": "Hi Marcus,\n\nAttached is the revised SOW with the updated Data 360 pricing. The main change is the consumption tier, which now matches the volumes from your team’s estimate.\n\nElena will confirm the discount approval today.\n\nBest,\nJordan",
       "rendered": {
         "email_html": {
           "format": "email_html",
-          "body": "<p>Hi Marcus,</p>\n<p>Attached is the revised SOW with the updated Data 360 pricing. The main change is the consumption tier, which now matches the volumes from your team’s estimate.</p>\n<p>Elena will confirm the discount approval today.</p>\n<p>Best,<br>Jordan</p>",
-          "text": "Hi Marcus,\nAttached is the revised SOW with the updated Data 360 pricing. The main change is the consumption tier, which now matches the volumes from your team’s estimate.\nElena will confirm the discount approval today.\nBest,\nJordan",
+          "body": "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222222;\"><p style=\"margin:0 0 12px 0;\">Hi Marcus,</p><p style=\"margin:0 0 12px 0;\">Attached is the revised SOW with the updated Data 360 pricing. The main change is the consumption tier, which now matches the volumes from your team’s estimate.</p><p style=\"margin:0 0 12px 0;\">Elena will confirm the discount approval today.</p><p style=\"margin:0 0 12px 0;\">Best,<br>Jordan</p></div>",
+          "text": "Hi Marcus,\n\nAttached is the revised SOW with the updated Data 360 pricing. The main change is the consumption tier, which now matches the volumes from your team’s estimate.\n\nElena will confirm the discount approval today.\n\nBest,\nJordan",
           "lossy": []
         }
       },
@@ -4929,7 +4981,8 @@
       "scheduledFor": null,
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_onepager",
@@ -4992,12 +5045,12 @@
           }
         ]
       },
-      "plainText": "Hi Dana,\nAs promised, here is the Phase 2 architecture one-pager. It covers the headless data flow and where the agent grounding happens.\nSee you at 13:00.\nJordan",
+      "plainText": "Hi Dana,\n\nAs promised, here is the Phase 2 architecture one-pager. It covers the headless data flow and where the agent grounding happens.\n\nSee you at 13:00.\n\nJordan",
       "rendered": {
         "email_html": {
           "format": "email_html",
-          "body": "<p>Hi Dana,</p>\n<p>As promised, here is the Phase 2 architecture one-pager. It covers the headless data flow and where the agent grounding happens.</p>\n<p>See you at 13:00.</p>\n<p>Jordan</p>",
-          "text": "Hi Dana,\nAs promised, here is the Phase 2 architecture one-pager. It covers the headless data flow and where the agent grounding happens.\nSee you at 13:00.\nJordan",
+          "body": "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222222;\"><p style=\"margin:0 0 12px 0;\">Hi Dana,</p><p style=\"margin:0 0 12px 0;\">As promised, here is the Phase 2 architecture one-pager. It covers the headless data flow and where the agent grounding happens.</p><p style=\"margin:0 0 12px 0;\">See you at 13:00.</p><p style=\"margin:0 0 12px 0;\">Jordan</p></div>",
+          "text": "Hi Dana,\n\nAs promised, here is the Phase 2 architecture one-pager. It covers the headless data flow and where the agent grounding happens.\n\nSee you at 13:00.\n\nJordan",
           "lossy": []
         }
       },
@@ -5011,7 +5064,8 @@
       "scheduledFor": null,
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_priya",
@@ -5082,7 +5136,8 @@
       "scheduledFor": null,
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_nce",
@@ -5130,7 +5185,8 @@
       "scheduledFor": null,
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_nudge_globex",
@@ -5182,12 +5238,12 @@
           }
         ]
       },
-      "plainText": "Hi Marcus, checking in on the DPA review. Is there anything legal needs from us to wrap it up this week?\nThanks,\nJordan",
+      "plainText": "Hi Marcus, checking in on the DPA review. Is there anything legal needs from us to wrap it up this week?\n\nThanks,\nJordan",
       "rendered": {
         "email_html": {
           "format": "email_html",
-          "body": "<p>Hi Marcus, checking in on the DPA review. Is there anything legal needs from us to wrap it up this week?</p>\n<p>Thanks,<br>Jordan</p>",
-          "text": "Hi Marcus, checking in on the DPA review. Is there anything legal needs from us to wrap it up this week?\nThanks,\nJordan",
+          "body": "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222222;\"><p style=\"margin:0 0 12px 0;\">Hi Marcus, checking in on the DPA review. Is there anything legal needs from us to wrap it up this week?</p><p style=\"margin:0 0 12px 0;\">Thanks,<br>Jordan</p></div>",
+          "text": "Hi Marcus, checking in on the DPA review. Is there anything legal needs from us to wrap it up this week?\n\nThanks,\nJordan",
           "lossy": []
         }
       },
@@ -5201,7 +5257,8 @@
       "scheduledFor": null,
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_chat_initech",
@@ -5249,7 +5306,8 @@
       "scheduledFor": null,
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_sched_hooli",
@@ -5297,7 +5355,8 @@
       "scheduledFor": "2026-11-05T23:30:00.000Z",
       "attempts": [],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_sent_umbrella",
@@ -5337,7 +5396,7 @@
       "rendered": {
         "email_html": {
           "format": "email_html",
-          "body": "<p>Hi Alice, here is the HIPAA FAQ link we discussed: https://example.com/hipaa-faq</p>",
+          "body": "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222222;\"><p style=\"margin:0 0 12px 0;\">Hi Alice, here is the HIPAA FAQ link we discussed: https://example.com/hipaa-faq</p></div>",
           "text": "Hi Alice, here is the HIPAA FAQ link we discussed: https://example.com/hipaa-faq",
           "lossy": []
         }
@@ -5364,7 +5423,8 @@
         "at": "2026-11-05T14:39:00.000Z",
         "detail": "Verified in Gmail ✓"
       },
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_sent_sso",
@@ -5424,7 +5484,8 @@
         "at": null,
         "detail": "Read-back pending"
       },
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     },
     {
       "id": "dr_failed_globex",
@@ -5464,7 +5525,7 @@
       "rendered": {
         "email_html": {
           "format": "email_html",
-          "body": "<p>Hi Marcus, attached is the D360 consumption estimate for the expansion scope.</p>",
+          "body": "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#222222;\"><p style=\"margin:0 0 12px 0;\">Hi Marcus, attached is the D360 consumption estimate for the expansion scope.</p></div>",
           "text": "Hi Marcus, attached is the D360 consumption estimate for the expansion scope.",
           "lossy": []
         }
@@ -5488,7 +5549,8 @@
         }
       ],
       "verification": null,
-      "rejectedReason": null
+      "rejectedReason": null,
+      "resultUrl": null
     }
   ],
   "proposals": [
@@ -6337,7 +6399,7 @@
       "finishedAt": null,
       "lastEvent": "Queued: starts after the ACME build",
       "waiting": null,
-      "deepLink": "claude://code/new?folder=%2FUsers%2Fexample%2FProjects%2Fcontrol-center&q=Package%20the%20Beacon%20app%20for%20Ravi%20%5Bcc%3Aw_promise_beacon%5D",
+      "deepLink": "claude://code/new?folder=%2FUsers%2Fexample%2FProjects%2Fcommand-center&q=Package%20the%20Beacon%20app%20for%20Ravi%20%5Bcc%3Aw_promise_beacon%5D",
       "sessionId": null,
       "cwd": null,
       "bgAgents": 0,
@@ -6461,6 +6523,44 @@
   ],
   "toolAdapters": [
     {
+      "id": "talk-track",
+      "name": "Talk Track",
+      "description": "Generate a talk track (slides + live demo) for an event",
+      "icon": "wrench",
+      "launchKind": "http",
+      "fields": [
+        {
+          "key": "customer",
+          "label": "Customer",
+          "required": true,
+          "prefill": "{{task.account.name}}",
+          "type": "string"
+        },
+        {
+          "key": "name",
+          "label": "Talk track name",
+          "required": true,
+          "prefill": "{{event.title}}",
+          "type": "string"
+        },
+        {
+          "key": "eventId",
+          "label": "Event",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "health": {
+        "state": "ok",
+        "checkedAt": "2026-11-05T16:00:00.000Z",
+        "message": null
+      },
+      "estimatedDuration": null,
+      "requiresConfirm": true,
+      "enabled": true,
+      "recentRunIds": [
+        "tr_talktrack_acme"
+      ],
       "manifest": {
         "id": "talk-track",
         "name": "Talk Track",
@@ -6580,18 +6680,47 @@
           "requiresApproval": true,
           "dataClass": "customer"
         }
-      },
-      "health": {
-        "state": "ok",
-        "checkedAt": "2026-11-05T16:00:00.000Z",
-        "message": null
-      },
-      "enabled": true,
-      "recentRunIds": [
-        "tr_talktrack_acme"
-      ]
+      }
     },
     {
+      "id": "pulse-footprint",
+      "name": "Pulse Footprint",
+      "description": "Org footprint and usage pulse for an account (slides export)",
+      "icon": "wrench",
+      "launchKind": "http",
+      "fields": [
+        {
+          "key": "orgId",
+          "label": "Org",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "key": "format",
+          "label": "format",
+          "required": false,
+          "type": "enum",
+          "options": [
+            {
+              "value": "pptx",
+              "label": "pptx"
+            },
+            {
+              "value": "link",
+              "label": "link"
+            }
+          ]
+        }
+      ],
+      "health": {
+        "state": "down",
+        "checkedAt": "2026-11-05T16:00:00.000Z",
+        "message": "Connection refused on :4318 (not running)"
+      },
+      "estimatedDuration": null,
+      "requiresConfirm": true,
+      "enabled": true,
+      "recentRunIds": [],
       "manifest": {
         "id": "pulse-footprint",
         "name": "Pulse Footprint",
@@ -6694,16 +6823,56 @@
           "requiresApproval": true,
           "dataClass": "customer"
         }
-      },
-      "health": {
-        "state": "down",
-        "checkedAt": "2026-11-05T16:00:00.000Z",
-        "message": "Connection refused on :4318 (not running)"
-      },
-      "enabled": true,
-      "recentRunIds": []
+      }
     },
     {
+      "id": "afd360-estimator",
+      "name": "D360/AF Estimator",
+      "description": "Defensible Data 360 + Agentforce consumption estimate",
+      "icon": "wrench",
+      "launchKind": "cli",
+      "fields": [
+        {
+          "key": "account",
+          "label": "Account",
+          "required": true,
+          "prefill": "{{task.account.name}}",
+          "type": "string"
+        },
+        {
+          "key": "scenario",
+          "label": "Scenario",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "key": "format",
+          "label": "format",
+          "required": false,
+          "type": "enum",
+          "options": [
+            {
+              "value": "xlsx",
+              "label": "xlsx"
+            },
+            {
+              "value": "md",
+              "label": "md"
+            }
+          ]
+        }
+      ],
+      "health": {
+        "state": "ok",
+        "checkedAt": "2026-11-05T15:55:00.000Z",
+        "message": null
+      },
+      "estimatedDuration": null,
+      "requiresConfirm": false,
+      "enabled": true,
+      "recentRunIds": [
+        "tr_estimator_fail"
+      ],
       "manifest": {
         "id": "afd360-estimator",
         "name": "D360/AF Estimator",
@@ -6791,16 +6960,7 @@
           "requiresApproval": false,
           "dataClass": "customer"
         }
-      },
-      "health": {
-        "state": "ok",
-        "checkedAt": "2026-11-05T15:55:00.000Z",
-        "message": null
-      },
-      "enabled": true,
-      "recentRunIds": [
-        "tr_estimator_fail"
-      ]
+      }
     }
   ],
   "toolRuns": [
@@ -6873,8 +7033,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-03T16:00:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Discovery workshop with the ACME Corp commerce team on the Phase 2 headless storefront: mapped their order and profile sources. Next step: Send the Phase 2 architecture draft.",
-      "logNoteBasis": "summary"
+      "logNoteBasis": "summary",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_mon_prep",
@@ -6895,8 +7063,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-03T16:00:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Internal demo prep for ACME Corp on Workshop prep.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_mon_globex_arch",
@@ -6932,7 +7108,9 @@
       "internal": false,
       "dismissSource": null,
       "logNote": "Solution design with the Globex team on architecture call.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_mon_acme_review",
@@ -6968,7 +7146,9 @@
       "internal": false,
       "dismissSource": null,
       "logNote": "Discovery with the ACME Corp team on architecture review.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_tue_globex",
@@ -6995,8 +7175,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Executive briefing with the Globex team.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_tue_sow",
@@ -7022,8 +7210,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Proposal for Globex: edited 'Globex SOW v3' in Drive.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_wed_umbrella",
@@ -7052,8 +7248,16 @@
         "Org62 shows 1h; you logged 1.5h"
       ],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Technical deep dive with the Umbrella Health team.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_wed_hooli",
@@ -7082,8 +7286,16 @@
         "Needs an opp (WhatId) and a task type"
       ],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Onsite day at Hooli: meeting with the Hooli team.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_tue_slack_initech",
@@ -7225,8 +7437,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Solution design for Hooli: edited 'Hooli NCE evaluation plan' in Drive.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_wed_internal",
@@ -7247,8 +7467,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Meeting: SE enablement sync (internal).",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_thu_standup",
@@ -7269,8 +7497,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Meeting: SE team stand-up (internal).",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_thu_acme",
@@ -7297,8 +7533,16 @@
       "userLockedFields": [],
       "issues": [],
       "updatedAt": "2026-11-05T13:07:00.000Z",
+      "fromOrg62": false,
+      "excludedReason": null,
+      "loggedAt": null,
+      "verifiedAt": null,
+      "internal": false,
+      "dismissSource": null,
       "logNote": "Demo with the ACME Corp team on Phase 2 demo.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_mon_cert",
@@ -7336,7 +7580,9 @@
         "label": "'Data Cloud certification study group'"
       },
       "logNote": "Learning session: Data Cloud certification study group (internal, no customer).",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_tue_repo",
@@ -7375,7 +7621,9 @@
         "label": "demo-kit"
       },
       "logNote": "Internal asset build in demo-kit: Claude Code work on 'Demo kit portal build'.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     },
     {
       "id": "ac_wed_docs",
@@ -7418,7 +7666,9 @@
         "label": "unmapped Drive docs"
       },
       "logNote": "Internal asset build: edited 'Demo script template' and 'Estimator skill notes' in Drive.",
-      "logNoteBasis": "template"
+      "logNoteBasis": "template",
+      "why": null,
+      "suggestion": null
     }
   ],
   "timeBlocks": [
@@ -8568,13 +8818,44 @@
       "defaultMode": "draft",
       "dryRun": true,
       "verifyReadback": true,
-      "undoWindowSec": 10
+      "undoWindowSec": 10,
+      "channels": {
+        "slack": {
+          "mode": "draft"
+        },
+        "gmail": {
+          "mode": "draft"
+        },
+        "vdp": {
+          "mode": "send",
+          "autopilot": false,
+          "dailyCap": 40
+        },
+        "slack_canvas": {
+          "mode": "send"
+        }
+      },
+      "autopilotAssetHosts": [
+        "salesforce.com",
+        "force.com",
+        "my.salesforce.com",
+        "salesforce-sites.com",
+        "trailhead.com",
+        "sfdcstatic.com",
+        "drive.google.com",
+        "docs.google.com",
+        "slides.google.com"
+      ]
     },
     "budgets": {
       "version": 1,
       "softUsd": 5,
       "hardUsd": 15,
-      "alertPct": 80
+      "alertPct": 80,
+      "readinUsdPerDay": 2,
+      "triageEscalationUsdPerDay": 1,
+      "today": null,
+      "raises": []
     },
     "display": {
       "version": 1,
@@ -8583,6 +8864,130 @@
       "shortcutsEnabled": true,
       "scheme": "dark",
       "textSize": 16
+    },
+    "chat": {
+      "version": 1,
+      "defaultModel": "sonnet",
+      "dailyUsd": 3,
+      "messageUsd": {
+        "sonnet": 0.25,
+        "opus": 0.6,
+        "haiku": 0.05
+      },
+      "maxSteps": 200,
+      "researchUsd": 0.5,
+      "routing": "auto"
+    },
+    "time": {
+      "version": 1,
+      "detectOnsite": true,
+      "onsiteHours": {
+        "start": "08:00",
+        "end": "17:00"
+      },
+      "airportBufferMin": 60,
+      "dinnersCustomerFacing": true,
+      "logging": {
+        "mode": "on_demand",
+        "canvas": "per_batch",
+        "autoAt": "17:30",
+        "approveComplete": true,
+        "sharedCanvasId": null,
+        "org62RecordTypeId": null,
+        "workOrderCanvasUrl": null
+      },
+      "overlaps": "log_all_accepted",
+      "coveredAes": [
+        {
+          "name": "Morgan Hale",
+          "org62UserId": "005XX0000SEEDMHAAA",
+          "email": "morgan.hale@example.com",
+          "enabled": true,
+          "kind": "ae"
+        },
+        {
+          "name": "Elena Cruz",
+          "email": "elena.cruz@example.com",
+          "enabled": true,
+          "kind": "ooo",
+          "window": {
+            "from": "2026-10-29",
+            "to": "2026-11-12"
+          },
+          "creditShare": 50,
+          "note": "covering for Elena Cruz OOO"
+        },
+        {
+          "name": "Raj Mehta",
+          "email": "raj.mehta@example.com",
+          "enabled": true,
+          "kind": "sme",
+          "window": {
+            "from": "2026-10-22"
+          },
+          "creditShare": 25,
+          "note": "SME on Agentforce call"
+        }
+      ]
+    },
+    "scanning": {
+      "version": 1,
+      "channelAsks": "ask",
+      "meetingCatchUps": false,
+      "oppTeamCatchUps": false,
+      "mappingQuestions": "mine",
+      "vdpRefreshScript": "~/.claude/scripts/refresh_vdp_fir_cookie.py",
+      "vdpPython": ""
+    },
+    "closing": {
+      "version": 1,
+      "enabled": true,
+      "reasons": {
+        "done_by_you": "close",
+        "resolved_by_other": "close",
+        "moment_passed": "close",
+        "not_yours": "close",
+        "not_an_ask": "close",
+        "duplicate": "close",
+        "superseded": "close",
+        "gone_quiet": "close"
+      },
+      "strictness": "balanced",
+      "askFirstExternalCommitments": true,
+      "askFirstPeople": [],
+      "askFirstChannels": [],
+      "rules": "",
+      "reopenOnFollowUp": true,
+      "oldAskDays": 30,
+      "strongerModelForUnclear": true,
+      "strongerModelUsdPerDay": 1,
+      "tellMeWhatClosed": true,
+      "resolutionEngine": "shadow"
+    },
+    "persona": {
+      "version": 1,
+      "id": "se",
+      "level": null,
+      "rules": {},
+      "customRules": [],
+      "thresholds": {},
+      "features": {},
+      "connectors": {}
+    },
+    "feedback": {
+      "version": 1,
+      "channelId": "",
+      "channelName": "",
+      "postLive": true
+    },
+    "guide": {
+      "version": 1,
+      "checklistDismissed": false,
+      "seen": {}
+    },
+    "priority": {
+      "version": 1,
+      "engine": "shadow"
     }
   },
   "policyVersions": [

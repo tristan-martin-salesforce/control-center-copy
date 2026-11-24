@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\") for tests/stress/fti-ab.test.ts, keyed by the classifier ledger hash. Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npx vitest run tests/stress/fti-ab.test.ts.",
+  "entries": [
+    {
+      "hash": "4f2fe7087a39bd5e399c7c2c38240a18",
+      "label": "classify | D0DM00004:1793466000.000100",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0DM00004:1793466000.000100\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Review the GLOBEX sizing sheet for PERSON_G\", \"who\": \"PERSON_G\", \"deliverable\": \"sheet\", \"due\": \"2026-11-02\", \"conf\": 0.93, \"cite\": \"Can you review the GLOBEX sizing sheet first thing Monday?\", \"link\": null, \"why\": \"direct ask in a DM, due Monday\"}]}"
+    },
+    {
+      "hash": "64fef4383d7f2d4a9f14033648238cb5",
+      "label": "classify | D0DM00004:1793563200.000100",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0DM00004:1793563200.000100\", \"v\": \"fyi\", \"due\": null, \"conf\": 0.85, \"cite\": \"fyi the GLOBEX meeting moved to 2pm\", \"link\": \"w1\", \"why\": \"a schedule update, nothing asked\"}]}"
+    },
+    {
+      "hash": "e67b5c7fc28f5837c620616445a66fe8",
+      "label": "classify | D0DM00001:1793808300.000100 , D0DM00001:1793809200.000100 , D0DM00002:1793811600.000100 , D0DM00002:1793811720.000100",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0DM00001:1793808300.000100\", \"v\": \"fyi\", \"due\": null, \"conf\": 0.75, \"cite\": \"the connection times out on step 3\", \"link\": null, \"why\": \"PERSON_B reports an install problem; my reply carries the promise\"}, {\"ref\": \"D0DM00001:1793809200.000100\", \"v\": \"commitment\", \"kind\": \"deliverable\", \"title\": \"Package APP_X as a desktop app for PERSON_B\", \"who\": \"PERSON_B\", \"deliverable\": \"app\", \"due\": null, \"conf\": 0.78, \"cite\": \"I'm going to figure out how to distribute as a desktop app\", \"link\": null, \"why\": \"medium commitment to PERSON_B\"}, {\"ref\": \"D0DM00002:1793811600.000100\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Send ACME demo deck to PERSON_D\", \"who\": \"PERSON_D\", \"deliverable\": \"deck\", \"due\": \"2026-11-06\", \"conf\": 0.94, \"cite\": \"can you send me the ACME demo deck before Friday?\", \"link\": null, \"why\": \"direct ask in a DM, due Friday\"}, {\"ref\": \"D0DM00002:1793811720.000100\", \"v\": \"progress\", \"due\": null, \"conf\": 0.85, \"cite\": \"Sure, I'll send the ACME demo deck tonight.\", \"link\": \"D0DM00002:1793811600.000100\", \"why\": \"my promise to send it tonight\"}]}"
+    },
+    {
+      "hash": "922f8d7787356657015a3dce0b0aa3ba",
+      "label": "classify | C0ACME001:1793815200.000100 , C0ACME001:1793820600.000200 , C0ACME001:1793890800.000300",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"C0ACME001:1793815200.000100\", \"v\": \"ask\", \"kind\": \"deliverable\", \"title\": \"Update the pricing slide in the ACME POV deck for PERSON_C\", \"who\": \"PERSON_C\", \"deliverable\": \"deck\", \"due\": null, \"conf\": 0.94, \"cite\": \"can you update the pricing slide in the ACME POV deck?\", \"link\": null, \"why\": \"@-mention ask in the account channel\"}, {\"ref\": \"C0ACME001:1793820600.000200\", \"v\": \"completion\", \"due\": null, \"conf\": 0.92, \"cite\": \"Done, see deck\", \"link\": \"C0ACME001:1793815200.000100\", \"why\": \"my reply in the thread delivers the update\"}, {\"ref\": \"C0ACME001:1793890800.000300\", \"v\": \"change\", \"due\": null, \"conf\": 0.85, \"cite\": \"Can you also add a slide on data residency for their EU team?\", \"link\": \"C0ACME001:1793815200.000100\", \"why\": \"one more slide asked after the update\"}]}"
+    }
+  ]
+}

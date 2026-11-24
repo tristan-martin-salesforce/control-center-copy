@@ -10,7 +10,7 @@
  * `(ctx) => AsyncIterable<ChatStep>`; it reads and writes only through `ctx.ops` / `ctx.host` (actor
  * `chat`, never a user lock; BE-CHAT changes are proposals the user applies).
  */
-import type { ChatModel, ContextRef } from '@/contract';
+import type { ChatModel, ChatRoute, ContextRef } from '@/contract';
 import { EntityType as EntityTypeSchema } from '@/contract';
 import type { ChatHost, ChatTurnRunner } from '@/llm/chat/types';
 import { AppError } from '@/server/errors';
@@ -33,6 +33,10 @@ export interface DbChatContext {
   host?: ChatHost;
   /** ChatRequest.allowExtraUsd: a one-time approval to spend more on this message. */
   allowExtraUsd?: number;
+  /** ChatRequest.continueMessageId: "Allow more" continues that stopped message (ASSIST-2). */
+  continueMessageId?: string;
+  /** Assistant v2: the router's choice for this turn. */
+  route?: ChatRoute;
 }
 
 export type DbChatBackend = (ctx: DbChatContext) => AsyncIterable<ChatStep>;
@@ -48,7 +52,7 @@ export const notWiredChatBackend: DbChatBackend = () => ({
 export function chatRunnerBackend(runner: ChatTurnRunner): DbChatBackend {
   return (ctx) => {
     if (!ctx.host || !ctx.messageId || !ctx.userMessageId) return notWiredChatBackend(ctx);
-    return runner({ threadId: ctx.threadId, messageId: ctx.messageId, userMessageId: ctx.userMessageId, text: ctx.text, context: ctx.context, model: ctx.model, signal: ctx.signal, ...(ctx.allowExtraUsd ? { allowExtraUsd: ctx.allowExtraUsd } : {}) }, ctx.host);
+    return runner({ threadId: ctx.threadId, messageId: ctx.messageId, userMessageId: ctx.userMessageId, text: ctx.text, context: ctx.context, model: ctx.model, signal: ctx.signal, ...(ctx.allowExtraUsd ? { allowExtraUsd: ctx.allowExtraUsd } : {}), ...(ctx.continueMessageId ? { continueMessageId: ctx.continueMessageId } : {}), ...(ctx.route ? { route: ctx.route } : {}) }, ctx.host);
   };
 }
 

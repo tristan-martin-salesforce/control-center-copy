@@ -18,6 +18,7 @@ import { gapEntities } from '@/server/vdp/coverage';
 import { assetKeyOf, VDP_ASSET_TYPES } from '@/engines/vdp/assets';
 import type { CandidateRecord } from '@/server/vdp/detail';
 import type { Org62UseCase, UseCaseLink } from '@/engines/activity/use-cases';
+import { seedScale } from './scale';
 
 export const MOCK_VDP_BASE = 'https://vdp.example.test';
 
@@ -49,6 +50,16 @@ function placeholderUseCase(n: number, o: Partial<VdpUseCase>): VdpUseCase {
     detailLoaded: true,
     ...o,
   };
+}
+
+/**
+ * C9 smoke at scale (src/mock/scale.ts): at CC_SEED_SCALE ≥ 4 the first VDP carries 4 × n more use cases with gaps
+ * (no priority, division, persona or details), so the VDP page shows 60+ items to fix. Below 4: none (unchanged).
+ */
+export function scaledUseCases(n: number): VdpUseCase[] {
+  if (n < 4) return [];
+  const tracks = ['d360', 'agentforce'] as const;
+  return Array.from({ length: 4 * n }, (_, i) => placeholderUseCase(10 + i, { track: tracks[i % 2]!, title: `Placeholder use case ${i + 1}`, ...(i % 3 === 0 ? { priority: '2 - Medium' } : {}) }));
 }
 
 /** D-63: an open opp where my DC split is 100%. */
@@ -101,6 +112,7 @@ export function mockVdpSnapshots(accounts: Account[], opps: Opportunity[], me: {
       useCases: [
         placeholderUseCase(1, { title: 'Unified customer profile', priority: '3 - High', division: 'Sales', persona: 'Data team', detailsInput: 'Placeholder details.', executionPhase: 'Build', executionTargetDate: '2027-01-15', hasAi: true, generatedFields: { executive_summary: 'Placeholder summary.' } }),
         placeholderUseCase(2, { track: 'agentforce', title: 'Service agent deflection', priority: '2 - Medium', division: 'Service', detailsInput: 'Placeholder details.' }),
+        ...scaledUseCases(seedScale()),
       ],
       stakeholders: [{ id: uid(3000), name: 'Stakeholder Placeholder', title: 'VP of Service', role: 'Champion', notes: null }],
       assets: [],

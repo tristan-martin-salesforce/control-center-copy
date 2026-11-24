@@ -11,6 +11,7 @@
 import { useId, type ReactNode } from 'react';
 import type { HistoryDay } from '@/contract';
 import { ContextRow, SectionHead, type Edge } from '@/components/deals/context-frame';
+import { AppLink } from '@/components/shell/AppLink';
 import { cn, fmtClock, StatePill } from '@/ui';
 import { activityStatusLabel, fmtH, fmtMin, kindLabel, longDay, runKindLabel, runStateLabel, type RowRef, type SectionId } from './derive';
 
@@ -90,8 +91,16 @@ export function DaySections({ day, sections, tz, selected, openId, rows, onOpen 
     if (sec === 'time' && (day.time.entries.length || day.time.agentMin || day.time.signals.focusMin + day.time.signals.driveMin + day.time.signals.slackMin)) {
       const t = day.time;
       out.push(
-        <Section key={sec} title="Time logged" count={t.yourH ? t.entries.filter((e) => e.status !== 'dismissed' && e.status !== 'upcoming').length : undefined} sub={t.yourH ? `${fmtH(t.yourH)} yours · CF ${fmtH(t.cfH)} · CR ${fmtH(t.crH)}${t.unmarkedH ? ` · ${fmtH(t.unmarkedH)} not marked` : ''}` : 'none of your hours counted yet'}>
-          {t.byAccount.length ? <HoursByAccount day={day} /> : null}
+        // the Journal does not repeat the hours' totals (D-102, C8): Activity ▸ History is where they are counted
+        <Section
+          key={sec}
+          title="Time logged"
+          sub={
+            <AppLink href="/activity?view=history" className="font-bold text-link hover:underline" data-testid="journal-time-link">
+              Time logged: see Activity ▸ History
+            </AppLink>
+          }
+        >
           {t.entries.map((e) => {
             const counted = e.status !== 'dismissed' && e.status !== 'upcoming';
             return row(`act:${e.id}`, {
@@ -185,27 +194,6 @@ function Section({ title, count, sub, children }: { title: string; count?: numbe
         {children}
       </div>
     </section>
-  );
-}
-
-/** Hours by account with the CF/CR split: neutral bars (no per-account colour). */
-function HoursByAccount({ day }: { day: HistoryDay }) {
-  const max = Math.max(...day.time.byAccount.map((g) => g.hours), 0.25);
-  return (
-    <div className="mx-6 mb-2 grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-caption" aria-label="Hours by account">
-      {day.time.byAccount.map((g) => (
-        <div key={g.label} className="contents">
-          <span className={cn('truncate', g.label === 'No account' || g.label === 'Internal' ? 'text-muted' : 'text-fg')}>{g.label}</span>
-          <span aria-hidden className="h-1.5 overflow-hidden rounded-full bg-surface-sunken">
-            <span className="block h-full rounded-full bg-line-strong" style={{ width: `${Math.max(6, Math.round((g.hours / max) * 100))}%` }} />
-          </span>
-          <span className="text-right whitespace-nowrap text-muted tabular-nums">
-            <span className="font-bold text-fg">{fmtH(g.hours)}</span>
-            {g.cfH || g.crH ? ` · CF ${fmtH(g.cfH)} · CR ${fmtH(g.crH)}` : ''}
-          </span>
-        </div>
-      ))}
-    </div>
   );
 }
 

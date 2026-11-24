@@ -14,11 +14,12 @@ describe('setup', () => {
   let server: Server | null = null;
   afterEach(() => new Promise<void>((r) => (server ? server.close(() => r()) : r())));
 
-  it('opens /onboarding on the env file’s port (the shell’s PORT wins), else 4327', () => {
+  it('opens /onboarding on the env file’s port (it wins over the shell’s, as the services run: P34-1), else the shell’s, else 4327', () => {
     const env = (e: Record<string, string>) => e as unknown as NodeJS.ProcessEnv;
     expect(onboardingUrl({}, env({}))).toBe('http://localhost:4327/onboarding');
     expect(onboardingUrl({ PORT: '4347' }, env({}))).toBe('http://localhost:4347/onboarding');
-    expect(onboardingUrl({ PORT: '4347' }, env({ PORT: '4350' }))).toBe('http://localhost:4350/onboarding');
+    expect(onboardingUrl({ PORT: '4347' }, env({ PORT: '4350' }))).toBe('http://localhost:4347/onboarding');
+    expect(onboardingUrl({}, env({ PORT: '4350' }))).toBe('http://localhost:4350/onboarding');
   });
 
   it('knows whether the app answers (its onboarding route), and never throws', async () => {

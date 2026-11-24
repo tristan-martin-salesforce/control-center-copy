@@ -14,16 +14,16 @@ let dir: string;
 beforeEach(() => void (dir = mkdtempSync(join(tmpdir(), 'cc-scripts-'))));
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-const base = { repo: '/Users/me/Projects/control-center', home: '/Users/me', node: '/opt/homebrew/bin/node', npm: '/opt/homebrew/bin/npm', logDir: '/Users/me/Library/Logs/control-center', stateDir: '/Users/me/Library/Application Support/control-center', envFile: '/Users/me/Library/Application Support/control-center/env', templateDir: join(repoRoot, 'ops', 'launchd') };
+const base = { repo: '/Users/me/Projects/command-center', home: '/Users/me', node: '/opt/homebrew/bin/node', npm: '/opt/homebrew/bin/npm', logDir: '/Users/me/Library/Logs/command-center', stateDir: '/Users/me/Library/Application Support/command-center', envFile: '/Users/me/Library/Application Support/command-center/env', templateDir: join(repoRoot, 'ops', 'launchd') };
 
 describe('launchd plists', () => {
   for (const kind of ['web', 'worker'] as const) {
     it(`${kind}: renders, has the keep-alive keys, and passes plutil -lint`, () => {
       const xml = renderAgent({ kind, ...base });
-      expect(xml).toContain(`<string>com.controlcenter.${kind}</string>`);
+      expect(xml).toContain(`<string>com.commandcenter.${kind}</string>`);
       for (const k of ['KeepAlive', 'RunAtLoad', 'ThrottleInterval', 'WorkingDirectory', 'StandardOutPath', 'ExitTimeOut']) expect(xml).toContain(`<key>${k}</key>`);
-      expect(xml).toContain('<string>/Users/me/Projects/control-center</string>');
-      expect(xml).toContain('Library/Logs/control-center');
+      expect(xml).toContain('<string>/Users/me/Projects/command-center</string>');
+      expect(xml).toContain('Library/Logs/command-center');
       expect(xml).not.toMatch(/\{\{|\}\}/);
       const f = join(dir, `${kind}.plist`);
       writeFileSync(f, xml);
@@ -32,9 +32,11 @@ describe('launchd plists', () => {
   }
   it('web runs production next start on 4327; worker runs npm run worker:start (no file watch); env file is an argument, not inlined', () => {
     const web = renderAgent({ kind: 'web', ...base });
-    expect(web).toContain('/Users/me/Projects/control-center/node_modules/.bin/next');
+    expect(web).toContain('/Users/me/Projects/command-center/node_modules/.bin/next');
     expect(web).toContain('<string>start</string>');
     expect(web).toContain('<string>4327</string>');
+    // PKG-1: loopback only (next start's default host is 0.0.0.0, every interface)
+    expect(web).toMatch(/<string>start<\/string>\s*<string>-H<\/string>\s*<string>127\.0\.0\.1<\/string>/);
     const worker = renderAgent({ kind: 'worker', ...base });
     // Not `npm run worker` (tsx watch): every merge into the checkout would restart the live worker mid-job (OPS-1).
     expect(worker).toMatch(/<string>run<\/string>\s*<string>worker:start<\/string>/);

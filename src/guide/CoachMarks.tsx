@@ -28,10 +28,9 @@ import { useApi } from '@/client/hooks';
 import { toast } from '@/client/toast/store';
 import { firstScanView } from '@/components/shell/first-scan';
 import type { RouteKey } from '@/components/shell/routes';
-import type { ChecklistItemId } from '@/contract';
 import type { ResolvedPersona } from '@/personas';
 import { useWallClock } from '@/ui/clock';
-import { itemDoneKey } from './checklist';
+import { itemDoneKey, type GuideItemId } from './checklist';
 import { itemGuideFor, type GuideStepDef } from './items';
 import { pageHelpFor, tourDoneKey } from './pages';
 import { activate, clearGuideRequest, GUIDE_EVENT, keepOnRoute, requestGuide, storedGuideRequest, type ActiveRequest, type GuideRequest } from './request';
@@ -69,7 +68,7 @@ interface Tour {
   /** A page tour, or an item's tip. */
   kind: 'page' | 'item';
   /** The Getting started item an item's tip is for: Done on it ticks that item. */
-  item?: ChecklistItemId | null;
+  item?: GuideItemId | null;
   steps: Step[];
   run: TourRun;
 }

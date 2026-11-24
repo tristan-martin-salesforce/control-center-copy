@@ -30,7 +30,7 @@ import { clock, dayLabel } from '@/components/domain/lib/time';
 import { useRightPanel } from '@/components/shell/panel';
 import { Button, cn, Dialog, IconButton, useNow, useTimeZone } from '@/ui';
 import { isStaleVdpDraft } from '@/engines/vdp/status';
-import { adminQueue, adminTitle, draftsById } from './vdp-derive';
+import { adminQueue, adminTitle, draftsById, vdpReauthLabel } from './vdp-derive';
 import { autopilotLabel, pushFailures, whoLine, type PushFailure } from './vdp-changes-derive';
 import { applyLabel, applyValues, needsInput, pushableKeys, pushOrder, pushProgress, pushRequest, tickState, toggleRow, treeRows, whyNot, type TreeRow } from './vdp-tree-derive';
 import { AutopilotState, DisabledReason, OpenInVdp, SuggestionLine, VdpInputs, VdpStatusChip } from './VdpItem';
@@ -160,7 +160,7 @@ export function VdpChanges({ cov, findAll }: { cov: VdpCoveragePayload; findAll?
         ) : null}
         {signedOut ? (
           <span className="text-caption font-bold text-fg" data-testid="vdp-push-signin">
-            Sign in to VDP first (Health ▸ VDP ▸ Re-auth)
+            {`${vdpReauthLabel()} first: a push needs a fresh VDP sign-in`}
           </span>
         ) : null}
         <Button

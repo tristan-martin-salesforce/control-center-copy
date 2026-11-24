@@ -91,7 +91,7 @@ describe('titles and nav', () => {
   it('has the v2 groups and lights the right item', () => {
     expect(NAV_GROUPS.map((g) => g.items.map((i) => i.label))).toEqual([
       ['Home', 'Today', 'Triage', 'Outbox', 'Assistant'],
-      ['Work', 'Deals', 'Briefs', 'Agents', 'Activity', 'History'],
+      ['Work', 'Deals', 'Briefs', 'Agents', 'Activity', 'Journal'],
     ]);
     const home = NAV_GROUPS[0]!.items[0]!;
     const today = NAV_GROUPS[0]!.items[1]!;

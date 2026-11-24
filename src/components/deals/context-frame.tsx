@@ -1,6 +1,6 @@
 'use client';
 /**
- * The frame the context pages share (Deals, Briefs, Time; lane P-CONTEXT-A), design v2 (docs/ui/DESIGN-V2.md):
+ * The frame the context pages share (Deals, Briefs, Time; lane P-CONTEXT-A), design v2 (docs/archive/2026-build/DESIGN-V2.md):
  *
  *   ContextPage      the page: a head plus panes that fill #cc-main. The page itself never scrolls; long lists
  *                    scroll inside their pane. Layouts condense with `@container main` queries, so a docked

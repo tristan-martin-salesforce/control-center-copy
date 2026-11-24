@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -11,6 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 import { tstz, createdAt, updatedAt, ownerUserId } from './columns';
 import {
@@ -91,4 +93,34 @@ export const chatToolCalls = pgTable(
     uniqueIndex('chat_tool_calls_message_tool_use_uidx').on(t.messageId, t.toolUseId),
     index('chat_tool_calls_change_set_idx').on(t.changeSetId),
   ],
+);
+
+/**
+ * Assistant v2 (H-6, 0035): the Assistant's memory. A thread's notes (`remember`) and compaction summaries (older turns
+ * summarized so a rebuilt session never re-sends the whole thread), and the user's preferences (thread_id null).
+ * Pinned rows ride on every turn of their scope and are never compacted away. Text the user or the model wrote,
+ * credential-redacted on write; never logged.
+ */
+export const chatMemory = pgTable(
+  'chat_memory',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerUserId: ownerUserId(),
+    threadId: uuid('thread_id').references(() => chatThreads.id, { onDelete: 'cascade' }),
+    /** note · preference · summary (check constraint). */
+    kind: text('kind').notNull(),
+    text: text('text').notNull(),
+    pinned: boolean('pinned').notNull().default(false),
+    /** A summary's last covered message (thread position, 0-based). */
+    coversThroughSeq: integer('covers_through_seq'),
+    /**
+     * SEC-8 (0038): your message the turn that kept a note or preference answered (chat_messages.id). No foreign key on
+     * purpose: a deleted message leaves the id, so the source reads as gone (null) instead of falling back to a guess.
+     * Null on rows written before 0038 and on summaries; those resolve by time (src/server/chat/memory-source.ts).
+     */
+    sourceMessageId: uuid('source_message_id'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('chat_memory_owner_thread_idx').on(t.ownerUserId, t.threadId), check('chat_memory_kind_chk', sql`${t.kind} IN ('note', 'preference', 'summary')`)],
 );

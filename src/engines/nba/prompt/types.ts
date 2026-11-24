@@ -2,7 +2,7 @@
  * Minimal input types for the NBA judgment layer (BE-4).
  *
  * These are defined locally on purpose: the orchestrator reconciles them with W0's contract
- * (`src/contract/**`) and BE-1's schema later. Field names follow docs/ui/DATA-MODEL.md where a
+ * (`src/contract/**`) and BE-1's schema later. Field names follow docs/reference/DATA-MODEL.md where a
  * column exists, so the mapping is mechanical.
  */
 

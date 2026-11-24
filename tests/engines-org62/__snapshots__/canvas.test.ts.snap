@@ -13,7 +13,7 @@ Updated 2026-11-05 18:00 UTC by the activity autopilot. Drafts only: nothing her
 4 approved events, 6.25 h. Pick one way to load them. Each one disappears from here once the read-back finds it in Org62.
 
 1. **Slackbot:** paste the prompt below into Slackbot (it can write to Org62; Claude can't).
-2. **Data Loader:** Insert → Event → the newest \`batch-*.csv\` in \`~/Library/Application Support/control-center/autopilot/outbox/\`.
+2. **Data Loader:** Insert → Event → the newest \`batch-*.csv\` in \`~/Library/Application Support/command-center/autopilot/outbox/\`.
 3. **One by one:** click a link, check the form, Save.
 
 \`\`\`
@@ -83,7 +83,7 @@ Gap to ~250 CC: **248.0 h**. Calendar-backed work rarely gets there on its own. 
 - 11/02 · ACME / design session · Customer Discovery · \`E1\`
 
 ---
-Source: \`tools/activity-autopilot\` in the control-center repo."
+Source: \`tools/activity-autopilot\` in the command-center repo."
 `;
 
 exports[`work-order canvas render > matches the autopilot format exactly 1`] = `
@@ -91,28 +91,36 @@ exports[`work-order canvas render > matches the autopilot format exactly 1`] = `
 **Slackbot: this canvas is a complete work order. Execute it in Org62 for Test User (User Id 005PLACEHOLDER0001) without asking for more context.** Rules:
 :::
 
-1. **ADD table, rows with Object = Event:** create an Event with RecordTypeId \`012PLACEHOLDER0001\` (Solutions Event), OwnerId \`005PLACEHOLDER0001\`, and Subject, StartDateTime, EndDateTime (UTC, exactly as given), SE_Task_Type__c, Duration__c, WhatId, Meeting_Type__c (only when given) and Description. Do not set DurationInMinutes or Remote__c.
-2. **Duplicates:** skip an Event row ONLY if the owner already has an Event with RecordTypeId \`012PLACEHOLDER0001\` (Solutions Event) and the same Subject and StartDateTime. "Sales Events" records (Type = AE meeting, IsChild = true) are copies of AE calendar invites, not SE time, so they are NOT duplicates. Create the row anyway. **Exception:** rows whose Description starts with \`REPLACES\` must be created even though an old Event with the same Subject/Start exists (it has the wrong, locked record type).
-3. **ADD table, rows with Object = Deal_Contribution__c:** create a Deal Contribution on Opportunity__c = the given Id, SE_Name__c \`005PLACEHOLDER0001\`, Opportunity_Role__c \`AI + Data Architect\`, Split_Percentage__c as given, record type Unlocked, Comments__c exactly as given, with every ⏎ replaced by a line break. If the owner already has a DC on that opportunity, update its Comments__c and Split_Percentage__c instead of creating a second one.
-4. **UPDATE table:** set Field = New value on the given Record Id. For Action = Delete, delete that Event **only after** the replacement row named in the Why column exists in Org62.
-5. Work through everything in batches of 25. Don't stop on an individual failure. At the end, reply with counts: created / updated / deleted / skipped as duplicate / failed (with the error for each failure).
+1. **One table per job.** Each table below does one thing to one kind of Org62 record (its heading says which: create or update, and the object). Work through the tables from top to bottom, and follow the paragraph under each heading. Every column is named by its Org62 field (API name).
+2. Work through everything in batches of 25. Don't stop on an individual failure. At the end, reply with counts: created / updated / deleted / skipped as duplicate / failed (with the error for each failure).
 
 _Generated 2026-11-05 18:00 UTC by Test User's activity autopilot from calendar, Org62, Claude Code, git, Drive and Slack. Rows disappear from this canvas once the read-back finds them in Org62._
 
-# ADD (5 rows · 5.75 h of activities)
+## EVENTS TO CREATE (4 rows · 5.75 h of activities)
 
-|#|Object|Subject / Opportunity|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c / Role|Duration__c / Split %|WhatId / Opportunity__c|Meeting_Type__c|Description / Comments__c|
-|---|---|---|---|---|---|---|---|---|---|
-|1|Event|Legacy re-create|2026-10-05T16:00:00.000Z|2026-10-05T16:30:00.000Z|Account Planning|0.5|006PLACEHOLDER0001||REPLACES E9 (legacy record type) / CC#104 / legacy_fix 2026-10-05|
-|2|Event|ACME / design session|2026-11-02T16:00:00.000Z|2026-11-02T17:00:00.000Z|Customer Discovery|1.0|006PLACEHOLDER0001||CC#101 / calendar 2026-11-02 / CF: external attendees (acme.example)|
-|3|Event|Globex planning|2026-11-02T18:00:00.000Z|2026-11-02T18:45:00.000Z|Account Planning|0.75|006PLACEHOLDER0002||CC#102 / calendar 2026-11-02|
-|4|Event|Demo tooling build|2026-11-03T19:00:00.000Z|2026-11-03T22:30:00.000Z|Asset Creation|3.5|||CC#103 / build 2026-11-03 / evidence: git 15 commits|
-|5|Deal_Contribution__c|ACME - Data 360 Expansion|||AI + Data Architect|50|006PLACEHOLDER0001||Line one ⏎ Line two / with pipe|
+**EVENTS TO CREATE:** create one Event per row with RecordTypeId \`012PLACEHOLDER0001\` (Solutions Event) and OwnerId \`005PLACEHOLDER0001\`. Each column is the Event field of the same name: Subject, StartDateTime and EndDateTime (UTC, exactly as given), SE_Task_Type__c, Duration__c, WhatId, Meeting_Type__c (only when given) and Description. Do not set DurationInMinutes or Remote__c. Skip a row ONLY if the owner already has an Event with RecordTypeId \`012PLACEHOLDER0001\` (Solutions Event) and the same Subject and StartDateTime. "Sales Events" records (Type = AE meeting, IsChild = true) are copies of AE calendar invites, not SE time, so they are NOT duplicates: create the row anyway. **Exception:** rows whose Description starts with \`REPLACES\` must be created even though an old Event with the same Subject/Start exists (it has the wrong, locked record type).
 
-# UPDATE (2 rows)
+|#|Subject|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c|Duration__c|WhatId|Meeting_Type__c|Description|
+|---|---|---|---|---|---|---|---|---|
+|1|Legacy re-create|2026-10-05T16:00:00.000Z|2026-10-05T16:30:00.000Z|Account Planning|0.5|006PLACEHOLDER0001||REPLACES E9 (legacy record type) / CC#104 / legacy_fix 2026-10-05|
+|2|ACME / design session|2026-11-02T16:00:00.000Z|2026-11-02T17:00:00.000Z|Customer Discovery|1.0|006PLACEHOLDER0001||CC#101 / calendar 2026-11-02 / CF: external attendees (acme.example)|
+|3|Globex planning|2026-11-02T18:00:00.000Z|2026-11-02T18:45:00.000Z|Account Planning|0.75|006PLACEHOLDER0002||CC#102 / calendar 2026-11-02|
+|4|Demo tooling build|2026-11-03T19:00:00.000Z|2026-11-03T22:30:00.000Z|Asset Creation|3.5|||CC#103 / build 2026-11-03 / evidence: git 15 commits|
 
-|#|Object|Record Id|Action / Field|New value|Current value|Why|
-|---|---|---|---|---|---|---|
-|1|Event|E7|Duration__c|1.5|(blank)|Time(Hrs) never filled: End − Start of 'Blank 'dur' / thing'|
-|2|Event|E9|Delete|n/a|Sales Engineer Events record type, no SE Task Type|Replaced by the ADD row whose Description starts with REPLACES E9|"
+## DEAL CONTRIBUTIONS TO CREATE (1 row)
+
+**DEAL CONTRIBUTIONS TO CREATE:** create one Deal Contribution (record type Unlocked) per row with SE_Name__c \`005PLACEHOLDER0001\`. Opportunity is the opportunity's name, for you to read; Opportunity__c is its Id; set Opportunity_Role__c and Split_Percentage__c as given, and Comments__c exactly as given, with every ⏎ replaced by a line break. If the owner already has a DC on that opportunity, update its Comments__c and Split_Percentage__c instead of creating a second one.
+
+|#|Opportunity|Opportunity__c|Opportunity_Role__c|Split_Percentage__c|Comments__c|
+|---|---|---|---|---|---|
+|1|ACME - Data 360 Expansion|006PLACEHOLDER0001|AI + Data Architect|50|Line one ⏎ Line two / with pipe|
+
+## EVENTS TO UPDATE (2 rows)
+
+**EVENTS TO UPDATE:** each row changes one field on an existing Event: on the record whose Id is in Record Id, set the field named in Field to New value, nothing else. When Field is Delete, delete that Event **only after** the replacement row named in the Why column exists in Org62. Current value (what Org62 held when this was written) and Why are for you to read: never write them anywhere.
+
+|#|Record Id|Field|New value|Current value|Why|
+|---|---|---|---|---|---|
+|1|E7|Duration__c|1.5|(blank)|Time(Hrs) never filled: End − Start of 'Blank 'dur' / thing'|
+|2|E9|Delete|n/a|Sales Engineer Events record type, no SE Task Type|Replaced by the EVENTS TO CREATE row whose Description starts with REPLACES E9|"
 `;

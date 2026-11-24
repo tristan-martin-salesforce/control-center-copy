@@ -22,7 +22,7 @@ export const FeedbackSettings = z.object({
   version: Version,
   /** The team's feedback channel (C… / G…). Empty: from config/team.json, else the panel asks for it. */
   channelId: z.string().regex(/^(|[CG][A-Z0-9]{6,})$/, 'A Slack channel id starts with C or G').default(''),
-  /** Display name ("#control-center-feedback"). */
+  /** Display name ("#command-center-feedback"). */
   channelName: z.string().max(80).default(''),
   /** Post on Send (still behind global dry run). Off: Send shows the payload and copies it. */
   postLive: z.boolean().default(true),
@@ -94,7 +94,7 @@ export type FeedbackReport = z.infer<typeof FeedbackReport>;
 export const FeedbackChannelState = z.object({
   /** Slack channel id ("" when none is configured). */
   id: z.string(),
-  /** "#control-center-feedback" ("" when unknown). */
+  /** "#command-center-feedback" ("" when unknown). */
   name: z.string(),
   /** Where the id came from: Settings ▸ Feedback, else config/team.json. */
   source: z.enum(['settings', 'team', 'none']),

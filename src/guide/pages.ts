@@ -216,8 +216,8 @@ export const PAGE_HELP: Partial<Record<RouteKey, PageHelpDef>> = {
     ],
   },
   history: {
-    title: 'History',
-    shows: 'What you did on any past day: work finished, hours, meetings, messages sent, runs and Org62 updates.',
+    title: 'Journal',
+    shows: 'What you did on any past day: work finished, meetings, messages sent, runs and Org62 updates. Hours are counted on Activity ▸ History.',
     sources: 'The app’s own record of changes, the activity log, the calendar and the Outbox.',
     actions: [{ text: 'Pick a day on the month grid' }],
     marks: [],

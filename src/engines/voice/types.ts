@@ -5,7 +5,7 @@ import { z } from 'zod';
  * The DB-aligned fields map 1:1 to `voice_profiles` (DATA-MODEL §1); `stats`, `audiences` and
  * `exemplars` are extra detail kept in the local JSON profile and rendered into prompts.
  *
- * The real profile lives only at ~/Library/Application Support/control-center/voice/profile.json
+ * The real profile lives only at ~/Library/Application Support/command-center/voice/profile.json
  * (chmod 600). The repo carries a placeholder example only.
  */
 

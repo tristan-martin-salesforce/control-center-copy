@@ -1,7 +1,7 @@
 # Sample-data brief (for generator agents; becomes the dataset README's backbone)
 
 ## Goal
-A **synthetic but realistic** copy of the Control Center Postgres database, large enough that an LLM reading it can
+A **synthetic but realistic** copy of the Command Center Postgres database, large enough that an LLM reading it can
 learn (a) the shape of every table, (b) how tables join, and (c) the day-to-day scenarios the app handles. The owner
 is a fictional Solutions Engineer at a fictional software vendor. **Nothing may come from real data.**
 
@@ -18,7 +18,7 @@ is a fictional Solutions Engineer at a fictional software vendor. **Nothing may 
    non-secret placeholders.
 6. Product vocabulary of the app (Slack, Gmail, Drive, Calendar, Org62, VDP, Data 360, Agentforce, Gemini notes) is fine.
    The owner's employer is never named; say "the vendor" or use generic team words.
-7. Do not read the real database, `~/Library/Application Support/control-center/`, `docs/research/`, or any
+7. Do not read the real database, `~/Library/Application Support/command-center/` (`control-center/` on a 1.x install), `docs/research/`, or any
    `private/` folder. You do not need them. Everything you need is listed below.
 
 ## What to read (all safe)
@@ -73,3 +73,8 @@ is a fictional Solutions Engineer at a fictional software vendor. **Nothing may 
   `flushRefs('<your-domain>')` at the end. Conversely, if you own table T, first `reservedFor('T')` and create each
   reserved row with exactly `uid('T', key)`, shaped by the note, before adding your own.
 - All table names in `uid()` / `ref()` are the real plural DB names: `uid('accounts', 'brightwater')`, `uid('users', 'owner')`.
+
+## Contract-valid rows (read models must load)
+`tool_adapters.key` is the manifest id (`^[a-z0-9-]+$`, hyphens not underscores) and `version` is an integer string
+(`"1"`, `"2"`: what the app writes via `String(manifest.version)`), never semver. Checks: `npx vitest run --project unit tests/data`
+(every adapter row) and `CC_TEST_DB_SUFFIX=<x> npx vitest run --project db tests/db/data/sample-db` (loads the sample DB, builds a read model).

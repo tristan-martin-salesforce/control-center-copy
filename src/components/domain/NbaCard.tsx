@@ -20,127 +20,27 @@
  * Keyboard (card focused): Space expand/preview · Enter details · ⇧Enter page · ⌘↵ primary · e edit ·
  * s snooze · n not now · d done · ⇧D resolve · o open source · ? why · a accept · m merge · Esc close.
  */
-import type { AgentRun, Draft, EntityRef, NbaAlternative, NbaCard as NbaCardVm, NbaVerb, NotNowReason, Proposal, SourceRef, WorkItem } from '@/contract';
+import './domain.css';
 import { useId, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+
 import { Button, ConfidenceWord, cn, Icon, Kbd, StaleMark } from '@/ui';
-import { AccountTag, AiMark, EDGE_TOP, EffortNote, itemIndicator, RAISED_BG, SourceChip, StatusBadge, TONE_TO_BADGE, useClock, type BadgeTone } from './lib';
+import {
+  AccountTag, AiMark, EDGE_TOP, EffortNote, itemIndicator, RAISED_BG, SourceChip, StatusBadge, TONE_TO_BADGE,
+  useClock, type BadgeTone,
+} from './lib';
 import { clock, dueLabel, dur, minutesBetween } from './lib/time';
-import { mergeSources, toolName } from './derive';
+import { mergeSources } from './derive';
 import { openInLabel } from './lib/source-link';
 import { looksDoneEvidence } from '@/engines/home/looks-done';
 import { DraftPreviewBlock } from './DraftPreviewBlock';
 import { ProposalDiff } from './ProposalDiff';
 import { RunGlyph } from './RunGlyph';
-import { statePill, VERB_LABEL } from './vocab';
-import './domain.css';
-
-export type NbaPrimaryKind = NbaVerb | 'accept' | 'open_in_claude';
-
-export interface NbaPrimaryEvent {
-  kind: NbaPrimaryKind;
-  label: string;
-  item: WorkItem;
-  nba: NbaCardVm | null;
-  draft: Draft | null;
-  run: AgentRun | null;
-  /** start_in_claude / open_in_claude: the claude:// deep link from the contract. The parent opens it. */
-  url: string | null;
-  /** answer: the chosen chip or typed reply. */
-  answer?: string;
-}
-
-export type NbaSecondaryKey = 'edit' | 'shorter' | 'snooze' | 'done' | 'resolve' | 'not_done' | 'merge';
-
-export interface NbaCardProps {
-  item: WorkItem;
-  nba?: NbaCardVm | null;
-  draft?: Draft | null;
-  run?: AgentRun | null;
-  proposals?: Proposal[];
-  /** Defaults to item.rank. */
-  rank?: number | null;
-  /** Controlled expansion; omit to let the card manage it (defaultExpanded). */
-  expanded?: boolean;
-  defaultExpanded?: boolean;
-  onExpandedChange?: (expanded: boolean) => void;
-  /** `triage` forces the dashed "Suggested" treatment (primary = Accept). */
-  variant?: 'now' | 'triage';
-  /** Collapsed cards show the draft's first line (UI-SPEC §4.3: from 1600 px up; the page decides). */
-  draftLine?: boolean;
-  /** Spine ↔ card hover link. */
-  highlighted?: boolean;
-  /** Override preview HTML (still sanitized). Default: derived from the serialized payload. */
-  previewHtml?: string;
-  /** v1 large start-by headline. v2 always shows the start-by as the badge; kept for compatibility. */
-  headline?: boolean;
-  now?: string;
-  className?: string;
-
-  /** v2: the selected card (j/k or click). Its one action is filled and its border turns accent. */
-  selected?: boolean;
-  /** v2: the #1 treatment (raised surface, accent top edge, 22 px title, filled action). Default: rank 1. */
-  emphasis?: boolean;
-  /** v2: the narrower "with panel" layout (smaller padding, no prep line, short effort note). */
-  compact?: boolean;
-  /** v2: the item is open in the docked panel; the panel footer holds the filled action. */
-  inPanel?: boolean;
-  /** v2: force the one action filled or quiet (default: filled when `selected` or `emphasis`). Pages pass
-   *  `filled={false}` to #1 while another row holds the selection. */
-  filled?: boolean;
-  /** v2: the page knows the item is blocked (red badge + edge). */
-  blocked?: boolean;
-  /** v2: replaces the neutral tag's text (e.g. "Outbox" on an aggregate card). */
-  tagLabel?: string;
-  /** v2: extra content under the why line (prep checklist, a drafts list). Hidden in `compact` unless `extraInCompact`. */
-  extra?: ReactNode;
-  extraInCompact?: boolean;
-  /** v2: replaces the foot's effort note (e.g. "Nothing sends until you approve"). */
-  footNote?: ReactNode;
-  /** v2: clamp the why line to this many lines (Home: 2 on the lead card, 1 on the others). Unset = the default (2 in compact). */
-  whyLines?: 1 | 2 | 3;
-  /** The snooze action's label (Home: "Move to Fri", where it wakes on the next working day). Default "Snooze". */
-  snoozeLabel?: string;
-
-  onPrimary?: (e: NbaPrimaryEvent) => void;
-  onAlternative?: (alt: NbaAlternative, item: WorkItem) => void;
-  onSecondary?: (key: NbaSecondaryKey, item: WorkItem) => void;
-  onNotNow?: (reason: NotNowReason, item: WorkItem) => void;
-  onOpenSource?: (source: SourceRef, item: WorkItem) => void;
-  onOpenEntity?: (ref: EntityRef) => void;
-  /** Click / Enter → Details (docked panel), ⇧Enter → full page. */
-  onOpen?: (item: WorkItem, mode: 'sheet' | 'page') => void;
-  onApplyProposal?: (proposal: Proposal) => void;
-  onKeepMine?: (proposal: Proposal) => void;
-  /** Undo a reopen / loop-back label. */
-  onUndoReopen?: (item: WorkItem) => void;
-  onHover?: (itemId: string | null) => void;
-}
-
-const NOT_NOW: Array<{ reason: NotNowReason; label: string }> = [
-  { reason: 'done_elsewhere', label: 'Done elsewhere' },
-  { reason: 'not_mine', label: 'Not mine' },
-  { reason: 'later', label: 'Later' },
-  { reason: 'wrong_account', label: 'Wrong account' },
-];
-
-type Primary = { kind: NbaPrimaryKind; label: string; url: string | null } | null;
-
-function primaryFor(item: WorkItem, nba: NbaCardVm | null, run: AgentRun | null, triage: boolean): Primary {
-  if (triage || item.state === 'suggested') return { kind: 'accept', label: 'Accept', url: null };
-  if (item.state === 'likely_done') return { kind: 'confirm_done', label: 'Confirm done', url: null };
-  if (item.state === 'waiting_on_me' && run?.kind === 'claude_session') return { kind: 'open_in_claude', label: 'Open in Claude', url: run.deepLink };
-  if (!nba) return { kind: 'review', label: 'Review', url: null };
-  if (nba.confidence === 'guess' && nba.alternatives.length) return null;
-  const url = nba.verb === 'start_in_claude' ? run?.deepLink ?? nba.claudeLaunch?.url ?? null : null;
-  return { kind: nba.verb, label: nba.primaryLabel || VERB_LABEL[nba.verb], url };
-}
-
-function isInteractive(el: EventTarget | null): boolean {
-  return el instanceof HTMLElement && !!el.closest('button,a,input,textarea,select,label,[role="radio"],[role="tooltip"]');
-}
-
-/** Static classes so Tailwind sees them. */
-const WHY_CLAMP = { 1: 'line-clamp-1', 2: 'line-clamp-2', 3: 'line-clamp-3' } as const;
+import { statePill } from './vocab';
+import {
+  type NbaCardProps, primaryFor, type NbaPrimaryKind, type NbaSecondaryKey, isInteractive, WHY_CLAMP, NOT_NOW,
+} from './NbaCard.types';
+import { expandedFor, NewDot, WhyPopover, StatusLine, PlanBlock, SOURCE_LABEL } from './NbaCard.parts';
+export type { NbaPrimaryKind, NbaPrimaryEvent, NbaSecondaryKey, NbaCardProps } from './NbaCard.types';
 
 export function NbaCard(props: NbaCardProps) {
   const {
@@ -705,144 +605,5 @@ export function NbaCard(props: NbaCardProps) {
       </div>
       {expanded ? strip : null}
     </article>
-  );
-}
-
-const SOURCE_LABEL: Record<SourceRef['kind'], string> = {
-  slack: 'Slack',
-  gmail: 'Gmail',
-  calendar: 'Calendar',
-  drive: 'Drive',
-  gemini: 'Notes',
-  org62: 'Org62',
-  vdp: 'VDP',
-  claude: 'Claude',
-  manual: 'Source',
-};
-
-/** Collapsed cards show at most two alternatives; the expanded card shows three. */
-function expandedFor(p: NbaCardProps): boolean {
-  return p.expanded ?? p.defaultExpanded ?? false;
-}
-
-/** "· 2 new": new evidence is information, not a call to act, so it stays neutral. */
-function NewDot({ count }: { count: number }) {
-  return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 text-caption text-muted tabular-nums" title={`${count} new evidence`}>
-      <span className="size-1.5 rounded-full bg-muted" />
-      {count} new
-    </span>
-  );
-}
-
-function StatusLine({ tone, icon, glyph, children }: { tone: 'warn' | 'ai' | 'ready' | 'neutral'; icon?: string; glyph?: ReactNode; children: ReactNode }) {
-  const mark = { warn: 'text-warning-700', ai: 'text-ai-700', ready: 'text-success-700', neutral: 'text-muted' }[tone];
-  return (
-    <p className="flex items-start gap-2 rounded-md bg-surface-muted px-3 py-1.5 text-caption">
-      <span className={cn('mt-0.5 shrink-0', mark)}>{glyph ?? (icon ? <Icon name={icon} size="xs" /> : null)}</span>
-      <span className="min-w-0 text-fg">{children}</span>
-    </p>
-  );
-}
-
-function WhyPopover({
-  id,
-  pinned,
-  detail,
-  item,
-  sources,
-  onOpenSource,
-}: {
-  id: string;
-  pinned: boolean;
-  detail: string | null | undefined;
-  item: WorkItem;
-  sources: SourceRef[];
-  onOpenSource?: (s: SourceRef) => void;
-}) {
-  const reasons = [...item.rankReasons].sort((a, b) => b.contribution - a.contribution).slice(0, 4);
-  const max = Math.max(1, ...reasons.map((r) => Math.abs(r.contribution)));
-  return (
-    <div
-      id={id}
-      role="tooltip"
-      onClick={(e) => e.stopPropagation()}
-      className={cn(
-        'absolute left-0 top-full z-30 mt-1 w-[min(32rem,100%)] cursor-default rounded-md border border-line bg-surface-overlay p-4 shadow-pop transition-[opacity,visibility] duration-100',
-        pinned ? 'visible opacity-100' : 'invisible opacity-0 group-hover/why:visible group-hover/why:opacity-100 group-hover/why:delay-500',
-      )}
-    >
-      {detail ? <p className="max-w-[68ch] text-body text-fg">{detail}</p> : <p className="text-body text-muted">{item.why}</p>}
-      {reasons.length ? (
-        <div className="mt-3">
-          <p className="text-caption font-bold text-fg-heading">{item.rank ? `Why it's #${item.rank} for you` : 'Why it ranks'}</p>
-          <ul className="mt-1.5 space-y-1">
-            {reasons.map((r) => (
-              <li key={r.key} className="grid grid-cols-[minmax(0,1fr)_5rem] items-center gap-2 text-caption">
-                <span className="truncate text-fg">{r.label}</span>
-                <span className="h-1.5 rounded-full bg-surface-sunken">
-                  <span className={cn('block h-full rounded-full', r.contribution >= 0 ? 'bg-fg' : 'bg-faint')} style={{ width: `${(Math.abs(r.contribution) / max) * 100}%` }} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {sources.length ? (
-        <div className="mt-3 flex flex-wrap gap-1">
-          {sources.map((s) => (
-            <SourceChip key={`${s.kind}${s.label}`} source={s} onOpen={onOpenSource} />
-          ))}
-        </div>
-      ) : null}
-      <p className="mt-2 text-micro text-faint">
-        <Kbd>?</Kbd> pins this · <Kbd>o</Kbd> opens the source
-      </p>
-    </div>
-  );
-}
-
-function PlanBlock({ nba, run, now }: { nba: NbaCardVm; run: AgentRun | null; now: string }) {
-  const kind = nba.verb === 'run_tool' ? toolName(nba.toolAdapterId) : run?.kind === 'tool_run' ? 'Tool run' : 'Claude session';
-  const inputs = nba.toolInputs
-    ? Object.entries(nba.toolInputs)
-        .filter(([k, v]) => !/id$/i.test(k) && !(typeof v === 'string' && /^[a-z]+_[a-z0-9_]+$/.test(v)))
-        .slice(0, 3)
-    : [];
-  const pct = run?.progress ? Math.round((run.progress.done / Math.max(1, run.progress.total)) * 100) : null;
-  return (
-    <div className="rounded-md border-agentic p-3">
-      <div className="flex items-center gap-2">
-        <AiMark>Plan</AiMark>
-        <span className="text-caption text-muted">· {kind}</span>
-        {nba.claudeLaunch ? <span className="ml-auto truncate font-mono text-micro text-faint">{nba.claudeLaunch.folder.replace(/^\/Users\/[^/]+/, '~')}</span> : null}
-      </div>
-      {nba.claudeLaunch ? <p className="mt-1 line-clamp-2 max-w-[68ch] text-body text-fg">{nba.claudeLaunch.promptPreview.replace(/\s*\[cc:[^\]]+\]/g, '')}</p> : null}
-      {inputs.length ? (
-        <dl className="mt-1.5 grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 text-caption">
-          {inputs.map(([k, v]) => (
-            <div key={k} className="contents">
-              <dt className="text-muted">{k}</dt>
-              <dd className="truncate text-fg">{typeof v === 'string' ? v : JSON.stringify(v)}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      {!nba.claudeLaunch && !inputs.length ? <p className="mt-1 max-w-[68ch] text-body text-fg">{nba.why}</p> : null}
-      {run ? (
-        <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-caption">
-          <RunGlyph state={run.state} size={14} />
-          <span className="font-bold text-fg">{run.state === 'running' ? 'Running in the background' : run.state.replace(/_/g, ' ')}</span>
-          {run.startedAt ? <span className="text-muted tabular-nums">{dur(minutesBetween(run.startedAt, now))}</span> : null}
-          <span className="min-w-0 flex-1 truncate text-muted">{run.lastEvent}</span>
-          {pct !== null ? (
-            <span className="h-1.5 w-16 shrink-0 rounded-full bg-surface-sunken" title={`${run.progress!.done}/${run.progress!.total}`}>
-              <span className="block h-full rounded-full bg-ai-500" style={{ width: `${pct}%` }} />
-            </span>
-          ) : null}
-          {run.bgAgents ? <span className="shrink-0 text-muted">+{run.bgAgents} background</span> : null}
-        </div>
-      ) : null}
-    </div>
   );
 }

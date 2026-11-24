@@ -16,7 +16,11 @@
  * owner asked to verify these (2026-11-14). Color: the AI color, the app's guess (rules or model).
  */
 import type { Account, ActivityEntry, ActivitySuggestion, AgentRun, Asset, CalendarEvent, OppOption, Opportunity, Person } from '@/contract';
-import { buildOppOptions } from './opp-options';
+import { RULE_CONFIDENCE, attendeeDomains, rowAttribution, type RowExtras } from '@/engines/attribution/row';
+import { groundworkIndex, rowGroundwork } from '@/engines/attribution/target';
+import { hasTarget } from '@/lib/time-internal';
+
+export { RULE_CONFIDENCE, attendeeDomains };
 
 /** kv key (db) of the model's stored answers: `{ rows: { [rowId]: StoredSuggestion } }`. */
 export const SUGGESTIONS_KV = 'cc.time.suggestions';
@@ -27,19 +31,6 @@ export const RULES_SETTLE = 0.75;
 /** The model pass asks only about rows of the last this many days (older held rows keep the rules' suggestion). */
 export const SUGGEST_LOOKBACK_DAYS = 60;
 
-/** The fixed confidence of each rule (Legible: the same row always reads the same). */
-export const RULE_CONFIDENCE = {
-  meetingOpp: 0.92,
-  accountOnly: 0.88,
-  relatedOnly: 0.78,
-  domainOnly: 0.76,
-  channelOnly: 0.76,
-  accountRecent: 0.72,
-  meetingOppOfMany: 0.7,
-  related: 0.55,
-  account: 0.5,
-  named: 0.5,
-} as const;
 
 /** One stored model answer for a row (kv SUGGESTIONS_KV). */
 export interface StoredSuggestion {
@@ -70,13 +61,15 @@ export interface SuggestContext {
   stored: Record<string, StoredSuggestion>;
   /** D-64: the persona logs internal-only work (the model may say Internal). */
   internalActivity: boolean;
+  /** What the attribution engine reads besides the records (learned rules, the channel map, engagement, covered AEs). */
+  attribution?: RowExtras;
 }
 
 const LIVE = new Set<ActivityEntry['status']>(['needs_input', 'proposed', 'approved']);
 
 /** The row asks for an opportunity: live, no opp, not internal, not read from Org62, not held on a canvas. */
 export function wantsSuggestion(e: ActivityEntry): boolean {
-  return LIVE.has(e.status) && !e.oppId && !e.internal && !e.fromOrg62 && !e.canvasDraftId;
+  return LIVE.has(e.status) && !hasTarget(e) && !e.fromOrg62 && !e.canvasDraftId;
 }
 
 /** FNV-1a 32-bit, hex: a stable, dependency-free hash (client and server). */
@@ -106,118 +99,12 @@ export function storedSuggestionsOf(v: unknown): Record<string, StoredSuggestion
   return out;
 }
 
-const norm = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
-const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-
-/** Words too generic to name an account in a channel or a domain. */
-const GENERIC = new Set(['the', 'inc', 'corp', 'corporation', 'company', 'group', 'health', 'bank', 'global', 'services', 'systems', 'solutions', 'international', 'holdings', 'technologies', 'tech', 'data', 'cloud', 'team', 'ext', 'external', 'shared', 'internal', 'project', 'deal', 'sales', 'support', 'general', 'example', 'com', 'net', 'org', 'io']);
-
-/** The words an account is known by in a channel or a domain: the first one or two words of its name. */
-function handlesOf(name: string): string[] {
-  const words = norm(name)
-    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
-    .split(/[\s-]+/)
-    .filter((w) => w.length >= 3 && !GENERIC.has(w));
-  return words.slice(0, 1);
-}
-
 /**
- * Accounts a set of tokens names (a channel's words, a domain's labels), by their handles. When several share the
- * handle ("Globex", "Globex - Marketing Cloud"), the one whose whole name is the token wins: the parent, not a part.
+ * The rules pass: the attribution engine's answer for the row (src/engines/attribution/row.ts): the legacy rules
+ * (moved there unchanged) unless a learned rule or the confirmed channel map says otherwise.
  */
-function accountsNamed(tokens: readonly string[], accounts: readonly Account[]): Account[] {
-  const t = new Set(tokens.map(norm).filter((x) => x.length >= 3 && !GENERIC.has(x)));
-  if (!t.size) return [];
-  const hits = accounts.filter((a) => handlesOf(a.name).some((h) => t.has(h)));
-  const whole = hits.filter((a) => t.has(norm(a.name).replace(/[^\p{L}\p{N}]+/gu, '')));
-  return whole.length ? whole : hits;
-}
-
-/** "#acme-ext · thread", "Slack · #acme-ext, #hooli-ext" → their channel names' words. */
-function channelTokens(e: Pick<ActivityEntry, 'sources'>): { channel: string; tokens: string[] }[] {
-  const out: { channel: string; tokens: string[] }[] = [];
-  for (const s of e.sources) {
-    if (s.kind !== 'slack') continue;
-    for (const m of s.label.matchAll(/#([\p{L}\p{N}_-]{2,80})/gu)) out.push({ channel: `#${m[1]}`, tokens: m[1]!.split(/[-_]+/) });
-  }
-  return out;
-}
-
-/** External attendee domains the engine noted ("CF forced: external attendee (a.example, b.example); …"). */
-export function attendeeDomains(e: Pick<ActivityEntry, 'issues'>): string[] {
-  for (const f of e.issues) {
-    const m = /external attendees? \(([^)]+)\)/i.exec(f);
-    if (m) return m[1]!.split(/\s*,\s*/).filter(Boolean);
-  }
-  return [];
-}
-
-type Pick1 = { opp: OppOption; confidence: number; reason: string };
-
-const asSuggestion = (p: Pick1): ActivitySuggestion => ({ kind: 'opp', oppId: p.opp.id, oppName: p.opp.name, accountName: p.opp.accountName, taskType: null, confidence: p.confidence, reason: p.reason, basis: 'rules', at: null });
-
-/** The best open opp of a list (the ranking's order: open, used most recently, on my team, closing first, A–Z). */
-function bestOf(list: readonly OppOption[]): { top: OppOption; recent: boolean } {
-  const top = list[0]!;
-  const second = list[1];
-  return { top, recent: !!top.lastUsed && (!second?.lastUsed || top.lastUsed > second.lastUsed) };
-}
-
-/** The rules pass: the most specific thing the app knows, or null when nothing points anywhere. */
-export function ruleSuggestion(e: ActivityEntry, ctx: Omit<SuggestContext, 'stored' | 'internalActivity'>, opts?: OppOption[]): ActivitySuggestion | null {
-  const ranked = opts ?? buildOppOptions({ entry: e, opps: ctx.opps, accounts: ctx.accounts, events: ctx.events, people: ctx.people, assets: ctx.assets, runs: ctx.runs, workItems: ctx.workItems, activity: ctx.activity, today: ctx.today }).opps;
-  const open = ranked.filter((o) => o.isOpen);
-  const meeting = e.sources.some((s) => s.kind === 'calendar');
-
-  // 1. the evidence's own opp: the meeting is on it (or its Claude session's task)
-  const evidence = open.filter((o) => o.why.includes('evidence'));
-  if (evidence.length === 1) return asSuggestion({ opp: evidence[0]!, confidence: RULE_CONFIDENCE.meetingOpp, reason: meeting ? 'The meeting is on this opportunity' : 'Its session’s task is on this opportunity' });
-
-  // 2. the row's account
-  const onAccount = open.filter((o) => o.why.includes('account'));
-  const acct = e.accountName ?? onAccount[0]?.accountName ?? null;
-  if (onAccount.length === 1) return asSuggestion({ opp: onAccount[0]!, confidence: RULE_CONFIDENCE.accountOnly, reason: `The only open opportunity on ${acct}` });
-  if (evidence.length > 1) return asSuggestion({ opp: evidence[0]!, confidence: RULE_CONFIDENCE.meetingOppOfMany, reason: `The meeting points at ${evidence.length} opportunities: this one ranks first` });
-  if (onAccount.length > 1) {
-    const { top, recent } = bestOf(onAccount);
-    return recent
-      ? asSuggestion({ opp: top, confidence: RULE_CONFIDENCE.accountRecent, reason: `${acct}’s opportunity you logged to last (${fmtDay(top.lastUsed!)})` })
-      : asSuggestion({ opp: top, confidence: RULE_CONFIDENCE.account, reason: `${acct} has ${onAccount.length} open opportunities: ${top.closeDate ? `this one closes first (${fmtDay(top.closeDate)})` : 'check it is this one'}` });
-  }
-
-  // 3. an account its evidence names (the meeting's attendees, its Drive file)
-  const related = open.filter((o) => o.why.includes('related'));
-  if (related.length) {
-    const accounts = new Set(related.map((o) => o.accountId));
-    const { top } = bestOf(related);
-    if (related.length === 1) return asSuggestion({ opp: top, confidence: RULE_CONFIDENCE.relatedOnly, reason: `${top.accountName ?? 'Its account'} is in its evidence (${meeting ? 'the attendees' : 'its file'}): its only open opportunity` });
-    return asSuggestion({ opp: top, confidence: RULE_CONFIDENCE.related, reason: `${accounts.size === 1 ? (top.accountName ?? 'An account') : `${accounts.size} accounts`} in its evidence: this opportunity ranks first` });
-  }
-
-  // 4. an attendee's email domain, or a Slack channel's name, that names one account
-  const byAccount = (a: Account) => open.filter((o) => o.accountId === a.id);
-  const named = (accounts: Account[], why: (a: Account) => string, only: number): ActivitySuggestion | null => {
-    const withOpps = accounts.filter((a) => byAccount(a).length);
-    if (withOpps.length !== 1) return null;
-    const a = withOpps[0]!;
-    const list = byAccount(a);
-    const { top, recent } = bestOf(list);
-    if (list.length === 1) return asSuggestion({ opp: top, confidence: only, reason: `${why(a)}: its only open opportunity` });
-    return asSuggestion({ opp: top, confidence: RULE_CONFIDENCE.named, reason: `${why(a)}: ${recent ? `the one you logged to last (${fmtDay(top.lastUsed!)})` : `${list.length} open opportunities, this one ranks first`}` });
-  };
-  const domains = attendeeDomains(e);
-  if (domains.length) {
-    // the people the app knows at that domain say which account; else the domain's own name
-    const viaPeople = new Set(ctx.people.filter((p) => p.accountId && p.email && domains.includes(norm(p.email.split('@')[1]))).map((p) => p.accountId!));
-    const accounts = viaPeople.size ? ctx.accounts.filter((a) => viaPeople.has(a.id)) : accountsNamed(domains.flatMap((d) => d.split('.')), ctx.accounts);
-    const s = named(accounts, (a) => `Someone from ${domains[0]} was there (${a.name})`, RULE_CONFIDENCE.domainOnly);
-    if (s) return s;
-  }
-  for (const c of channelTokens(e)) {
-    const s = named(accountsNamed(c.tokens, ctx.accounts), (a) => `${c.channel} reads as ${a.name}’s channel`, RULE_CONFIDENCE.channelOnly);
-    if (s) return s;
-  }
-  return null;
+export function ruleSuggestion(e: ActivityEntry, ctx: Omit<SuggestContext, 'stored' | 'internalActivity'> & { internalActivity?: boolean }, opts?: OppOption[]): ActivitySuggestion | null {
+  return rowAttribution(e, ctx, { ...(opts ? { options: opts } : {}), internalOk: !!ctx.internalActivity }).suggestion;
 }
 
 /** The model's stored answer for the row, when it was made for the row as it is now and its opp still exists. */
@@ -235,8 +122,27 @@ export function storedSuggestion(e: ActivityEntry, ctx: Pick<SuggestContext, 'st
 
 /** The one suggestion a row shows: a rules answer that settles it, else the model's (when surer), else the rules'. */
 export function suggestionFor(e: ActivityEntry, ctx: SuggestContext): ActivitySuggestion | null {
-  if (!wantsSuggestion(e)) return null;
-  const rule = ruleSuggestion(e, ctx);
+  return suggestionsFor(e, ctx).one;
+}
+
+/**
+ * The row's suggestion (`one`, null when nothing points anywhere) and the engine's ranked top 3 with it first
+ * (`list`: the alternates Accept can take in one click); nothing on rows that don't need one.
+ */
+export function suggestionsFor(e: ActivityEntry, ctx: SuggestContext): { one: ActivitySuggestion | null; list: ActivitySuggestion[]; learnedOn?: string | null } {
+  if (!wantsSuggestion(e)) return { one: null, list: [] };
+  const r = rowAttribution(e, ctx, { internalOk: ctx.internalActivity });
+  const one = pickOne(e, ctx, r.suggestion);
+  const rest = r.suggestions.filter((x) => !one || !(x.kind === one.kind && x.oppId === one.oppId));
+  // D-103 (c): a learned rule made the pick: the day it was last used is when I taught it
+  const top = r.attribution.top;
+  const ruleId = one && top && top.kind === 'opp' && top.oppId === one.oppId ? top.why.find((w) => w.code === 'rule')?.ruleId : undefined;
+  const rule = ruleId ? ctx.attribution?.rules?.find((x) => x.id === ruleId) : undefined;
+  return { one, list: (one ? [one, ...rest] : rest).slice(0, 3), learnedOn: rule?.lastUsedAt ?? null };
+}
+
+/** The rules' answer when it settles the row, else the model's (when surer), else the rules'. */
+function pickOne(e: ActivityEntry, ctx: SuggestContext, rule: ActivitySuggestion | null): ActivitySuggestion | null {
   if (rule && rule.confidence >= RULES_SETTLE) return rule;
   const ai = storedSuggestion(e, ctx);
   if (ai && (!rule || ai.confidence >= rule.confidence)) return ai;
@@ -245,9 +151,13 @@ export function suggestionFor(e: ActivityEntry, ctx: SuggestContext): ActivitySu
 
 /** Every row with its suggestion (null on rows that don't need one). */
 export function withSuggestions(entries: readonly ActivityEntry[], ctx: SuggestContext): ActivityEntry[] {
+  const ix = groundworkIndex(ctx);
   return entries.map((e) => {
-    const s = suggestionFor(e, ctx);
-    return s || e.suggestion ? { ...e, suggestion: s } : e;
+    const { one, list, learnedOn } = suggestionsFor(e, ctx);
+    // D-103 (c): every row says why it logs where it does (src/engines/attribution/target.ts)
+    const groundwork = rowGroundwork(e, ix, { suggestedOppId: one?.kind === 'opp' ? one.oppId : null, learnedOn });
+    const out = one || e.suggestion || list.length ? { ...e, suggestion: one, suggestions: list } : e;
+    return groundwork ? { ...out, groundwork } : out;
   });
 }
 

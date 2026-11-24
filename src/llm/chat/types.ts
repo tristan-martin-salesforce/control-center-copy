@@ -8,12 +8,16 @@
  * are enqueued for the worker, and sessions are deep links the UI opens only on a click.
  */
 import type { ResolvedPersona } from '@/personas';
+import type { SpendGovernor } from '@/llm/spend';
 import type {
   ChatChange,
+  ChatHoldView,
   ChatDraftRef,
   ChatMessage,
   ChatModel,
+  ChatPlan,
   ChatResource,
+  ChatRoute,
   ChatScan,
   ChatSession,
   ChatUsage,
@@ -31,11 +35,17 @@ import type {
 import type { Org62LookupInput, Org62LookupResult } from '@/server/chat/org62';
 import type { ChatReadPage, ChatReadResult, ReadPageArgs, ReadPageInfo } from '@/server/chat/read';
 import type { ChatResearchInput, ChatResearchResult } from '@/server/chat/research';
+import type { QueryArgs, QueryResult } from '@/server/chat/views';
+import type { ChatMemoryStore } from '@/server/datasource/db/chat-memory';
+import type { CompleteInput, CompleteResult } from '@/llm/provider/types';
 
 export interface Org62LookupUsage {
   model: string;
+  /** Uncached input only (D1); cache reads and writes are their own fields. */
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   status: 'ok' | 'error' | 'timeout';
   errorCode?: string;
   latencyMs: number;
@@ -46,7 +56,9 @@ export type ChatRunStep =
   | { type: 'text'; text: string }
   /** `id` pairs a start with its result (parallel tool calls); `args` is persisted credential-redacted. */
   | { type: 'tool-start'; id?: string; name: string; summary: string; args?: unknown }
-  | { type: 'tool-result'; id?: string; summary: string; ok?: boolean; result?: unknown }
+  | { type: 'tool-result'; id?: string; summary: string; ok?: boolean; result?: unknown; costUsd?: number; held?: boolean }
+  /** Assistant v2: the plan card (new, or answered). */
+  | { type: 'plan'; plan: ChatPlan }
   | { type: 'receipt'; receipt: Receipt }
   | { type: 'proposal'; proposal: Proposal; summary: string; changes?: ChatChange[] }
   | { type: 'resource'; resource: ChatResource }
@@ -56,6 +68,10 @@ export type ChatRunStep =
   | { type: 'session'; session: ChatSession }
   /** Tokens and cost of the turn (stored on the assistant message; the ledger row is the host's job). */
   | { type: 'usage'; usage: ChatUsage }
+  /** The turn's spend so far (model calls + sub-runs), sent as it climbs (SSE `usage-delta`; ASSIST-9). */
+  | { type: 'usage-delta'; spentUsd: number; model: string; subRunUsd?: number; hold?: ChatHoldView }
+  /** Spend governor: the answer passed its hold and waits at its next step for the user (SSE `spend-ask`). */
+  | { type: 'spend-ask'; holdId: string; question: string; spentUsd: number; heldUsd: number; moreUsd: number }
   | { type: 'error'; code: 'validation' | 'upstream_unavailable' | 'internal' | 'budget_exceeded'; message: string; retryable?: boolean; details?: ChatErrorDetails };
 
 /** One item as the tools show it to the model (compact, no bodies). */
@@ -106,7 +122,10 @@ export interface ChatBudget {
   /** Cap for one message (one turn). */
   perMessageUsd: number;
   maxTurns: number;
-  /** Cap for one chat_research run (settings.chat.researchUsd). */
+  /**
+   * Cap for one run research run (settings.chat.researchUsd, D-51: $0.50): its own line per run, checked against the
+   * assistant's day line only, never against what is left of this message's cap (ASSIST-1, 2026-11-20).
+   */
   researchUsd?: number;
 }
 
@@ -185,7 +204,7 @@ export interface ChatHost {
    * The next logging batch (src/server/datasource/db/store/log-batch.ts): the work orders Slackbot would run, the rows
    * that need input, and the Org62 check. Read only: staging the canvas is an Outbox action.
    */
-  logBatch(input: { from?: string; to?: string; includeProposed?: boolean }): Promise<ChatLogBatch>;
+  logBatch(input: { from?: string; to?: string; includeProposed?: boolean; appliedOffset?: number }): Promise<ChatLogBatch>;
   /** "Find assets": background research runs per VDP (or all, within a total cap) → asset candidates; never writes VDP. */
   findVdpAssets(input: FindVdpAssetsRequest): Promise<FindVdpAssetsResult>;
   /** One VDP field change → one Outbox item (ready; sent to VDP only on its own Apply). */
@@ -214,6 +233,27 @@ export interface ChatHost {
   /** Earlier messages of the thread, oldest first (without `excludeIds`). */
   history(threadId: string, excludeIds: string[]): Promise<ChatMessage[]>;
 
+  // ---- Assistant v2 ----
+  /** A typed read over the curated views (src/server/chat/views.ts), filtered, sorted and paged. */
+  query(args: QueryArgs): Promise<QueryResult>;
+  /** Why an item ranks, was closed or kept open, and its evidence; or why a time row was attributed (the engines' own `why`). */
+  explain(id: string, what: 'rank' | 'closure' | 'evidence' | 'attribution' | 'all'): Promise<Record<string, unknown>>;
+  /**
+   * One live read through the connector runtime (Slack through the one-call relay, VDP over its read-only JSON-RPC),
+   * read tools only (the manifests' allowlists). Absent: no live connectors here (mock, or connectors off).
+   */
+  liveRead?(connector: 'slack' | 'vdp', tool: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<{ text: string; costUsd: number; model?: string; inputTokens?: number; outputTokens?: number; ok: boolean }>;
+  /** One Org62 opportunity by id, through the fixed SELECT template (src/server/chat/org62.ts); never free SOQL. */
+  org62Record?(id: string): Promise<Org62LookupResult & { usage?: Org62LookupUsage }>;
+  /** Memory (`remember`, compaction summaries) and the thread's SDK session id. */
+  memory?: ChatMemoryStore;
+  /** Run a staged chat card at once (act's allow class: the change set path an Apply takes, actor chat). */
+  applyStaged?(proposalId: string): Promise<Receipt | null>;
+  /** Start a read-only job (the `run` class): read-in, forecast sync / check, retry. */
+  startJob?(route: 'requestReadIn' | 'syncForecast' | 'checkMissingForecast' | 'retryJob', raw: { params?: Record<string, unknown>; body?: unknown }): Promise<unknown>;
+  /** A tool-less model call (compaction summaries; fast tier). Absent: the active provider's `complete()`. */
+  complete?(input: CompleteInput): Promise<CompleteResult>;
+
   // ---- staged changes (nothing lands until the user applies) ----
   previewChanges(changes: ChatChange[], threadId?: string): Promise<ChangePreview>;
   stageChanges(input: StageInput): Promise<Proposal>;
@@ -227,6 +267,11 @@ export interface ChatHost {
   // ---- spend ----
   budget(model: ChatModel): Promise<ChatBudget>;
   recordUsage(u: ChatUsageRecord): Promise<void>;
+  /**
+   * The spend governor (src/llm/spend): each message holds its per-message budget and raises a hand past it instead of
+   * stopping (H-5). Absent: an in-memory governor for the turn (asks still reach the card; nothing persists).
+   */
+  spend?(): SpendGovernor;
 }
 
 /** A logging batch preview for the Assistant (counts, canvases, skips, the Org62 check). */
@@ -248,11 +293,16 @@ export interface ChatLogBatch {
   ownerKnown: boolean;
   /** Logging canvases already applied, newest first: created in Slack (unless still applying), with the link and the rows' Org62 state. */
   applied?: Array<{ draftId: string; title: string; state: string; created: boolean; url: string | null; appliedAt: string | null; rows: number; hours: number; dcs: number; org62: { logged: number; waiting: number; missing: number } | null }>;
+  /** How many canvases are applied in all, and where the next page of `applied` starts (null: this is the last page). */
+  appliedTotal?: number;
+  appliedNextOffset?: number | null;
 }
 
 /** What a capped message offers: re-send it with `allowExtraUsd: usd` (the UI's "Allow $x more"). */
 export interface ChatErrorDetails {
   allowMore?: { usd: number; scope: 'message' | 'day' };
+  /** The error catalog's code when the API code is too coarse (src/errors/catalog.ts: RATE.CHAT.STEP_LIMIT, P31-1). */
+  catalogCode?: string;
 }
 
 /** Input of one turn. */
@@ -267,6 +317,14 @@ export interface ChatTurnInput {
   signal: AbortSignal;
   /** The user's one-time approval to spend this much more on this message (ChatRequest.allowExtraUsd). */
   allowExtraUsd?: number;
+  /**
+   * "Allow more" on a message stopped at its cost limit (ChatRequest.continueMessageId): continue that answer instead of
+   * re-running the question. The stopped message's text and tool rows are the context; this turn's cap is the amount
+   * allowed (ASSIST-2, 2026-11-20).
+   */
+  continueMessageId?: string;
+  /** Assistant v2: the router's choice for this turn (src/llm/chat/router.ts); absent: routed from `model` as chosen. */
+  route?: ChatRoute;
 }
 
 /** A chat backend: one turn → steps. The fake and the Agent SDK runner both have this shape. */

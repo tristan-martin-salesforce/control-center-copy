@@ -210,11 +210,11 @@ describe('skills and prompt', () => {
   });
 
   it('skills, fixtures and tests carry placeholders only (optional private denylist outside the repo)', () => {
-    const files = ['skills/readin-ask.md', 'skills/readin-meeting.md', 'tests/readin/fake-sdk.ts', 'tests/readin/unit.test.ts', 'tests/readin/mock.test.ts', 'tests/readin/db.test.ts'];
+    const files = ['skills/readin-ask.md', 'skills/readin-meeting.md', 'tests/readin/fake-sdk.ts', 'tests/readin/unit.test.ts', 'tests/readin/mock.test.ts', 'tests/db/readin/db.test.ts'];
     const org62Id = /\b(00[0-9][A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?)\b/g;
     const email = /\b[\w.+-]+@([\w-]+\.[\w.]+)\b/g;
     const host = /https?:\/\/([a-z0-9.-]+)/gi;
-    const denyFile = process.env.CC_PRIVATE_DENYLIST ?? path.join(process.env.HOME ?? '', 'Library/Application Support/control-center/fixtures/denylist.txt');
+    const denyFile = process.env.CC_PRIVATE_DENYLIST ?? path.join(process.env.HOME ?? '', 'Library/Application Support/command-center/fixtures/denylist.txt');
     const deny = fs.existsSync(denyFile) ? fs.readFileSync(denyFile, 'utf8').split('\n').map((l) => l.trim()).filter(Boolean) : [];
     for (const f of files) {
       if (!fs.existsSync(f)) continue;

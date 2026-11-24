@@ -1,10 +1,10 @@
 /**
  * Time ▸ Log hours: the one path, as pure derivations (no React; tested in ./path.test.ts, design note
- * docs/ui/time-redesign.md).
+ * docs/archive/2026-build/time-redesign.md).
  *
  *   Suggested   what the app proposed for the selected week, and where those rows are now
  *   Needs you   open rows that cannot log without you, grouped by what is missing (opp → task type → hours → check),
- *               each row in exactly one group, with bulk fixes only where one pick fits many rows; an internal row
+ *               each row in exactly one group (lane 1 regroups them by suggestion: ./fix-derive.ts); an internal row
  *               (D-64: internal-only work, no opportunity by design) never asks for an opp
  *   Internal    the internal-only rows the app suggests (proposed): a quiet group on Log it, each with Log and Dismiss
  *   Log it      four stops with a count each: Ready to log (verb: Log to Slackbot) → Apply → Tell Slackbot → Verified,
@@ -14,10 +14,12 @@
  *
  * Human hours only: agent time is never in these rows, so it is never counted here.
  */
-import type { ActivityEntry, LogCanvas, SourceKind } from '@/contract';
+import type { ActivityEntry, LogCanvas } from '@/contract';
 import { isOverlapInfo } from '@/engines/activity/overlap-flags';
 import { countsAsLogged, needsRelog } from '@/engines/activity/org62-check';
-import { isInternalEntry } from '@/lib/time-internal';
+import { hasTarget, isInternalEntry } from '@/lib/time-internal';
+import { appliedRowIds, cannotLogYet, openNeedOf } from '@/engines/activity/to-log-count';
+import { fixRowsOf } from './lanes-derive';
 import { dcWord, fmtH, overlapCaption, q4Steps, ucWord, q4Tone, quarterBounds, quarterPace, weekSplit, type Q4Input, type Q4Step, type QuarterPace } from './derive';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -26,36 +28,19 @@ export const rowsWord = (n: number) => `${n} ${n === 1 ? 'row' : 'rows'}`;
 /** "3 rows · 4.5 h" */
 export const rowsAndHours = (rows: number, hours: number) => `${rowsWord(rows)} · ${fmtH(hours)}`;
 
-/** Source names for cluster labels (the same words as the source chips, src/ui/chips.tsx SOURCE_META). */
-const SOURCE_LABEL: Record<SourceKind, string> = { slack: 'Slack', gmail: 'Gmail', calendar: 'Calendar', drive: 'Drive', gemini: 'Gemini notes', org62: 'Org62', vdp: 'VDP', claude: 'Claude', manual: 'Manual' };
-
 const APPLIED: ReadonlySet<LogCanvas['state']> = new Set(['applying', 'applied', 'verified', 'unverified']);
-const LIVE: ReadonlySet<ActivityEntry['status']> = new Set(['needs_input', 'proposed', 'approved']);
 
 export interface PathInput extends Q4Input {
   tz?: string;
 }
 
-/** Rows on a canvas you applied (created, or on its way): handed off, never offered to Log or to Needs you again. */
-export function appliedRowIds(canvases: readonly LogCanvas[] | undefined): Set<string> {
-  return new Set((canvases ?? []).filter((c) => APPLIED.has(c.state)).flatMap((c) => c.rowIds));
-}
+/** Rows on a canvas you applied (the shared rule, src/engines/activity/to-log-count.ts). */
+export { appliedRowIds };
 
 // ── Needs you ──────────────────────────────────────────────────────────────────────────────
 
 /** D-65: `org62`: not in Org62 after all (its Event deleted there, or its canvas ran without it): Log again / Leave out. */
 export type NeedKind = 'org62' | 'opp' | 'type' | 'hours' | 'check';
-
-export interface NeedCluster {
-  key: string;
-  /** "Slack", "CUSTOMER_1": the source or account the rows share. */
-  label: string;
-  rows: ActivityEntry[];
-  ids: string[];
-  hours: number;
-  /** "Set opp for these 6 Slack rows" when one pick can fix them all (2 rows or more, opp and type only). */
-  bulk: string | null;
-}
 
 export interface NeedGroup {
   kind: NeedKind;
@@ -65,7 +50,6 @@ export interface NeedGroup {
   rows: ActivityEntry[];
   ids: string[];
   hours: number;
-  clusters: NeedCluster[];
 }
 
 export interface NeedsYou {
@@ -91,9 +75,10 @@ export function rowWarnings(e: Pick<ActivityEntry, 'issues'>): string[] {
  * hold), or with every field filled: your Approve releases it.
  */
 export function missingOf(e: ActivityEntry, taskTypeRequired = true): NeedKind | null {
-  if (!LIVE.has(e.status)) return null;
+  // C10: which rows need you is the shared rule (the sidebar's count reads it too); this names what is missing
+  if (!cannotLogYet(e, taskTypeRequired)) return null;
   // D-64: internal-only work has no opportunity by design
-  if (!e.oppId && !e.internal) return 'opp';
+  if (!hasTarget(e)) return 'opp'; // D-103 (c): the account itself is a target too
   if (taskTypeRequired && !e.taskType) return 'type';
   const warn = rowWarnings(e);
   if (e.durationH <= 0 || (e.status === 'needs_input' && warn.some((i) => HOURSISH.test(i) && !OPPISH.test(i) && !TYPEISH.test(i)))) return 'hours';
@@ -106,7 +91,7 @@ const NEED_TITLE: Record<NeedKind, string> = { org62: 'Not in Org62', opp: 'No o
 function needWhy(kind: NeedKind, recordTypeName: string): string {
   switch (kind) {
     case 'org62':
-      return 'Handed to Slackbot, but Org62 has no Event for these: deleted there, or the canvas ran without them. Log again puts one on the next canvas; Leave out dismisses it.';
+      return 'Handed to Slackbot, but Org62 has no Event for these: deleted there, or the batch ran without them. Log again puts one in the next batch; Leave out dismisses it.';
     case 'opp':
       return 'Pick the opportunity each row logs to, or Internal for work with no customer. Tick several to set them together.';
     case 'type':
@@ -118,25 +103,6 @@ function needWhy(kind: NeedKind, recordTypeName: string): string {
   }
 }
 
-const sourceOf = (e: Pick<ActivityEntry, 'sources'>): SourceKind => e.sources[0]?.kind ?? 'manual';
-
-function clustersOf(kind: NeedKind, rows: ActivityEntry[]): NeedCluster[] {
-  if (kind === 'org62' || kind === 'hours' || kind === 'check') return [{ key: kind, label: '', rows, ids: rows.map((e) => e.id), hours: sumH(rows), bulk: null }];
-  const by = new Map<string, NeedCluster>();
-  for (const e of rows) {
-    const key = e.accountName ? `acct:${e.accountName}` : `src:${sourceOf(e)}`;
-    const label = e.accountName ?? SOURCE_LABEL[sourceOf(e)];
-    const c = by.get(key) ?? { key, label, rows: [], ids: [], hours: 0, bulk: null };
-    c.rows.push(e);
-    c.ids.push(e.id);
-    by.set(key, c);
-  }
-  const what = kind === 'opp' ? 'opp' : 'type';
-  return [...by.values()]
-    .map((c) => ({ ...c, hours: sumH(c.rows), bulk: c.rows.length >= 2 ? `Set ${what} for these ${c.rows.length} ${c.label} rows` : null }))
-    .sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label));
-}
-
 /**
  * The open rows that need you (live, not in a canvas item or on an applied canvas), each in the group of its first
  * missing thing; groups in fixing order, rows oldest first. Rows whose meeting has not ended yet can be fixed early.
@@ -146,7 +112,8 @@ export function needsYou(rows: readonly ActivityEntry[], o: { canvases?: readonl
   const by = new Map<NeedKind, ActivityEntry[]>();
   for (const e of [...rows].sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id))) {
     // D-65 (TL-14, TL-20): a row not in Org62 after all needs you even though a canvas carried it
-    const k = needsRelog(e) ? 'org62' : e.canvasDraftId || applied.has(e.id) ? null : missingOf(e, o.taskTypeRequired ?? true);
+    const n = openNeedOf(e, applied, o.taskTypeRequired ?? true);
+    const k: NeedKind | null = n === 'org62' ? 'org62' : n ? missingOf(e, o.taskTypeRequired ?? true) : null;
     if (!k) continue;
     by.set(k, [...(by.get(k) ?? []), e]);
   }
@@ -155,7 +122,7 @@ export function needsYou(rows: readonly ActivityEntry[], o: { canvases?: readonl
     .filter((k) => by.has(k))
     .map((kind) => {
       const list = by.get(kind)!;
-      return { kind, title: NEED_TITLE[kind], why: needWhy(kind, o.recordTypeName ?? 'Solutions Events'), rows: list, ids: list.map((e) => e.id), hours: sumH(list), clusters: clustersOf(kind, list) };
+      return { kind, title: NEED_TITLE[kind], why: needWhy(kind, o.recordTypeName ?? 'Solutions Events'), rows: list, ids: list.map((e) => e.id), hours: sumH(list) };
     });
   const all = groups.flatMap((g) => g.rows);
   return { groups, ids: all.map((e) => e.id), hours: sumH(all) };
@@ -175,8 +142,8 @@ export function fixPatch(e: ActivityEntry, patch: FixPatch, taskTypeRequired = t
   if (e.status !== 'needs_input') return patch;
   const next = { ...e, ...patch };
   const internal = !next.oppId && patch.internal !== false && isInternalEntry(next);
-  if ((!next.oppId && !internal) || (taskTypeRequired && !next.taskType) || next.durationH <= 0) return patch;
-  const left = rowWarnings(e).filter((i) => !(OPPISH.test(i) && (next.oppId || internal)) && !(TYPEISH.test(i) && next.taskType) && !(HOURSISH.test(i) && 'durationH' in patch));
+  if (!hasTarget({ ...next, internal }) || (taskTypeRequired && !next.taskType) || next.durationH <= 0) return patch;
+  const left = rowWarnings(e).filter((i) => !(OPPISH.test(i) && hasTarget({ ...next, internal })) && !(TYPEISH.test(i) && next.taskType) && !(HOURSISH.test(i) && 'durationH' in patch));
   return left.length ? patch : { ...patch, status: 'approved' };
 }
 
@@ -237,7 +204,7 @@ export interface LogPath {
   internal: InternalGroup;
 }
 
-const canvasesWord = (n: number) => (n === 1 ? '1 canvas' : `${n} canvases`);
+const canvasesWord = (n: number) => (n === 1 ? '1 batch' : `${n} batches`);
 
 /** In Org62 this quarter: logged and verified rows whose day falls in it (Verified's count). */
 function inOrg62(rows: readonly ActivityEntry[], label: string): ActivityEntry[] {
@@ -284,13 +251,13 @@ export function logPath(input: PathInput & { recordTypeName?: string }): LogPath
   const ucShort = ucN === 1 ? '1 VDP use case' : `${ucN} VDP use cases`;
   const queued = [dcN ? dcShort : null, ucN ? ucShort : null].filter(Boolean).join(' · ');
   const readyWhy = readyIds.length
-    ? `Log to Slackbot puts ${andList(['them', dcN ? `your ${dcWord(dcN)}` : null, ucN ? `your ${ucWord(ucN)}` : null])} on a new private canvas`
+    ? `Log to Slackbot puts ${andList(['them', dcN ? `your ${dcWord(dcN)}` : null, ucN ? `your ${ucWord(ucN)}` : null])} in a new batch`
     : dcN && ucN
-      ? `Log to Slackbot puts your ${ucWord(ucN)} on a new private canvas, with your ${dcWord(dcN)}`
+      ? `Log to Slackbot puts your ${ucWord(ucN)} in a new batch, with your ${dcWord(dcN)}`
       : dcN
-        ? `${dcN === 1 ? 'It rides' : 'They ride'} on your next canvas with rows; Log DCs now puts ${dcN === 1 ? 'it' : 'them'} on one of ${dcN === 1 ? 'its' : 'their'} own`
+        ? `${dcN === 1 ? 'It rides' : 'They ride'} in your next batch with rows; Log DCs now puts ${dcN === 1 ? 'it' : 'them'} on one of ${dcN === 1 ? 'its' : 'their'} own`
         : ucN
-          ? `Log to Slackbot puts ${ucN === 1 ? 'it' : 'them'} on a new private canvas: a use case logs on its own or with rows`
+          ? `Log to Slackbot puts ${ucN === 1 ? 'it' : 'them'} in a new batch: a use case logs on its own or with rows`
           : `Rows land here once they have ended, with ${typeWord}an opportunity`;
 
   const stages: LogStage[] = [
@@ -313,22 +280,22 @@ export function logPath(input: PathInput & { recordTypeName?: string }): LogPath
       rows: outbox?.ids.length ?? 0,
       hours: outbox?.hours ?? 0,
       count: outbox ? (outbox.ids.length ? `${canvasesWord(heldCanvases)} · ${rowsWord(outbox.ids.length)}` : canvasesWord(heldCanvases)) : 'Nothing waiting',
-      why: outbox ? 'Review each canvas, then Apply: the app creates it in Slack' : 'A staged canvas waits here for your Apply',
+      why: outbox ? 'Review each batch, then Apply: the app creates it in Slack' : 'A staged batch waits here for your Apply',
       state: outbox ? 'later' : 'done',
       step: outbox,
       secondary: [],
     },
     {
       id: 'tell',
-      title: 'Tell Slackbot',
+      title: 'Send to Org62 via Slackbot',
       rows: confirm?.ids.length ?? 0,
       hours: confirm?.hours ?? 0,
       count: confirm ? `${rowsWord(confirm.ids.length)}${tellCanvases ? ` on ${canvasesWord(tellCanvases)}` : ''}` : 'Nothing waiting',
       why: confirm
         ? confirm.state === 'waiting'
-          ? 'Prompt copied: Slackbot writes Org62, the read-back verifies it'
-          : `Copy the prompt, open the canvas and tell Slackbot "Execute this canvas"${missing ? ` · ${missing} missing in Org62` : ''}`
-        : 'Created canvases wait here until Slackbot runs them',
+          ? 'Prompt copied: Slackbot writes Org62, the Org62 check confirms it'
+          : `Copy the prompt, open the batch in Slack and send it to Org62 via Slackbot${missing ? ` · ${missing} missing in Org62` : ''}`
+        : 'Created batches wait here until Slackbot runs them',
       state: confirm ? (confirm.state === 'waiting' ? 'waiting' : 'later') : 'done',
       step: confirm,
       secondary: [],
@@ -404,10 +371,11 @@ export function quarterTruth(input: PathInput, path: LogPath, verifiedH: number 
   const tell = path.stages.find((s) => s.id === 'tell')!;
   const copied = tell.state === 'waiting';
   const lists: Array<[QuarterPart['id'], string, ActivityEntry[]]> = [
-    ['needs', 'need you', pick(path.needs.ids)],
+    // C1: the same rows as the header's "need you" (./lanes-derive.ts): fix rows and the not-found ones, never Internal
+    ['needs', 'need you', pick([...fixRowsOf(path.needs), ...(path.needs.groups.find((g) => g.kind === 'org62')?.rows ?? [])].map((e) => e.id))],
     ['ready', 'ready to log', pick(path.readyIds)],
     ['apply', 'to apply', pick(path.stages.find((s) => s.id === 'apply')!.step?.ids ?? [])],
-    ['tell', 'to tell Slackbot', copied ? [] : pick(tell.step?.ids ?? [])],
+    ['tell', 'to send to Org62 via Slackbot', copied ? [] : pick(tell.step?.ids ?? [])],
   ];
   const seen = new Set<string>();
   const parts: QuarterPart[] = [];
@@ -443,12 +411,6 @@ export function quarterTruth(input: PathInput, path: LogPath, verifiedH: number 
 /** "31.8 h landed in Q3 FY27" / "31.8 h will land in Q3 FY27" (one canvas, every other quarter it touches). */
 export function spillLine(s: Pick<CanvasSpill, 'applied' | 'elsewhere'>): string {
   return s.elsewhere.map((q) => `${fmtH(q.hours)} ${s.applied ? 'landed' : 'will land'} in ${q.label}`).join(', ');
-}
-
-/** "31.8 h in Q3 FY27 · 12.45 h in Q4 FY27": a canvas's quarter split, when it has more than one quarter. */
-export function quarterSplitLine(c: Pick<LogCanvas, 'quarters'>): string | null {
-  const q = c.quarters ?? [];
-  return q.length > 1 ? q.map((x) => `${fmtH(x.hours)} in ${x.label}`).join(' · ') : null;
 }
 
 // ── Suggested (the selected week) ──────────────────────────────────────────────────────────

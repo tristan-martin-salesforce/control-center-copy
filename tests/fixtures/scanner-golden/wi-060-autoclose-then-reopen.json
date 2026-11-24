@@ -1,0 +1,66 @@
+{
+  "id": "wi-060-autoclose-then-reopen",
+  "title": "Closed on my reply, reopened by the customer's late reply asking for more",
+  "storyline": "sample-data/CAST-work.md wi-060 (Technical sign-off on the Oakhallow order form addendum, section 3), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-17T01:05:00.000Z",
+      "seen_at": "2026-11-17T01:10:00.000Z",
+      "from_me": false,
+      "body": "Oakhallow order form is stuck on the technical addendum. PERSON_V's legal wants your sign-off on section 3 before they send it. Can you look first thing tomorrow?",
+      "meta": { "channelId": "D0THEO0002", "channelType": "im", "author": { "name": "PERSON_T", "email": "person_t@example.com", "externalId": "U0PERSONT" }, "participants": [{ "name": "PERSON_T", "externalId": "U0PERSONT" }] },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-17T15:20:00.000Z",
+      "seen_at": "2026-11-17T15:25:00.000Z",
+      "from_me": true,
+      "body": "Looked at the addendum and signed off on section 3: one wording fix on the SLA language. I emailed PERSON_V the redline.",
+      "meta": { "channelId": "D0THEO0002", "channelType": "im", "participants": [{ "name": "PERSON_T", "externalId": "U0PERSONT" }] }
+    },
+    {
+      "id": "s3",
+      "source": "gmail",
+      "kind": "email_message",
+      "occurred_at": "2026-11-17T15:40:00.000Z",
+      "seen_at": "2026-11-17T15:45:00.000Z",
+      "from_me": true,
+      "title": "Section 3 redline: support hours and severity 1 coverage",
+      "body": "PERSON_V, I reviewed section 3 and made one change: severity 1 incidents are covered 24x7, with business-hours coverage for lower severities. Redline attached. Everything else on the technical side is fine. Pat",
+      "meta": { "to": [{ "name": "PERSON_V", "email": "person_v@example.com" }], "threadId": "thr-section3-redline" }
+    },
+    {
+      "id": "s4",
+      "source": "gmail",
+      "kind": "email_message",
+      "occurred_at": "2026-11-18T00:20:00.000Z",
+      "seen_at": "2026-11-18T00:30:00.000Z",
+      "from_me": false,
+      "thread_of": "s3",
+      "title": "Re: Section 3 redline: support hours and severity 1 coverage",
+      "body": "Thanks Pat. Legal has one more change to section 3: they want severity 2 response times written into the addendum, not only in Schedule B. Can you propose wording? We would like to sign next week. PERSON_V",
+      "meta": { "author": { "name": "PERSON_V", "email": "person_v@example.com" } },
+      "agent": [{ "link": "i1", "role": "contradiction", "confidence": "likely", "reason": "follow_up: PERSON_V asks for severity 2 wording in section 3" }]
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Technical sign-off on the Oakhallow order form addendum (section 3)",
+      "keywords": ["sign-off", "addendum"],
+      "origin": "s1",
+      "ask_quote": "wants your sign-off on section 3"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "reopened": true, "why": "the sign-off closed it, then the customer's reply in my redline thread asked for more on the same section: back to open" }
+  ]
+}

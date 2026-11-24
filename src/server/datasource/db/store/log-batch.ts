@@ -29,6 +29,7 @@ import { fiscalQuarterAt } from '../quarter';
 import { pendingDcsFor } from './dc-requests';
 import { loadLandingStore } from './landings';
 import { loadRowOverrides, pendingUseCasesFor } from './use-cases';
+import { candidateCanvasRows } from '../use-cases';
 
 export interface LogBatchOptions {
   now: Date;
@@ -153,7 +154,7 @@ async function batchRows(db: DbOrTx, userId: string, where: ReturnType<typeof sq
       select a.id, a.subject, a.description, a.starts_at, a.ends_at, a.duration_hours, a.status::text as status, a.origin::text as origin,
              a.what_org62_id, a.flags, t.name as task_type, a.synced_to_canvas_at,
              a.what_kind::text as what_kind, a.opportunity_id, a.account_id, a.customer_facing, a.customer_related, a.what_name,
-             x.value ->> 'logNote' as log_note
+             coalesce(a.log_note, x.value ->> 'logNote') as log_note
         from activity_entries a left join se_task_types t on t.id = a.se_task_type_id
         left join user_settings x on x.owner_user_id = a.owner_user_id and x.key = 'cc.ext/activity_entries/' || a.id::text
        where a.owner_user_id = ${userId} and ${where}
@@ -261,13 +262,15 @@ export async function buildLogBatch(db: Db, userId: string, o: LogBatchOptions):
     ownerOrg62Id: owner?.org62Id ?? '',
     recordTypeId: o.recordTypeId,
     generatedAt: o.now.toISOString(),
-    sourceLabel: `Control Center · ${span ?? 'Duration fixes'}`,
+    sourceLabel: `Command Center · ${span ?? 'Duration fixes'}`,
     ...(o.logging ? { logging: { recordTypeName: logging.recordTypeName, taskTypeRequired: logging.taskTypeRequired } } : {}),
   };
   // 2026-11-13 (B1): ONE canvas per batch: Events, Duration fixes, DCs (D-58) and VDP use cases (D-67) in one work
   // order; parts only past Slack's own limit (src/server/time/batch-canvases.ts)
   // D-70: a use case is a row like any other (it logs on its own); the ticked ones only, when you ticked some
-  const ucAll = !o.dcOnly ? await pendingUseCasesFor(db, userId) : { creates: [], updates: [] };
+  const uc0 = !o.dcOnly ? await pendingUseCasesFor(db, userId) : { creates: [], updates: [] };
+  // use cases to add: accepted candidates' Org62 rows ride too (db/use-cases.ts; the plan's twins of them are left out)
+  const ucAll = !o.dcOnly ? { creates: await candidateCanvasRows(db, userId, uc0.creates), updates: uc0.updates } : uc0;
   // a selection is exact: rows picked and no use cases named takes none of them
   const ucOnly = o.useCases ?? (o.ids || o.eventUpdates ? new Set<string>() : null);
   const uc = ucOnly ? { creates: ucAll.creates.filter((c) => ucOnly.has(`uc:${c.vdpUseCaseId}`)), updates: ucAll.updates.filter((u) => ucOnly.has(`uc:${u.vdpUseCaseId}`)) } : ucAll;

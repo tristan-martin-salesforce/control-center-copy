@@ -5,9 +5,10 @@
  * three-pane grid, so nothing jumps when /settings lands. The route's loading.tsx and the shell's
  * pending-navigation skeleton render it before the route arrives.
  */
+import { PageHeader } from '@/components/kit';
 import { KbdHint, Skeleton } from '@/ui';
 import { Glyph } from './controls';
-import { DEFAULT_SECTION, SECTION_GROUPS, SECTIONS } from './derive';
+import { DEFAULT_SECTION, groupOf, SECTION_GROUPS, SECTIONS, sectionCrumb } from './derive';
 import s from './settings.module.css';
 
 export function SettingsSkeleton() {
@@ -16,7 +17,7 @@ export function SettingsSkeleton() {
   return (
     <div className={s.root} data-section={active}>
       <header className={s.topbar}>
-        <h1>Settings</h1>
+        <PageHeader route="settings" titleIn="topbar" inset={false} rule={false} className="min-w-0 flex-1" crumb={sectionCrumb(groupOf(active).label, title)} />
         <span className={s.find}>
           <Glyph name="search" className={s.findGlyph} />
           <span className="min-w-0 flex-1 truncate text-body text-faint">Find a setting…</span>
@@ -26,9 +27,10 @@ export function SettingsSkeleton() {
       <div className={s.grid}>
         <nav className={s.nav} aria-label="Settings sections">
           {SECTION_GROUPS.map((g) => (
-            <div className={s.group} key={g.label}>
-              <div className={s.groupLabel}>{g.label}</div>
-              {g.items.map((it) => (
+            <div className={s.group} key={g.id}>
+              <div className="px-3 pt-1 text-body font-bold text-fg-heading">{g.label}</div>
+              <div className="px-3 pb-1 text-caption text-faint">{g.blurb}</div>
+              {(g.collapsed ? [] : g.items).map((it) => (
                 <span key={it.id} className={s.item} aria-current={it.id === active ? 'page' : undefined}>
                   <span className={s.itemTitle}>{it.label}</span>
                   <span />

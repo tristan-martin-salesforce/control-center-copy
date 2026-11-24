@@ -1,5 +1,5 @@
 /**
- * Server-only data layer entry point. See docs/ui/DB-NOTES.md.
+ * Server-only data layer entry point. See docs/reference/DB-NOTES.md.
  *
  *   import { withChangeSet, actors, workItems } from '@/db';   // or relative 'src/db'
  */

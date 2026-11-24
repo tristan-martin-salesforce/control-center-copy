@@ -134,7 +134,7 @@ describe('ReplyingToView', () => {
 });
 
 describe('Outbox rows', () => {
-  it('a row with a source shows Open in Gmail (link and row action); its preview holds the block; a bare row has neither', async () => {
+  it('a row with a source shows Open in Gmail (the row link, o); its preview holds the block; a bare row has neither', async () => {
     const outbox = await ds.getOutbox({} as never);
     const item = outbox.groups.flatMap((g) => g.items).find((i) => i.draft.id === 'dr_nudge_globex')!;
     const noop = () => {};
@@ -144,7 +144,7 @@ describe('Outbox rows', () => {
     expect(link.textContent).toBe('Open in Gmail');
     expect(link.getAttribute('href')).toBe('https://mail.example.com/#inbox/globex1');
     expect(link.getAttribute('rel')).toContain('noopener');
-    expect($('[data-testid="row-source"]', container)!.getAttribute('aria-label')).toBe('Open in Gmail');
+    expect(link.getAttribute('title')).toBe('Open in Gmail (o)'); // ActionRow's source: the row's own link, o follows it
     await waitFor(() => $('[data-testid="row-expansion"] [data-replying-to][data-kind="gmail"]', container));
     const bare = { ...item, draft: { ...item.draft, id: 'dr_bare' }, source: null };
     const r2 = await mount(h(OutboxRow, { ...props, item: bare, expanded: false }));

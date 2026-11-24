@@ -42,6 +42,8 @@ const LOADERS: Record<PageKey, () => Promise<RoutePage>> = {
   today: () => import('@/components/today/TodayPage').then((m) => m.TodayPage),
   triage: () => import('../triage/_triage/TriagePage').then((m) => m.TriagePage),
   outbox: () => import('../outbox/_outbox/OutboxPage').then((m) => m.OutboxPage),
+  // 01 R9: its own app/ route too (app/getting-started/page.tsx), so a reload renders it on the server
+  gettingStarted: () => import('../getting-started/page').then((m) => m.default),
   assistant: () =>
     Promise.all([
       import('@/components/chat/AssistantPage'),
@@ -82,7 +84,8 @@ const LOADERS: Record<PageKey, () => Promise<RoutePage>> = {
   briefs: () => import('../briefs/_briefs/BriefsPage').then((m) => m.BriefsPage),
   agents: () => import('@/components/agents/AgentsView').then((m) => m.AgentsView),
   tools: () => import('@/components/agents/ToolsView').then((m) => m.ToolsView),
-  time: () => import('@/components/time/TimePage').then((m) => m.TimePage),
+  // 01 R1: Activity mounts its slice of the Needs-you queue above the page (app/activity/_activity)
+  time: () => import('../activity/_activity/ActivityPage').then((m) => m.ActivityPage),
   health: () => import('@/components/health/HealthPage').then((m) => m.HealthPage),
   settings: () => import('@/components/settings/SettingsPage').then((m) => m.SettingsPage),
   history: () => import('@/components/history/HistoryPage').then((m) => m.HistoryPage),

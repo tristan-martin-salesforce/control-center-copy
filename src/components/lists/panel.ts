@@ -1,6 +1,6 @@
 'use client';
 /**
- * The list pages and the v2 docked right panel (docs/ui/BUILD-V2.md "Seams"). Detail never opens in a
+ * The list pages and the v2 docked right panel (docs/archive/2026-build/BUILD-V2.md "Seams"). Detail never opens in a
  * page-owned sheet: a click or Enter calls `openDetails({ kind, id, label })`, an open Details tab follows
  * the selection as j/k move it, and Esc closes the panel. `window.__ccOpenDetails` (smoke tests) sees
  * every Details request, which proves the calls while the provider is still a no-op.

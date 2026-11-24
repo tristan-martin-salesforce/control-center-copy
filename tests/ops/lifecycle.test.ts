@@ -2,6 +2,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { eventually } from '../support/until';
 import { Lifecycle, SingleInstanceLock, WakeDetector, type PgLike } from '../../src/ops/lifecycle';
 
 describe('Lifecycle', () => {
@@ -57,7 +59,7 @@ describe('Lifecycle', () => {
     life.installSignalHandlers({ on: ((sig: string, fn: () => void) => void (handlers[sig] = fn)) as never });
     expect(Object.keys(handlers).sort()).toEqual(['SIGINT', 'SIGTERM']);
     handlers.SIGTERM!();
-    await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0));
+    await eventually(() => expect(exit).toHaveBeenCalledWith(0));
   });
 });
 

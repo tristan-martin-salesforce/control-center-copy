@@ -27,7 +27,10 @@ import type { DcRead } from '@/server/deals/dc-requests';
 import { vdpOppIdsOf } from '@/server/deals/needs';
 import { accountMerges, VDP_SCOPE_WITHDRAWN_REASON } from '@/server/deals/scope';
 
+import { id15, isOrg62Id } from '@/connectors/org62/ids';
+
 import { extKey } from '../ext';
+import { readHash, recordMirrorRead } from '../vdp-mirror';
 import { writeKv, type WriteCtx } from './common';
 import { mergeExt } from './projections';
 import { loadGapEntities, loadVdpRecords } from './vdp';
@@ -35,27 +38,35 @@ import { loadGapEntities, loadVdpRecords } from './vdp';
 /** The kv singleton holding the newest complete read of my DCs (`DcRead`). */
 export const DC_READ_KEY = 'cc.deals/dc-read';
 
-const id15 = (s: string) => s.slice(0, 15);
-const isOrg62Id = (s: string | null | undefined, prefix: string) => !!s && new RegExp(`^${prefix}[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$`).test(s);
 
 // ---------------------------------------------------------------------------
 // DC-06: the newest complete read
 // ---------------------------------------------------------------------------
 
-/** Keep the newest complete read of my DCs (1 when it moved on). */
+/**
+ * Keep the newest complete read of my DCs (1 when it moved on). D-98 (mirror convention): the read is a `mirror_reads`
+ * row (source org62, scope my_dcs); the kv singleton is still written for the read model's callers.
+ * TODO(2.1): drop the kv singleton once every caller reads lastDcRead.
+ */
 export async function rememberDcRead(w: WriteCtx, read: DcRead | null | undefined): Promise<number> {
   if (!read?.complete) return 0;
   const prev = w.kv.get(DC_READ_KEY) as DcRead | undefined;
   if (prev?.at && Date.parse(prev.at) >= Date.parse(read.at)) return 0;
   await writeKv(w, DC_READ_KEY, { at: read.at, complete: true });
+  await recordMirrorRead(w.tx, w.userId, { source: 'org62', scope: 'my_dcs', readAt: new Date(read.at), rows: 0, complete: true, hash: readHash([read.at]) });
   return 1;
 }
 
-/** The newest complete read of my DCs the app has seen, or null. */
+/** The newest complete read of my DCs the app has seen, or null: mirror_reads first, the kv singleton as the fallback. */
 export async function lastDcRead(db: DbOrTx, userId: string): Promise<DcRead | null> {
+  const m = await db.execute<{ at: Date | string }>(sql`select read_at as at from mirror_reads where owner_user_id = ${userId}::uuid and source = 'org62' and scope = 'my_dcs' and complete order by read_at desc limit 1`);
   const r = await db.execute<{ value: DcRead | null }>(sql`select value from user_settings where owner_user_id = ${userId} and key = ${DC_READ_KEY}`);
   const v = r.rows[0]?.value;
-  return v?.at && v.complete ? { at: v.at, complete: true } : null;
+  const kv = v?.at && v.complete ? v.at : null;
+  const row = m.rows[0] ? new Date(m.rows[0].at).toISOString() : null;
+  // the newer of the two (a read the old build recorded only in the kv still counts)
+  const at = row && kv ? (Date.parse(kv) >= Date.parse(row) ? kv : row) : (row ?? kv);
+  return at ? { at, complete: true } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,12 +83,14 @@ export async function clearStaleDcFlags(w: WriteCtx, oppIds?: readonly string[])
   const scope = oppIds ? sql`and o.id::text in (${sql.join(oppIds.map((x) => sql`${x}`), sql`, `)})` : sql``;
   const r = await w.tx.execute<{ id: string }>(sql`
     select o.id::text as id from opportunities o
-      join user_settings s on s.owner_user_id = o.owner_user_id and s.key = 'cc.ext/opportunities/' || o.id::text and (s.value->>'dcAssigned')::boolean
+      -- D-98: the column first; the kv copy only for a row the backfill has not reached
+      left join user_settings s on s.owner_user_id = o.owner_user_id and s.key = 'cc.ext/opportunities/' || o.id::text
      where o.owner_user_id = ${w.userId} ${scope}
+       and (o.dc_assigned or coalesce((s.value->>'dcAssigned')::boolean, false))
        and not exists (
          select 1 from deal_contributions dc left join opportunities o2 on o2.id = dc.opportunity_id
           where dc.owner_user_id = o.owner_user_id and dc.is_mine and dc.deleted_upstream_at is null
-            and (dc.opportunity_id = o.id or left(o2.org62_opportunity_id, 15) = left(o.org62_opportunity_id, 15)))
+            and (dc.opportunity_id = o.id or o2.org62_opportunity_id15 = o.org62_opportunity_id15))
        and (o.org62_opportunity_id ~ '^006[A-Za-z0-9]{12}'
             or exists (select 1 from deal_contributions d3 where d3.owner_user_id = o.owner_user_id and d3.opportunity_id = o.id and d3.is_mine and d3.deleted_upstream_at is not null))`);
   let n = 0;
@@ -96,7 +109,7 @@ export async function engagedAccountIds(db: DbOrTx, userId: string): Promise<Set
      where o.owner_user_id = ${userId} and not o.is_closed and o.archived_at is null and o.account_id is not null
        and (select sum(dc.split_percent) from deal_contributions dc left join opportunities o2 on o2.id = dc.opportunity_id
              where dc.owner_user_id = o.owner_user_id and dc.is_mine and dc.deleted_upstream_at is null
-               and (dc.opportunity_id = o.id or left(o2.org62_opportunity_id, 15) = left(o.org62_opportunity_id, 15))) = 100`);
+               and (dc.opportunity_id = o.id or o2.org62_opportunity_id15 = o.org62_opportunity_id15)) = 100`);
   return new Set(r.rows.map((x) => x.id));
 }
 
@@ -195,10 +208,11 @@ export async function afterBookSync(w: WriteCtx, book: Pick<Org62Book, 'accounts
  */
 export async function sweepStaleAccountDcStatus(w: WriteCtx): Promise<number> {
   const r = await w.tx.execute<{ id: string; status: string | null }>(sql`
-    select a.id::text as id, s.value->>'dcStatus' as status from accounts a
-      join user_settings s on s.owner_user_id = a.owner_user_id and s.key = 'cc.ext/accounts/' || a.id::text and s.value ? 'dcStatus'
-     where a.owner_user_id = ${w.userId}
-       and (s.value->>'dcStatus' = 'requested' or not exists (
+    select a.id::text as id, coalesce(a.dc_status, s.value->>'dcStatus') as status from accounts a
+      -- D-98: the column first; the kv copy only for a row the backfill has not reached
+      left join user_settings s on s.owner_user_id = a.owner_user_id and s.key = 'cc.ext/accounts/' || a.id::text
+     where a.owner_user_id = ${w.userId} and coalesce(a.dc_status, s.value->>'dcStatus') is not null
+       and (coalesce(a.dc_status, s.value->>'dcStatus') = 'requested' or not exists (
          select 1 from opportunities o where o.owner_user_id = a.owner_user_id and o.account_id = a.id and not o.is_closed and o.archived_at is null
             and (o.on_my_team or exists (select 1 from deal_contributions dc where dc.owner_user_id = o.owner_user_id and dc.opportunity_id = o.id and dc.is_mine and dc.deleted_upstream_at is null))))`);
   let n = 0;
@@ -276,7 +290,7 @@ export async function markOppsDeleted(w: WriteCtx, org62OppIds: readonly string[
   const list = sql.join(ids.map((x) => sql`${x}`), sql`, `);
   const opps = await w.tx.execute<{ id: string }>(sql`
     update opportunities set archived_at = ${w.now.toISOString()}::timestamptz, updated_at = now()
-     where owner_user_id = ${w.userId} and archived_at is null and left(org62_opportunity_id, 15) in (${list})
+     where owner_user_id = ${w.userId} and archived_at is null and org62_opportunity_id15 in (${list})
     returning id::text as id`);
   await w.tx.execute(sql`
     update source_items si set deleted_upstream_at = ${w.now.toISOString()}::timestamptz, updated_at = now()

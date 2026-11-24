@@ -19,6 +19,7 @@ import { sql } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { resolveDatabaseUrl } from '@/db/client';
 import { claimJobs, enqueueJob, type ClaimedJob } from '@/db/queue';
+import { deferJob } from '@/server/datasource/db/spend';
 import {
   cancelJob,
   classifyJobError,
@@ -35,6 +36,11 @@ import {
 import type { JobRegistry } from '@/jobs/registry';
 import { abortReasonOf, JobAbort, type JobContext, type JobRow } from '@/jobs/types';
 import { withTraceContext } from '@/scanner/trace';
+import { logger } from '@/lib/log';
+import type { Logger } from 'pino';
+
+/** Lines from a runtime built without a `log` option (pino JSON, like the worker's own). */
+let fallbackLog: Logger | null = null;
 
 export interface PoolSpec {
   name: string;
@@ -71,6 +77,14 @@ export interface WorkerRuntimeOptions<S> {
   onTick?: (s: WorkerStatus) => void;
   /** A job went dead (notifications for failed Top-3 work). */
   onDead?: (job: JobRow, outcome: Extract<FailOutcome, { status: 'dead' }>) => Promise<void>;
+  /**
+   * Spend governor (H-5): before a job that calls a model starts, hold its estimate; declined when today's spend plus
+   * every live hold would pass the daily hard cap (the job waits until `retryAt`, attempt not consumed). `settle`
+   * runs after the handler, however it ends.
+   */
+  startGate?: (job: JobRow) => Promise<{ start: true; settle?: () => Promise<void> } | { start: false; retryAt: Date }>;
+  /** Put a declined job back for later (default: the queue's own deferral in src/server/datasource/db/spend.ts). */
+  deferJob?: (db: Db, id: number, workerId: string, runAt: Date) => Promise<unknown>;
   /** B3: Outbox jobs the reaper stopped (never requeued): resolve their items without writing again. */
   onReapedOutbox?: (jobs: ReapedOutboxJob[]) => Promise<void>;
   log?: (msg: string, detail?: Record<string, unknown>) => void;
@@ -121,7 +135,8 @@ export class WorkerRuntime<S = unknown> {
     return this.o.clock?.() ?? new Date();
   }
   private log(msg: string, detail?: Record<string, unknown>) {
-    (this.o.log ?? ((m: string, d?: Record<string, unknown>) => console.log(`[worker] ${m}${d ? ` ${JSON.stringify(d)}` : ''}`)))(msg, detail);
+    if (this.o.log) this.o.log(msg, detail);
+    else (fallbackLog ??= logger('worker')).info(detail ?? {}, msg);
   }
 
   get activeCount(): number {
@@ -276,7 +291,13 @@ export class WorkerRuntime<S = unknown> {
         const busy = [...this.active.values()].filter((a) => a.pool === pool.name).length;
         const free = pool.concurrency - busy;
         if (free <= 0) continue;
-        const claimed = await claimJobs({ db: this.o.db, workerId: this.o.workerId, queues: pool.queues, limit: free });
+        const claimed = await claimJobs({
+          db: this.o.db,
+          workerId: this.o.workerId,
+          ownerUserId: this.o.userId, // jobs run as this.o.userId: never claim another user's
+          queues: pool.queues,
+          limit: free,
+        });
         for (const c of claimed) {
           this.launch(c, pool.name);
           started++;
@@ -330,6 +351,13 @@ export class WorkerRuntime<S = unknown> {
         await cancelJob(db, job.id, workerId, `superseded by generation ${fence.current}`);
         return;
       }
+      const gate = this.o.startGate ? await this.o.startGate(job).catch((): { start: true; settle?: () => Promise<void> } => ({ start: true })) : null;
+      if (gate && !gate.start) {
+        await (this.o.deferJob ?? deferJob)(db, job.id, workerId, gate.retryAt);
+        this.log(`${job.kind}#${job.id} waits for the day's budget`, { code: 'spend_day_budget', retryAt: gate.retryAt.toISOString() });
+        return;
+      }
+      const settleSpend = gate && gate.start ? gate.settle : undefined;
       const ctx: JobContext<S> = {
         job,
         signal: ac.signal,
@@ -347,6 +375,7 @@ export class WorkerRuntime<S = unknown> {
       try {
         result = await def.handler(ctx);
       } catch (e) {
+        await settleSpend?.().catch(() => undefined);
         if (ac.signal.aborted) return await this.settleAborted(job, ac.signal);
         const c = classifyJobError(e);
         const out = await failJob(db, job.id, workerId, c);
@@ -354,6 +383,7 @@ export class WorkerRuntime<S = unknown> {
         if (out.status === 'dead') await this.o.onDead?.(job, out).catch(() => undefined);
         return;
       }
+      await settleSpend?.().catch(() => undefined);
       if (ac.signal.aborted) return await this.settleAborted(job, ac.signal);
       await completeJob(db, job.id, workerId, result ?? {});
     } finally {
@@ -409,7 +439,7 @@ export class WorkerRuntime<S = unknown> {
   }
 
   private async listenCancels(): Promise<void> {
-    const c = new Client({ connectionString: resolveDatabaseUrl(this.o.listenUrl ?? undefined), application_name: 'control-center-worker-cancel' });
+    const c = new Client({ connectionString: resolveDatabaseUrl(this.o.listenUrl ?? undefined), application_name: 'command-center-worker-cancel' });
     c.on('notification', (m) => {
       const id = Number(m.payload);
       const a = this.active.get(id);

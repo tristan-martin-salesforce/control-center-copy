@@ -1,10 +1,11 @@
 /**
  * Shared helpers for the real-seed builder. Contains NO data: everything personal is read at run time from
- * ~/Library/Application Support/control-center/fixtures/raw/ (outside the repo).
+ * ~/Library/Application Support/command-center/fixtures/raw/ (outside the repo).
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { homeStateDir } from '../../src/lib/state-folder';
 import type { SeedInput } from '../../src/contract';
 
 export type In = SeedInput;
@@ -16,7 +17,7 @@ export type SourceRefIn = In['evidence'][number]['source'];
 export type PersonRefIn = NonNullable<WorkItemIn['owner']>;
 export type EventIn = In['calendar']['events'][number];
 
-export const APP_SUPPORT = path.join(os.homedir(), 'Library/Application Support/control-center');
+export const APP_SUPPORT = homeStateDir();
 export const RAW_DIR = path.join(APP_SUPPORT, 'fixtures/raw');
 export const OUT_PATH = path.join(APP_SUPPORT, 'fixtures/seed.json');
 export const VOICE_PATH = path.join(APP_SUPPORT, 'voice/profile.json');

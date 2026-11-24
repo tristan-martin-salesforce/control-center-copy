@@ -15,25 +15,30 @@
  * - `interimRanker`: the mock's deterministic scorer (mock/rank.ts). The mock ↔ db parity suite injects it
  *   so both sides rank the same seed identically (D-RANK); nothing else uses it.
  */
-import type { CalendarEvent, PolicyPreview, PriorityPolicy, RankReason, RankRow, TodayHeader, WorkItemRecord, WorkState } from '@/contract';
-import {
-  previewPolicy as enginePreview,
-  rankWork,
-  rerank,
-  type ComponentKey,
-  type PriorityInputs,
-  type RankingResult,
-  type RuleHit,
-} from '@/engines/priority';
-import type { Meeting, PersonLite, PriorityItem, StakeholderTier, WorkItemStatus } from '@/engines/types';
+import type { PolicyPreview, PriorityPolicy, RankReason, RankRow, TodayHeader, WorkItemRecord } from '@/contract';
+import { previewPolicy as enginePreview } from '@/engines/priority/preview';
+import { PRIORITY_ENGINE_VERSION, type ComponentKey, type PriorityInputs, type RankingResult, type RuleHit } from '@/engines/priority/types';
+import { rerank } from '@/engines/priority/stability';
+import { meetingsFrom, priorityItemsFrom } from '@/engines/priority/inputs';
 
 import { computeRanking, scoreItem, type Scored } from '../mock/rank';
 import type { Store } from '../mock/store';
 import { agentStartedFor, capacityInputs, toContractCapacity } from './capacity';
 import type { ReadModel } from './model';
 import { enginePolicyFromContract } from './policy-map';
+import { applyNudges, type PriorityConfig } from '@/engines/priority/v2/config';
+import { engineOf, nudgesOf, rankShown } from '@/engines/priority/v2/shadow';
+import { personaOf } from '@/personas';
 
-export { priorityFor, RANKABLE_STATES, isRankable } from '../mock/rank';
+/** The engine the user runs (`settings.priority.engine`; default shadow). */
+const engineSettingOf = (m: Pick<ReadModel, 'settings'>) => engineOf(m.settings() as { priority?: unknown });
+
+/** priority@2's config: the persona's priority block with the accepted learning nudges (bounded). */
+export function priorityConfigOf(m: Pick<ReadModel, 'settings'> & { ctx?: { kv?: ReadonlyMap<string, unknown> } }): PriorityConfig {
+  return applyNudges(personaOf(m.settings()).priority, nudgesOf(m.ctx?.kv));
+}
+
+export { priorityFor, derivedPriority, RANKABLE_STATES, isRankable } from '../mock/rank';
 export type { Scored };
 
 /** Per-item engine output persisted on the priority_scores row. */
@@ -45,6 +50,8 @@ export interface ScoreDetail {
   inputsHash: string;
   components: Partial<Record<ComponentKey, number>>;
   ruleHits: RuleHit[];
+  /** priority@2 rows: V, U and the terms (`priority_scores.value`, `urgency`, `terms`); the component columns stay empty. */
+  v2?: { value: number; urgency: number; terms: Record<string, number> };
 }
 
 export interface DbRanking {
@@ -91,9 +98,9 @@ export function storedOrderFrom(model: ReadModel, rankedIds: string[]): WorkItem
   const ranked = rankable.filter((w) => w.rank !== null).sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9) || (a.rank ?? 0) - (b.rank ?? 0));
   const unranked = rankable.filter((w) => w.rank === null);
   if (!ranked.length) {
-    // fallback: nothing has a priority_scores row yet → due, then importance, then age
-    const imp = { high: 0, medium: 1, low: 2 } as const;
-    return unranked.sort((a, b) => (a.due ?? '9').localeCompare(b.due ?? '9') || imp[a.priority] - imp[b.priority] || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    // fallback: nothing has a priority_scores row yet → due, then importance (the extractor's), then age
+    const imp = { critical: 0, high: 1, normal: 2, low: 3 } as const;
+    return unranked.sort((a, b) => (a.due ?? '9').localeCompare(b.due ?? '9') || imp[a.importance ?? 'normal'] - imp[b.importance ?? 'normal'] || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
   return [...ranked, ...unranked.sort((a, b) => a.createdAt.localeCompare(b.createdAt))];
 }
@@ -155,19 +162,6 @@ export const interimRanker: DbRanker = {
 // ENGINES-core
 // ---------------------------------------------------------------------------
 
-const ENGINE_STATUS: Record<WorkState, WorkItemStatus> = {
-  suggested: 'suggested',
-  open: 'open',
-  in_progress: 'in_progress',
-  waiting_on_me: 'waiting_on_me',
-  waiting_on_others: 'waiting_on_others',
-  likely_done: 'likely_done',
-  done: 'done',
-  reopened: 'open', // "reopened" is a label on open (ENGINES.md §5)
-  snoozed: 'snoozed',
-  dismissed: 'dismissed',
-};
-
 const STARTED_RUN = new Set(['running', 'waiting_on_you', 'done_review', 'done']);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -179,89 +173,30 @@ export function utcOffsetMinutes(timeZone: string, at: Date): number {
   return Math.round((asUtc - Math.floor(at.getTime() / 1000) * 1000) / 60_000);
 }
 
-function tierOf(p: { role?: string; isManager?: boolean; isExternal?: boolean }): StakeholderTier | undefined {
-  const role = (p.role ?? '').toLowerCase();
-  if (p.isManager) return 'manager';
-  if (p.isExternal) return /\b(vp|chief|cxo|ceo|cio|cto|cdo|head|director|exec)/.test(role) ? 'customer_exec' : 'customer';
-  if (/\bae\b|account exec/.test(role)) return 'ae';
-  if (/partner|\bsi\b/.test(role)) return 'partner';
-  if (/leader|\brvp\b|\bavp\b/.test(role)) return 'leader';
-  return role ? 'teammate' : undefined;
-}
-
-function priorityItem(w: WorkItemRecord, m: ReadModel, lastEvidence: Map<string, string>): PriorityItem {
-  const opp = w.oppId ? m.get('opps', w.oppId) : undefined;
-  const people = [...w.people, ...(w.counterparty && !w.people.some((p) => p.id === w.counterparty!.id) ? [w.counterparty] : [])];
-  const stakeholders: PersonLite[] = people.map((p) => {
-    const full = m.get('people', p.id);
-    const ref = { ...p, ...(full ? { role: full.role, isManager: full.isManager, isExternal: full.isExternal } : {}) };
-    return { id: p.id, name: p.name, isManager: !!ref.isManager, isExternal: !!ref.isExternal, ...(tierOf(ref) ? { tier: tierOf(ref) } : {}) };
-  });
-  return {
-    id: w.id,
-    title: w.title,
-    kind: w.kind,
-    status: ENGINE_STATUS[w.state],
-    due: w.due,
-    effort: { youMin: w.effort.youMin, agentMin: w.effort.agentMin },
-    stakeholders,
-    accountId: w.accountId,
-    oppId: w.oppId,
-    oppAmount: opp?.amount ?? null,
-    initiativeId: w.initiativeId,
-    servesEventId: w.servesEventId,
-    createdAt: w.createdAt,
-    lastEvidenceAt: lastEvidence.get(w.id) ?? null,
-    isBackground: w.isBackground,
-    customerFacing: w.signals.customerFacing,
-    fromManager: w.signals.fromManager,
-    userAdjustment: w.signals.boost,
-    agentStarted: agentStartedFor(w, m, STARTED_RUN),
-    training: w.training ? { mandatory: !!w.training.dueDate || w.training.overdue, requiredBy: w.training.dueDate ? `${w.training.dueDate}T23:59:00.000Z` : null } : null,
-    source: w.sources[0]?.kind ?? null,
-  };
-}
-
-function meetingOf(e: CalendarEvent): Meeting {
-  return {
-    id: e.id,
-    title: e.title,
-    start: e.start,
-    end: e.end,
-    attendance: e.attendance === 'attended' || e.attendance === 'missed' || e.attendance === 'upcoming' ? e.attendance : 'unknown',
-    hasExternalAttendees: e.attendees.some((a) => a.isExternal),
-    isCustomerFacing: e.isCustomerFacing,
-    accountId: e.accountId,
-    oppId: e.oppId,
-    status: e.attendance === 'cancelled' ? 'cancelled' : 'confirmed',
-    // the invite's own answer when the event carries it (tentative / unanswered never block: isBusy)
-    myResponse: e.attendance === 'declined' ? 'declined' : (e.myResponse ?? 'accepted'),
-    isAllDay: e.isAllDay ?? false,
-    eventType: e.eventType ?? 'default',
-    prepItemIds: e.prep?.workItemId ? [e.prep.workItemId] : [],
-  };
-}
-
 /** The engine's inputs from the read model (pure; no I/O). */
 export function priorityInputs(m: ReadModel, policy: PriorityPolicy, now: Date, opts: { rowId?: string } = {}): PriorityInputs {
-  const lastEvidence = new Map<string, string>();
-  for (const e of m.all('evidence')) if (!lastEvidence.has(e.workItemId) || e.at > lastEvidence.get(e.workItemId)!) lastEvidence.set(e.workItemId, e.at);
-  const from = now.getTime() - 86_400_000;
-  const to = now.getTime() + 5 * 86_400_000;
   const profile = m.settings().profile;
   const current = m.settings().policy;
   const engine = m.extra.policyEngine;
   const utcOffset = utcOffsetMinutes(profile.timezone, now);
   return {
     now: now.toISOString(),
-    items: m.all('workItems').map((w) => priorityItem(w, m, lastEvidence)),
-    meetings: m
-      .all('events')
-      .filter((e) => Date.parse(e.start) >= from && Date.parse(e.start) <= to)
-      .map(meetingOf),
+    // the shared pure builder (engines/priority/inputs.ts): the golden-day evals run the same mapping
+    items: priorityItemsFrom({
+      items: m.all('workItems'),
+      person: (id) => m.get('people', id),
+      oppAmount: (id) => m.get('opps', id)?.amount ?? null,
+      evidence: m.all('evidence'),
+      agentStarted: (w) => agentStartedFor(w as WorkItemRecord, m, STARTED_RUN),
+    }),
+    meetings: meetingsFrom(m.all('events'), now),
+    // priority@2 plans back over 10 working days with the persona's priority block (+ accepted learning nudges);
+    // priority@1.1 ignores both
+    horizonMeetings: meetingsFrom(m.all('events'), now, 16),
+    priorityConfig: priorityConfigOf(m),
     // the stored row id names the version a score was computed under (the proposed one has none yet)
     policy: enginePolicyFromContract(policy, { rowId: opts.rowId ?? (policy.version === current.version ? (m.extra.policyRowId ?? policy.id) : `${policy.id}@v${policy.version}`), obligation: engine.obligation, top3Size: engine.top3Size }),
-    workingHours: { start: profile.workingHours.start, end: profile.workingHours.end, days: profile.workingHours.days, utcOffsetMinutes: utcOffset },
+    workingHours: { start: profile.workingHours.start, end: profile.workingHours.end, days: profile.workingHours.days, utcOffsetMinutes: utcOffset, ...(profile.timezone ? { timeZone: profile.timezone } : {}) },
     // capacity (DESIGN-V2): pinned items, approvals + re-auth chores, agents in flight, effort actuals
     ...capacityInputs(m, now, utcOffset),
   };
@@ -269,7 +204,7 @@ export function priorityInputs(m: ReadModel, policy: PriorityPolicy, now: Date, 
 
 /** GET /today's capacity: the engine's (rankWork), the same for the mock and the db DataSource. */
 export function todayCapacity(m: ReadModel, now: Date): TodayHeader['capacity'] {
-  return toContractCapacity(rankWork(priorityInputs(m, m.settings().policy, now)).capacity);
+  return toContractCapacity(rankShown(engineSettingOf(m), priorityInputs(m, m.settings().policy, now)).capacity);
 }
 
 function scoredOf(r: RankingResult): Scored[] {
@@ -279,9 +214,11 @@ function scoredOf(r: RankingResult): Scored[] {
 }
 
 export const enginesRanker: DbRanker = {
-  engineVersion: 'priority@1',
+  engineVersion: PRIORITY_ENGINE_VERSION,
   rank(model, policy, now) {
-    const result = rankWork(priorityInputs(model, policy, now));
+    // settings.priority.engine: v2 ranks and stores as priority@2; v1 and shadow store priority@1.1 (shadow's v2 run
+    // is recorded beside it by rerankIn)
+    const result = rankShown(engineSettingOf(model), priorityInputs(model, policy, now));
     const details = new Map<string, ScoreDetail>();
     for (const s of Object.values(result.scores)) {
       details.set(s.workItemId, {
@@ -290,18 +227,19 @@ export const enginesRanker: DbRanker = {
         slackMinutes: s.slackMinutes === null ? null : Math.round(s.slackMinutes),
         explanation: s.explanation,
         inputsHash: s.inputsHash,
-        components: Object.fromEntries(s.components.map((c) => [c.key, c.points])),
+        components: s.v2 ? {} : Object.fromEntries(s.components.map((c) => [c.key, c.points])),
         ruleHits: s.ruleHits,
+        ...(s.v2 ? { v2: { value: s.v2.value, urgency: s.v2.urgency, terms: s.v2.terms } } : {}),
       });
     }
     return { engineVersion: result.engineVersion, ranked: scoredOf(result), details, result };
   },
   scoreOf(item, model, policy, now) {
-    const result = rankWork(priorityInputs(model, policy, now));
+    const result = rankShown(engineSettingOf(model), priorityInputs(model, policy, now));
     return round2(result.scores[item.id]?.total ?? 0);
   },
   today(model, stored, now) {
-    const fresh = rankWork(priorityInputs(model, model.settings().policy, now));
+    const fresh = rankShown(engineSettingOf(model), priorityInputs(model, model.settings().policy, now));
     const previous = stored.slice(0, fresh.top3Size).map((i) => i.id);
     const rr = rerank(previous, fresh);
     const top = rr.top3.map((id) => model.get('workItems', id)).filter((w): w is WorkItemRecord => !!w);

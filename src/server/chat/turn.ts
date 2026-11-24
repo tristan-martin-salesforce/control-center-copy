@@ -8,7 +8,7 @@
  * BE-CHAT cards (scan, draft, session) are `resource` parts/events with a `card` (ChatCard): older clients
  * show the link, newer ones the card. A scan card is one part, replaced as the scan progresses.
  */
-import type { ApiErrorCode, ChatCard, ChatMessage, ChatModel, ChatPart, ChatResource, ChatSseEvent, ChatUsage, Proposal } from '@/contract';
+import type { ApiErrorCode, ChatCard, ChatMessage, ChatModel, ChatPart, ChatResource, ChatRoute, ChatSseEvent, ChatUsage, Proposal } from '@/contract';
 import { redactPayload, redactText } from '@/llm/redact';
 import type { ChatRunStep } from '@/llm/chat/types';
 import { AppError, isAppError } from '@/server/errors';
@@ -43,6 +43,8 @@ export interface TurnIds {
   messageId: string;
   userMessageId: string;
   model: ChatModel;
+  /** Assistant v2: the router's choice (start event, message header). */
+  route?: ChatRoute;
 }
 
 export interface TurnOptions {
@@ -71,7 +73,7 @@ export function redactedText(v: unknown): string {
 const sleep = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
 
 export async function* runTurn(ids: TurnIds, steps: AsyncIterable<ChatRunStep>, o: TurnOptions): AsyncGenerator<ChatSseEvent> {
-  const { threadId, messageId, userMessageId, model } = ids;
+  const { threadId, messageId, userMessageId, model, route } = ids;
   const parts: ChatPart[] = [];
   let text = '';
   let usage: ChatUsage | undefined;
@@ -81,7 +83,12 @@ export async function* runTurn(ids: TurnIds, steps: AsyncIterable<ChatRunStep>, 
   const finish = async (status: 'complete' | 'error' | 'stopped') => {
     if (finished) return;
     finished = true;
-    await o.persist({ id: messageId, threadId, role: 'assistant', at: o.now(), text, parts, context: [], isMorningBrief: false, model, status, ...(usage ? { usage } : {}) });
+    // a plan still waiting when the turn ends can't be answered any more: it is kept, as not run
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i]!;
+      if (p.type === 'plan' && p.plan.status === 'waiting') parts[i] = { type: 'plan', plan: { ...p.plan, status: 'skipped' } };
+    }
+    await o.persist({ id: messageId, threadId, role: 'assistant', at: o.now(), text, parts, context: [], isMorningBrief: false, model, status, ...(route ? { route } : {}), ...(usage ? { usage } : {}) });
   };
   const fail = async (error: { code: ApiErrorCode; message: string; retryable: boolean; details?: unknown }) => {
     const e = { ...error, message: redactText(error.message) };
@@ -95,7 +102,7 @@ export async function* runTurn(ids: TurnIds, steps: AsyncIterable<ChatRunStep>, 
     else parts.push(p);
   };
   try {
-    yield { type: 'start', threadId, messageId, userMessageId, model };
+    yield { type: 'start', threadId, messageId, userMessageId, model, ...(route ? { route } : {}) };
     try {
       for await (const step of steps) {
         if (o.signal.aborted) break;
@@ -130,9 +137,11 @@ export async function* runTurn(ids: TurnIds, steps: AsyncIterable<ChatRunStep>, 
             const ok = step.ok ?? true;
             const summary = redactText(step.summary);
             const result = step.result === undefined ? undefined : redactedText(step.result);
+            const cost = step.costUsd && step.costUsd > 0 ? step.costUsd : undefined;
+            const held = step.held && !ok ? { held: true } : {};
             const i = parts.findIndex((p) => p.type === 'tool' && p.id === tid);
-            if (i >= 0) parts[i] = { ...(parts[i] as Extract<ChatPart, { type: 'tool' }>), summary, ok, result: result ?? summary };
-            yield { type: 'tool-result', id: tid, summary, ok, ...(result !== undefined ? { result } : {}) };
+            if (i >= 0) parts[i] = { ...(parts[i] as Extract<ChatPart, { type: 'tool' }>), summary, ok, result: result ?? summary, ...(cost ? { costUsd: cost } : {}), ...held };
+            yield { type: 'tool-result', id: tid, summary, ok, ...(result !== undefined ? { result } : {}), ...(cost ? { costUsd: cost } : {}), ...held };
             break;
           }
           case 'receipt':
@@ -163,8 +172,22 @@ export async function* runTurn(ids: TurnIds, steps: AsyncIterable<ChatRunStep>, 
             yield { type: 'resource', resource, card };
             break;
           }
+          case 'plan':
+            // one part per plan, replaced when it is answered (waiting → run / skipped / edited)
+            upsert({ type: 'plan', plan: step.plan }, (p) => p.type === 'plan' && p.plan.id === step.plan.id);
+            yield { type: 'plan', messageId, plan: step.plan };
+            break;
           case 'usage':
             usage = step.usage;
+            yield { type: 'usage-delta', messageId, spentUsd: Math.max(0, step.usage.costUsd), model: step.usage.model, ...(step.usage.subRunUsd ? { subRunUsd: step.usage.subRunUsd } : {}) };
+            break;
+          case 'usage-delta':
+            // ASSIST-9: the running spend; not persisted (the final `usage` is, on the message)
+            yield { type: 'usage-delta', messageId, spentUsd: Math.max(0, step.spentUsd), model: step.model, ...(step.subRunUsd ? { subRunUsd: step.subRunUsd } : {}), ...(step.hold ? { hold: step.hold } : {}) };
+            break;
+          case 'spend-ask':
+            // H-5: the turn waits for the card's answer (POST /chat/spend-answer); live only, like usage-delta
+            yield { type: 'spend-ask', messageId, holdId: step.holdId, question: step.question, spentUsd: step.spentUsd, heldUsd: step.heldUsd, moreUsd: step.moreUsd };
             break;
           case 'error':
             yield { type: 'error', error: await fail({ code: step.code, message: step.message, retryable: step.retryable ?? step.code !== 'validation', ...(step.details ? { details: step.details } : {}) }) };

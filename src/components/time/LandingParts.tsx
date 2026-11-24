@@ -65,10 +65,10 @@ export function WriteList({ writes, tz, showLabel = true, showCanvas = false, on
               {showCanvas && w.draftId ? (
                 onCanvas ? (
                   <button type="button" onClick={() => onCanvas(w.draftId!)} className="font-bold text-link hover:underline">
-                    {w.draftTitle ?? 'its canvas'}
+                    {w.draftTitle ?? 'its batch'}
                   </button>
                 ) : (
-                  <span>{w.draftTitle ?? 'its canvas'}</span>
+                  <span>{w.draftTitle ?? 'its batch'}</span>
                 )
               ) : null}
               <span>{`${w.sentAt ? `sent ${dayLabel(w.sentAt, tz)}` : `staged ${dayLabel(w.createdAt, tz)}`}`}</span>

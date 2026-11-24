@@ -1,0 +1,4 @@
+{
+  "note": "Internal ids already in JSX text when the rule landed (2026-11-20, 15 hits in 4 files; all fixed by p3-nav-and-pages). Never add one: say it in plain words.",
+  "hits": []
+}

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible classifier verdicts (origin \"hand\"), keyed by the classifier ledger hash (ledgerHash(model, classify-items@version, system, user)). Re-key offline after a prompt or skill change: CC_EVAL_REKEY=1 npm run test:evals. Labels carry the pass and the refs only.",
+  "entries": [
+    {
+      "hash": "cea42c977b6b873f8330165756d1955a",
+      "label": "classify | D0THEO0002:1794877500.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0THEO0002:1794877500.000000\", \"v\": \"ask\", \"kind\": \"ask\", \"title\": \"Technical sign-off on the Oakhallow order form addendum (section 3)\", \"who\": \"PERSON_T\", \"deliverable\": \"sign-off\", \"due\": null, \"conf\": 0.9, \"cite\": \"PERSON_V's legal wants your sign-off on section 3 before they send it\", \"link\": null, \"why\": \"ask in a DM for my sign-off\"}]}"
+    },
+    {
+      "hash": "28526a7ed67c326c274118e787ab6731",
+      "label": "classify | D0THEO0002:1794928800.000000",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"D0THEO0002:1794928800.000000\", \"v\": \"completion\", \"due\": null, \"conf\": 0.92, \"cite\": \"signed off on section 3: one wording fix on the SLA language\", \"link\": \"w1\", \"why\": \"my sign-off in the DM\"}]}"
+    },
+    {
+      "hash": "99773bed6d2d6f4ce04ea9602575c172",
+      "label": "classify | gm-wi-060-autoclose-then-reopen-s3",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"gm-wi-060-autoclose-then-reopen-s3\", \"v\": \"completion\", \"due\": null, \"conf\": 0.85, \"cite\": \"I reviewed section 3 and made one change\", \"link\": \"w1\", \"why\": \"my redline email for the section 3 sign-off\"}]}"
+    },
+    {
+      "hash": "255488627203ead354ed96132f22a620",
+      "label": "classify | gm-wi-060-autoclose-then-reopen-s4",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"ref\": \"gm-wi-060-autoclose-then-reopen-s4\", \"v\": \"change\", \"due\": null, \"conf\": 0.85, \"cite\": \"they want severity 2 response times written into the addendum\", \"link\": \"w1\", \"why\": \"legal wants one more change to section 3 after my sign-off\"}]}"
+    }
+  ]
+}

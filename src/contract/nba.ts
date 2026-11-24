@@ -36,8 +36,10 @@ export type EmailDestination = z.infer<typeof EmailDestination>;
 /**
  * Structured (non-message) Outbox actions, one generic destination kind for all of them. The prefix names the
  * channel and its adapter: `vdp.*` → the VDP MCP (approved 2026-11-10); `feedback.post` → one Slack post to the team's
- * feedback channel (D-56, src/outbox/adapters/feedback.ts). Add an action here and TypeScript lists every
- * map that needs its family (src/lib/actions.ts, src/outbox/settings.ts, the db draft store).
+ * feedback channel (D-56, src/outbox/adapters/feedback.ts); `release.*` → the two items a release stages (D-90,
+ * src/outbox/adapters/release-handoff.ts): `release.announce` one Slack post to the team's announcement channel, and
+ * `release.drive_upload` a hand-off with no tool call at all (the app's Drive access is read-only). Add an action here
+ * and TypeScript lists every map that needs its family (src/lib/actions.ts, src/outbox/settings.ts, the db draft store).
  */
 export const OutboxAction = z.enum([
   'vdp.update_use_case',
@@ -51,6 +53,9 @@ export const OutboxAction = z.enum([
   'vdp.generate_use_case',
   'slack_canvas.create',
   'feedback.post',
+  // D-90 (W12-7): what `npm run release -- --publish` stages, approved in the Outbox like any other item
+  'release.announce',
+  'release.drive_upload',
 ]);
 export type OutboxAction = z.infer<typeof OutboxAction>;
 
@@ -285,7 +290,7 @@ export const NbaCard = z.object({
   sources: z.array(SourceRef),
   status: NbaStatus,
   draftId: Id.nullable().default(null),
-  /** Up to three alternatives replace the single primary when confidence is low (Guess). */
+  /** Up to three alternatives replace the single primary when confidence is low (Guess). Kept at 3: the card design shows three expanded (two collapsed) and the engine's prompt asks for 1-3 (brief 08 §2.3). */
   alternatives: z.array(NbaAlternative).max(3).default([]),
   toolAdapterId: Id.nullable().default(null),
   toolInputs: z.record(z.string(), z.unknown()).nullable().default(null),
@@ -462,3 +467,47 @@ export const OutboxPayload = z.object({
     .default({ items: [], pending: 0, failed: 0, applied: [] }),
 });
 export type OutboxPayload = z.infer<typeof OutboxPayload>;
+
+// ---------------------------------------------------------------------------
+// Release drafts (D-90, W12-7): POST /outbox/releases
+// ---------------------------------------------------------------------------
+
+const Sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'a sha256 is 64 lowercase hex characters');
+const AbsPath = z.string().min(1).max(1024);
+
+/**
+ * What `npm run release -- <bump> --publish` (scripts/release/publish.ts) or `npm run release:outbox` hands the running
+ * app: one built release. The server turns it into the two Outbox items (`release.drive_upload`, `release.announce`),
+ * resolving the Drive folder and the announcement channel from the `distribution` settings key / config/team.json itself (the
+ * request's own `folderId` / `announceChannel` are used only when the server has none). Idempotent per version.
+ */
+export const StageReleaseRequest = z.object({
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'a semver version (1.4.0, 2.0.0-beta.1)'),
+  channel: z.enum(['stable', 'beta']).default('stable'),
+  artifactName: z.string().min(1).max(200),
+  artifactPath: AbsPath,
+  feedPath: AbsPath,
+  installShPath: AbsPath,
+  sha256: Sha256,
+  bytes: z.number().int().min(0),
+  /** The version's CHANGELOG section (markdown). */
+  notes: z.string().max(20_000).default(''),
+  folderId: z.string().max(200).default(''),
+  announceChannel: z.string().max(40).default(''),
+  announceChannelName: z.string().max(120).default(''),
+});
+export type StageReleaseRequest = z.infer<typeof StageReleaseRequest>;
+
+export const StageReleaseResult = z.object({
+  version: z.string(),
+  /** The hand-off item, then the announcement (the order you apply them). */
+  drafts: z.array(Draft).length(2),
+  /**
+   * Per item: `created` (new) · `updated` (a pending item of this version, rewritten in place) · `unchanged` (pending and
+   * already exactly this) · `kept` (already applied or handed off: left as it is, never a second item).
+   */
+  outcomes: z.array(z.enum(['created', 'updated', 'unchanged', 'kept'])).length(2),
+  /** The app's dry run (Settings ▸ Sending; on by default): Approve then only renders the announcement's payload. */
+  dryRun: z.boolean(),
+});
+export type StageReleaseResult = z.infer<typeof StageReleaseResult>;

@@ -43,7 +43,7 @@ const STATE_CODE: Record<string, string> = {
 };
 
 /**
- * A compact code for the transition table (docs/ui/ENGINES.md §3):
+ * A compact code for the transition table (docs/reference/ENGINES.md §3):
  * `·` nothing · `ctx` context only · `upd` fields only · `prop` proposal · `sib` sibling ·
  * `reopen` done/dismissed → open · `wake` snoozed → previous · otherwise the target state.
  */

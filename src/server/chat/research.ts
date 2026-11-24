@@ -1,13 +1,13 @@
 /**
- * `chat_research` on the db host: one question-scoped research run (skills/research-question.md) with the read-in
+ * `run research` on the db host: one question-scoped research run (skills/research-question.md) with the read-in
  * agent's guards (src/llm/readin/agent.ts): Slack (search, read thread, read channel) and Org62 (SOQL) through their
  * restricted MCP servers (the scanners' read allowlists, never widened), and the in-process `cc_research` tools
  * (ledger, Gmail, Drive, Calendar). Read only: nothing it touches can send, post or write.
  *
  * The answer comes back to the chat turn; nothing is committed. Spend is recorded by the caller on the chat line.
  */
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@/llm/provider';
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@/llm/provider';
 import { sql } from 'drizzle-orm';
 
 import type { GoogleTools } from '@/connectors/google/client';
@@ -28,6 +28,12 @@ export const RESEARCH_SLACK_TOOLS = SLACK_SCAN_TOOLS.filter((t) => t !== 'slack_
 export const RESEARCH_ORG62_TOOLS = ['soqlQuery'] as const;
 /** One research run's watchdog; the chat tool server waits longer than this (CHAT_TOOL_TIMEOUT_MS). */
 export const RESEARCH_TIMEOUT_MS = 170_000;
+/**
+ * Turns are a runaway guard only (caps audit 2026-11-21: was 16, which could stop a run well inside the budget the
+ * user approved on its plan). What bounds a research run is that hold (`costCapUsd`) and RESEARCH_TIMEOUT_MS; the
+ * same 200 as the Assistant's own steps (src/server/chat/outputs.ts).
+ */
+export const RESEARCH_RUNAWAY_TURNS = 200;
 
 export interface ChatResearchInput {
   question: string;
@@ -108,14 +114,14 @@ export async function runChatResearch(input: ChatResearchInput, d: ChatResearchD
   const state = createResearchState();
   const handlers = createResearchTools({ google: d.google, ledger: d.ledger, signal: d.signal, now: () => d.now }, state);
   const model = READIN_MODEL;
-  const maxTurns = d.maxTurns ?? 16;
+  const maxTurns = d.maxTurns ?? RESEARCH_RUNAWAY_TURNS;
   const context = {
-    question: redactText(input.question).slice(0, 600),
+    question: redactText(input.question).slice(0, 4000),
     now: d.now.toISOString(),
     timezone: d.timezone,
     me: await me(d.db, d.userId),
-    ...(input.hint ? { hint: redactText(input.hint).slice(0, 600) } : {}),
-    ...(input.names?.length ? { names: input.names.slice(0, 6).map((n) => redactText(n).slice(0, 80)) } : {}),
+    ...(input.hint ? { hint: redactText(input.hint).slice(0, 4000) } : {}),
+    ...(input.names?.length ? { names: input.names.slice(0, 20).map((n) => redactText(n).slice(0, 80)) } : {}),
     since: input.since ?? twoYearsBack(d.now),
   };
   const tools = [...ext.tools, ...RESEARCH_ALLOWED_TOOLS];
@@ -124,7 +130,7 @@ export async function runChatResearch(input: ChatResearchInput, d: ChatResearchD
     '## Run',
     `- question: ${context.question}`,
     `- now: ${context.now} (${d.timezone}); look back to ${context.since}`,
-    `- budget: at most ${maxTurns} turns and $${d.costCapUsd.toFixed(2)}; stop as soon as the question is answered with evidence`,
+    `- budget: $${d.costCapUsd.toFixed(2)} (the plan the user approved); stop as soon as the question is answered with evidence`,
     `- tools (exact names; nothing else exists): ${tools.join(', ')}`,
     unavailable.length ? `- unavailable this run, skip them: ${unavailable.join(', ')}` : '',
     '',

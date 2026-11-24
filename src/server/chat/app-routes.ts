@@ -1,6 +1,6 @@
 /**
- * The Assistant's general abilities over the app's own API (D-58): any `read` route through `chat_app_read`, any
- * `stage` route staged through `chat_app_change` (one proposal card of `route_call` changes, applied only by the
+ * The Assistant's general abilities over the app's own API (D-58): any `read` route through `read`, any
+ * `stage` route staged through `propose kind calls` (one proposal card of `route_call` changes, applied only by the
  * user's Apply). Every route in src/contract/routes.ts says which it is (`assistant`); `deny` routes (send, dispatch,
  * apply, undo, re-auth, launch, scan, dev, GETs that write) are never called.
  *
@@ -80,7 +80,7 @@ export function appRouteInput(route: string, use: 'read' | 'stage', persona: Res
   if (!isRouteKey(route)) throw new AppRouteError(`no route "${route}" (pick one from the list in the tool description)`);
   const d = defOf(route);
   if (d.assistant !== use) {
-    const why = d.assistant === 'deny' || !d.assistant ? 'the Assistant may never call it (it sends, applies a proposal, re-auths, scans, launches, or raises its own budget)' : d.assistant === 'read' ? 'it is a read: use chat_app_read' : 'it changes the app: stage it with chat_app_change';
+    const why = d.assistant === 'deny' || !d.assistant ? 'the Assistant may never call it (it sends, applies a proposal, re-auths, scans, launches, or raises its own budget)' : d.assistant === 'read' ? 'it is a read: use read' : 'it changes the app: stage it with propose';
     throw new AppRouteError(`${route}: ${why}`);
   }
   if (!allows(persona, ROUTE_GATES[route])) throw new AppRouteError(`${route}: not active for your role (Settings ▸ Role & rules lists it as available)`);
@@ -109,14 +109,28 @@ export function appRouteInput(route: string, use: 'read' | 'stage', persona: Res
 }
 
 /**
- * Changes a stage route must not carry even with the user's Apply: the sending section (dry run, channel modes) and a
- * settings confirm are the user's alone, in Settings (tenet: nothing leaves without approval, and dry run is theirs).
+ * Settings keys the Assistant never stages, even for the user's Apply (SEC-5, 17-security-review): what program the
+ * app runs on this Mac (VDP's refresh script and its interpreter, which `run reauth` then starts) and where a live
+ * post goes (the feedback channel and its Post live switch). Untrusted Slack/Gmail/Drive text reaches the model, so a
+ * card that changes these could be a planted one; they are changed in Settings only.
+ */
+export const ASSISTANT_LOCKED_SETTINGS: Readonly<Record<string, readonly string[]>> = {
+  scanning: ['vdpRefreshScript', 'vdpPython'],
+  feedback: ['channelId', 'channelName', 'postLive'],
+};
+
+/**
+ * Changes a stage route must not carry even with the user's Apply: the sending section (dry run, channel modes), the
+ * locked keys above and a settings confirm are the user's alone, in Settings (tenet: nothing leaves without approval,
+ * and dry run is theirs).
  */
 function guardInput(key: RouteKey, input: Record<string, unknown>) {
   if (key !== 'patchSettings') return;
   const section = (input.params as { section?: string } | undefined)?.section;
   const body = input.body as { confirm?: boolean; value?: Record<string, unknown> } | undefined;
   if (section === 'sending') throw new AppRouteError('patchSettings: the sending settings (dry run, send modes) are yours to change in Settings ▸ Sending; the Assistant never stages them');
+  const locked = (section && ASSISTANT_LOCKED_SETTINGS[section]?.filter((k) => body?.value && Object.hasOwn(body.value, k))) || [];
+  if (locked.length) throw new AppRouteError(`patchSettings: ${section}.${locked.join(', ')} ${locked.length === 1 ? 'is' : 'are'} yours to change in Settings; the Assistant never stages ${locked.length === 1 ? 'it' : 'them'}`);
   if (body?.confirm) throw new AppRouteError('patchSettings: a confirmed save is yours to make in Settings');
 }
 
@@ -130,6 +144,12 @@ const methodOf = (ds: DataSource, key: RouteKey): Call => {
   if (typeof fn !== 'function') throw new AppRouteError(`${key} is not available here`);
   return fn.bind(ds);
 };
+
+/** One read of a route, whole (Assistant v2 views, src/server/chat/views.ts: they page their own rows). */
+export async function appReadRaw(ds: DataSource, route: string, persona: ResolvedPersona | null, raw: { params?: Record<string, unknown>; query?: Record<string, unknown>; body?: unknown } = {}): Promise<unknown> {
+  const { key, input } = appRouteInput(route, 'read', persona, raw);
+  return methodOf(ds, key)(input);
+}
 
 /** One read of a route, paged (A1): `paging` picks the page; the result says `page.total` and `page.nextOffset`. */
 export async function appRead(ds: DataSource, route: string, persona: ResolvedPersona | null, raw: { params?: Record<string, unknown>; query?: Record<string, unknown>; body?: unknown }, paging: ReadPageArgs = {}, budget = READ_PAGE_CHARS): Promise<{ route: RouteKey; data: unknown; paging: ReadPageInfo | null; more?: Record<string, { shown: number; total: number; nextOffset: number }>; summary: string }> {
@@ -146,7 +166,7 @@ export async function appRead(ds: DataSource, route: string, persona: ResolvedPe
 // ---------------------------------------------------------------------------
 
 const short = (s: string, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-const show = (v: unknown): unknown => (v === undefined ? null : typeof v === 'string' ? short(redactText(v), 160) : v !== null && typeof v === 'object' ? short(JSON.stringify(cleanForModel(v, 0, 60) ?? null), 160) : v);
+const show = (v: unknown): unknown => (v === undefined ? null : typeof v === 'string' ? short(redactText(v), 160) : v !== null && typeof v === 'object' ? short(JSON.stringify(cleanForModel(v, 0, 60, null) ?? null), 160) : v);
 
 /** Route → the entity type its receipt line names. */
 const ENTITY: Partial<Record<RouteKey, EntityType>> = {
@@ -554,4 +574,36 @@ async function addUntrackedOpps(ds: DataSource, calls: RouteCall[], persona: Res
     const n = r.entity.added.length;
     lines.push({ auditId: r.auditId, entity: { type: 'opportunity', id: first?.oppId ?? 'addOrg62Opps', label: n === 1 && first ? first.name : `${n} opportunities` }, field: 'addOrg62Opps', label: 'Added from Org62', before: 'not in the app', after: `${n} ${n === 1 ? 'opp' : 'opps'} and their accounts` });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Assistant v2 `act`: the safe mutations the UI has, classified allow | stage | deny (lane 05 §5.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * What `act` may do and how:
+ *  - allow: a local, undoable work-item action the user asked for in this message (snooze, pin, done, not mine, reopen,
+ *    re-rank). It runs at once through the same change-set path as an applied card (actor `chat`, Undo on the receipt).
+ *    Asked by the router's reading only when the turn is an `act`; otherwise it is staged instead.
+ *  - stage: a settings patch of an allowed section: one card the user applies (never runs from chat).
+ *  - deny: everything else, and the sections that are the user's alone (sending, budgets).
+ * Nothing here reaches an external system (*tenet: Nothing leaves without approval*).
+ */
+export const ACT_OPS = ['snooze', 'pin', 'done', 'not_mine', 'reopen', 'rerank', 'settings'] as const;
+export type ActOp = (typeof ACT_OPS)[number];
+export type ActClass = 'allow' | 'stage' | 'deny';
+
+/** Settings sections `act` may stage (the user Applies). sending and budgets are the user's alone. */
+export const ACT_SETTINGS_SECTIONS: ReadonlySet<string> = new Set(['display', 'chat', 'agentBehavior', 'time', 'closing', 'feedback']);
+
+export function classifyAct(op: string, o: { section?: string; userAsked: boolean }): { class: ActClass; why: string } {
+  if (!(ACT_OPS as readonly string[]).includes(op)) return { class: 'deny', why: `${op} is not an action the Assistant takes (it sends, applies, re-auths, scans or launches)` };
+  if (op === 'settings') {
+    if (!o.section) return { class: 'deny', why: 'settings needs a section' };
+    if (o.section === 'sending') return { class: 'deny', why: 'the sending settings (dry run, send modes) are yours to change in Settings ▸ Sending' };
+    if (o.section === 'budgets') return { class: 'deny', why: 'the Assistant never raises its own budget: Settings ▸ Budgets is yours' };
+    if (!ACT_SETTINGS_SECTIONS.has(o.section)) return { class: 'deny', why: `the ${o.section} settings are changed in Settings only` };
+    return { class: 'stage', why: 'a settings change waits for your Apply' };
+  }
+  return o.userAsked ? { class: 'allow', why: 'you asked for it; Undo on the receipt' } : { class: 'stage', why: 'not asked in this message: staged for your Apply' };
 }

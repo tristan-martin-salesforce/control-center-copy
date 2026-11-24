@@ -9,36 +9,20 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { routes, Seed, type ActivityEntry, type Draft, type RouteKey, type RouteOutput } from '@/contract';
-import {
-  CANCELLED_HELD_FLAG,
-  CANCELLED_LOGGED_FLAG,
-  countBucketOf,
-  countsAsLogged,
-  DECLINED_HELD_FLAG,
-  DEFAULT_EVIDENCE_CONFIG,
-  DELETED_IN_ORG62,
-  DUPLICATE_MARKER,
-  LEFT_OUT_FLAG,
-  LOG_AGAIN_FLAG,
-  MANUAL_LOG_NOTE,
-  needsRelog,
-  NOT_IN_ORG62_FLAG,
-  org62CheckOf,
-  ORG62_CHECK_PREFIX,
-  parseWorkOrder,
-  RELATED_TO_EMPTY_FLAG,
-  RESCHEDULED_MARKER,
-  START_DIFFERS_MARKER,
-  verifyReadback,
-  type ActivityConfig,
-} from '@/engines/activity';
+import { routes, Seed, type ActivityEntry, type Draft, type LogCanvas, type RouteKey, type RouteOutput } from '@/contract';
+import { CANCELLED_HELD_FLAG, CANCELLED_LOGGED_FLAG, countBucketOf, countsAsLogged, DELETED_IN_ORG62, DUPLICATE_MARKER, LEFT_OUT_FLAG, LOG_AGAIN_FLAG, MANUAL_LOG_NOTE, needsRelog, NOT_IN_ORG62_FLAG, org62CheckOf, ORG62_CHECK_PREFIX, RELATED_TO_EMPTY_FLAG, RESCHEDULED_MARKER, START_DIFFERS_MARKER } from '@/engines/activity/org62-check';
+import { DECLINED_HELD_FLAG } from '@/engines/activity/internal';
+import { DEFAULT_EVIDENCE_CONFIG, type ActivityConfig } from '@/engines/activity/types';
+import { parseWorkOrder } from '@/engines/activity/canvas-parse';
+import { verifyReadback } from '@/engines/activity/readback';
 import { eventRow, renderWorkOrder } from '@/engines/activity/slackbot';
 import { EVENT_READBACK_BATCH, readbackSoql } from '@/jobs/handlers/org62-readback';
 import { canvasActionFor, canvasInputOf } from '@/lib/canvas/payload';
 import { canvasRowsOf, preflightCanvas, registerCanvasRowCheck, type PreflightActivity } from '@/lib/canvas/preflight';
 import { org62RowToRaw } from '@/llm/org62-rec';
-import { UC_HEADER } from '@/engines/activity/use-cases';
+import { upsertTable } from '@/lib/canvas/tables';
+import { dcRowsIn } from '@/server/deals/dc-requests';
+import { reviewRowsOf } from '@/server/time/canvas-review';
 import { planWeek, type FixedEntry, type WeekEvent, type WeekInput, type WeekOrg62Event } from '@/projections/activity';
 import { Matcher, type MatchOpp } from '@/projections/matching';
 import { org62Spec, ORG62_EVENTS_CATCH_UP_MS } from '@/scanner/runtime/connectors';
@@ -50,6 +34,10 @@ import { resolvedEntry } from '@/server/time/relog';
 import { timeWeekBounds, weekTotals } from '@/server/time/week';
 import { READBACK_BADGE, readbackState } from '@/components/time/derive';
 import { needsYou, weekSuggested } from '@/components/time/path-derive';
+import { lanesOf } from '@/components/time/lanes-derive';
+import { finishedBatchesOf, inBatchOf } from '@/components/time/history-derive';
+import { failureReason } from '@/components/time/compact-derive';
+import { batchLabel, batchRows, NEXT_LABEL, sendingCount, sendingFailure, sendingOf } from '@/components/time/sending-derive';
 import { loadSkill } from '@/llm/skill-loader';
 import { planResume } from '@/scanner/runtime/resume-planner';
 
@@ -253,8 +241,8 @@ describe('manual Org62 Events', () => {
     expect(pf.input.eventIds).toEqual(['mine-2']);
     expect(pf.input.hours).toBe(1);
     expect(pf.input.title).toBe('Activity log · Nov 4 · 1 row');
-    expect(pf.input.markdown).toContain('# ADD (1 rows · 1.00 h of activities)');
-    expect(pf.input.markdown).toMatch(/\n\|1\|Event\|Globex build\|/);
+    expect(pf.input.markdown).toContain('## EVENTS TO CREATE (1 row · 1.00 h of activities)');
+    expect(pf.input.markdown).toMatch(/\n\|1\|Globex build\|/);
     expect(pf.input.markdown).not.toContain('CC#mine-1');
     // nothing left: refused
     expect(preflightCanvas(canvas, ctxOf({ 'mine-1': { status: 'verified' }, 'mine-2': { status: 'dismissed' } }))).toMatchObject({ changed: true, empty: true });
@@ -396,7 +384,7 @@ describe('canvas outcomes', () => {
     const raw = org62RowToRaw({ attributes: { type: 'Event' }, Id: '00UXX0000000E01AAA', Subject: 'ACME discovery', StartDateTime: '2026-11-04T16:00:00.000+0000', EndDateTime: '2026-11-04T17:00:00.000+0000', Duration__c: 1, RecordType: { Name: 'Solutions Event' }, Description: `CC#${id} | calendar 2026-11-04 | CF: external attendees (acme.example)`, SystemModstamp: '2026-11-04T18:00:00.000+0000' })!;
     expect((raw.payload as Record<string, unknown>).ccKey).toBe(id);
     expect(JSON.stringify(raw)).not.toContain('external attendees'); // the key only, never the Description text
-    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events: [eventRow({ id, subject: 'ACME discovery', start: at('09:00'), end: at('10:00'), durationH: 1, taskType: 'Customer Discovery', whatOrg62Id: OPP_ACME, origin: 'calendar' })], updates: [], sourceLabel: 'Control Center' });
+    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events: [eventRow({ id, subject: 'ACME discovery', start: at('09:00'), end: at('10:00'), durationH: 1, taskType: 'Customer Discovery', whatOrg62Id: OPP_ACME, origin: 'calendar' })], updates: [], sourceLabel: 'Command Center' });
     expect(parseWorkOrder(md).adds[0]).toMatchObject({ kind: 'event', ref: id });
     // the read-back joins on it, whatever the subject and start
     const p = planWeek(input({ events: [e1], fixed: [{ ...fixed(id, key(e1), 'synced_to_canvas') }], org62: [o62('00UXX35', { ccKey: id, subject: 'Something else', startsAt: at('11:00'), endsAt: at('12:00') })] }));
@@ -423,21 +411,87 @@ describe('canvas outcomes', () => {
   });
 
   it('the preflight is a per-row-kind registry: a kind with no check is kept; another lane registers its own (DC, Use_Case__c)', () => {
-    const md = `${canvasOf([row('mine-1')]).markdown.replace('# UPDATE (0 rows)', '|2|Deal_Contribution__c|ACME - Data 360 Expansion||||006XX0000000001AAA||ADD DC|\n\n# UPDATE (0 rows)')}`;
+    const dc = ['', 'Deal_Contribution__c', 'ACME - Data 360 Expansion', '', '', '', '', '006XX0000000001AAA', '', 'ADD DC'];
+    const md = upsertTable(canvasOf([row('mine-1')]).markdown, 'dcs_create', 'DC rule', [dc]);
     const rows = canvasRowsOf(md);
     expect(rows.map((r) => r.kind)).toEqual(['event', 'dc']);
     const base = { ...canvasOf([row('mine-1')]), markdown: md };
-    expect(preflightCanvas(base, ctxOf({ 'mine-1': { status: 'verified' } })).input.markdown).toContain('|1|Deal_Contribution__c|');
+    const after = preflightCanvas(base, ctxOf({ 'mine-1': { status: 'verified' } })).input.markdown;
+    expect(after).toContain('## DEAL CONTRIBUTIONS TO CREATE (1 row)');
+    expect(after).toContain('|1|ACME - Data 360 Expansion|006XX0000000001AAA|');
+    // the Event table had only the dropped row: it leaves the canvas
+    expect(after).not.toContain('EVENTS TO CREATE');
     registerCanvasRowCheck('other_object__c', () => 'no longer wanted');
-    const other = { ...base, markdown: md.replace('# UPDATE (0 rows)', '|3|Other_Object__c|A record|||||||\n\n# UPDATE (0 rows)') };
+    const other = { ...base, markdown: `${md}\n\n# ADD (1 rows)\n\n|#|Object|x|\n|---|---|---|\n|3|Other_Object__c|A record|||||||` };
     expect(preflightCanvas(other, ctxOf({ 'mine-1': {} })).dropped.map((d) => [d.kind, d.reason])).toEqual([['other_object__c', 'no longer wanted']]);
     registerCanvasRowCheck('other_object__c', () => null);
   });
 
+  it('WO-1 legacy canvas (staged before one table per object): `# ADD` / `# UPDATE` with Object cells still parses, preflights (drop + renumber) and reviews', () => {
+    const ev1 = canvasRowsOf(canvasOf([row('mine-1')]).markdown)[0]!.cells;
+    const ev2 = canvasRowsOf(canvasOf([row('mine-2', { subject: 'Globex build', start: at('13:00'), end: at('14:00'), whatOrg62Id: OPP_GLOBEX })]).markdown)[0]!.cells;
+    const md = [
+      '::: {.callout}',
+      '**Slackbot: this canvas is a complete work order. Execute it in Org62 for PERSON_ME (User Id 005XX0000000OWNAAA) without asking for more context.** Rules:',
+      ':::',
+      '',
+      '# ADD (3 rows · 2.00 h of activities · 1 deal contribution)',
+      '',
+      '|#|Object|Subject / Opportunity|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c / Role|Duration__c / Split %|WhatId / Opportunity__c|Meeting_Type__c|Description / Comments__c|',
+      '|---|---|---|---|---|---|---|---|---|---|',
+      `|${['1', ...ev1.slice(1)].join('|')}|`,
+      `|${['2', ...ev2.slice(1)].join('|')}|`,
+      `|3|Deal_Contribution__c|ACME - Data 360 Expansion|||Solution Engineer|100|${OPP_ACME}||Claim: my DC|`,
+      '',
+      '# UPDATE (1 rows · 1 DC change)',
+      '',
+      '|#|Object|Record Id|Action / Field|New value|Current value|Why|',
+      '|---|---|---|---|---|---|---|',
+      '|1|Deal_Contribution__c|a0BXX0000000D01AAA|Split_Percentage__c|100|50|Split to 100%|',
+    ].join('\n');
+    const rows = canvasRowsOf(md);
+    expect(rows.map((r) => [r.kind, r.ref, r.table])).toEqual([
+      ['event', 'mine-1', undefined],
+      ['event', 'mine-2', undefined],
+      ['dc', null, undefined],
+      ['update:Deal_Contribution__c', 'a0BXX0000000D01AAA', undefined],
+    ]);
+    expect(reviewRowsOf(md).map((r) => r.key)).toEqual(['event:mine-1', 'event:mine-2', `dc:${OPP_ACME.slice(0, 15)}:solution engineer`, 'dcchange:a0BXX0000000D01']);
+    const pf = preflightCanvas({ ...canvasOf([row('mine-1'), row('mine-2')]), markdown: md }, ctxOf({ 'mine-1': { status: 'verified' }, 'mine-2': {} }));
+    expect(pf.dropped.map((d) => d.ref)).toEqual(['mine-1']);
+    expect(pf.input.markdown).toContain('# ADD (2 rows · 1.00 h of activities · 1 deal contribution)');
+    expect(pf.input.markdown).toMatch(/\n\|1\|Event\|Globex build\|/);
+    expect(pf.input.markdown).toMatch(/\n\|2\|Deal_Contribution__c\|/);
+    // the data readers see it too (the DC holds)
+    expect(dcRowsIn(md)).toEqual([`${OPP_ACME.slice(0, 15)}|solution engineer`, 'dc:a0BXX0000000D01']);
+  });
+
+  it('R3-10 mixed canvas (a legacy `# ADD` table plus a per-object table upserted into it): the read-back parser reads both', () => {
+    const ev1 = canvasRowsOf(canvasOf([row('mine-1')]).markdown)[0]!.cells;
+    const legacy = [
+      '# ADD (1 rows · 1.00 h of activities)',
+      '',
+      '|#|Object|Subject / Opportunity|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c / Role|Duration__c / Split %|WhatId / Opportunity__c|Meeting_Type__c|Description / Comments__c|',
+      '|---|---|---|---|---|---|---|---|---|---|',
+      `|${['1', ...ev1.slice(1)].join('|')}|`,
+    ].join('\n');
+    const dc = ['', 'Deal_Contribution__c', 'ACME - Data 360 Expansion', '', '', 'Solution Engineer', '100', OPP_ACME, '', 'Claim: my DC'];
+    const md = upsertTable(legacy, 'dcs_create', 'DC rule', [dc]);
+    expect(md).toContain('# ADD (1 rows');
+    expect(md).toContain('## DEAL CONTRIBUTIONS TO CREATE (1 row)');
+    // 1 Event + 1 DC in → both out (before R3-10, legacyShape dropped the legacy row: only the DC came back)
+    const parsed = parseWorkOrder(md);
+    expect(parsed.adds.map((a) => [a.kind, a.kind === 'event' ? a.ref : a.oppId])).toEqual([
+      ['event', 'mine-1'],
+      ['dc', OPP_ACME],
+    ]);
+    expect(canvasRowsOf(md).map((r) => r.kind)).toEqual(['event', 'dc']);
+  });
+
   it('D-68 DC rows in the same preflight: a DC that landed in Org62 drops out; a change written against a split Org62 no longer shows is refused', () => {
-    const add = `|2|Deal_Contribution__c|ACME - Data 360 Expansion|||Solution Engineer|100|${OPP_ACME}||Claim: my DC|`;
-    const change = '|1|Deal_Contribution__c|a0BXX0000000D01AAA|Split_Percentage__c|100|50|Split to 100%|';
-    const md = canvasOf([row('mine-1')]).markdown.replace('# UPDATE (0 rows)', `${add}\n\n# UPDATE (1 rows)`).concat(`\n${change}`);
+    const add = ['', 'Deal_Contribution__c', 'ACME - Data 360 Expansion', '', '', 'Solution Engineer', '100', OPP_ACME, '', 'Claim: my DC'];
+    const change = ['', 'Deal_Contribution__c', 'a0BXX0000000D01AAA', 'Split_Percentage__c', '100', '50', 'Split to 100%'];
+    const md = upsertTable(upsertTable(canvasOf([row('mine-1')]).markdown, 'dcs_create', 'DC rule', [add]), 'dcs_update', 'DC change rule', [change]);
     const dcLive = { myDcs: [{ org62DcId: 'a0BXX0000000D02AAA', org62OpportunityId: OPP_ACME, split: 50 }, { org62DcId: 'a0BXX0000000D01AAA', org62OpportunityId: '006XX0000000009AAA', split: 75 }] };
     const pf = preflightCanvas({ ...canvasOf([row('mine-1')]), markdown: md }, { ...ctxOf({ 'mine-1': {} }), dcLive });
     expect(pf.dropped.map((d) => [d.kind, d.reason.slice(0, 40)])).toEqual([
@@ -445,15 +499,15 @@ describe('canvas outcomes', () => {
       ['update:Deal_Contribution__c', 'refused, Org62 holds another value: Org6'],
     ]);
     expect(pf.input.eventIds).toEqual(['mine-1']);
+    expect(pf.input.markdown).not.toContain('DEAL CONTRIBUTIONS');
     // without the live state (a check that cannot know), the rows stay
     expect(preflightCanvas({ ...canvasOf([row('mine-1')]), markdown: md }, ctxOf({ 'mine-1': {} })).changed).toBe(false);
   });
 
   it('D-67 Use_Case__c rows: a use case created in Org62 since, or withdrawn from VDP, drops out at Apply; one still waiting goes', () => {
-    const uc = (n: number, name: string, key: string) => `|${n}|Use_Case__c|${name}|${OPP_ACME}|${ACCT_ACME}|Data 360|D360 Custom||U01 - Not Started||||Source: VDP CC-UC#${key}|`;
-    const md = canvasOf([row('mine-1')])
-      .markdown.replace('# UPDATE (0 rows)', ['# USE CASES (3 rows)', '', UC_HEADER, '|---|---|---|---|---|---|---|---|---|---|---|---|---|', uc(1, 'Churn agent', 'uc-1'), uc(2, 'Service agent', 'uc-2'), uc(3, 'Sales agent', 'uc-3'), '', '# UPDATE (1 rows · 1 use-case fix)'].join('\n'))
-      .concat('\n|1|Use_Case__c|a0YXX0000000U01AAA|Stage__c|U03 - Scoping|U01 - Not Started|Churn agent: VDP phase changed|');
+    const uc = (name: string, key: string) => ['', 'Use_Case__c', name, OPP_ACME, ACCT_ACME, 'Data 360', 'D360 Custom', '', 'U01 - Not Started', '', '', '', `Source: VDP CC-UC#${key}`];
+    const fix = ['', 'Use_Case__c', 'a0YXX0000000U01AAA', 'Stage__c', 'U03 - Scoping', 'U01 - Not Started', 'Churn agent: VDP phase changed'];
+    const md = upsertTable(upsertTable(canvasOf([row('mine-1')]).markdown, 'ucs_create', 'UC rule', [uc('Churn agent', 'uc-1'), uc('Service agent', 'uc-2'), uc('Sales agent', 'uc-3')]), 'ucs_update', 'UC fix rule', [fix]);
     const state: Record<string, { state: string; fields: string[] }> = { 'uc-1': { state: 'in_org62', fields: [] }, 'uc-2': { state: 'in_canvas', fields: [] } };
     const pf = preflightCanvas({ ...canvasOf([row('mine-1')]), markdown: md }, { ...ctxOf({ 'mine-1': {} }), useCase: (k: string) => state[k] ?? null, useCaseRecord: () => ({ state: 'in_org62', fields: [] }) });
     expect(pf.dropped.map((d) => [d.kind, d.ref, d.reason])).toEqual([
@@ -462,9 +516,9 @@ describe('canvas outcomes', () => {
       ['update:Use_Case__c', 'a0YXX0000000U01AAA', 'Org62 has it already'],
     ]);
     expect(pf.empty).toBe(false);
-    expect(pf.input.markdown).toContain('# USE CASES (1 row)');
-    expect(pf.input.markdown).toMatch(/\n\|1\|Use_Case__c\|Service agent\|/);
-    expect(pf.input.markdown).toMatch(/# UPDATE \(0 rows\)\n/);
+    expect(pf.input.markdown).toContain('## USE CASES TO CREATE (1 row)');
+    expect(pf.input.markdown).toMatch(/\n\|1\|Service agent\|/);
+    expect(pf.input.markdown).not.toContain('USE CASES TO UPDATE');
     expect(pf.input.eventIds).toEqual(['mine-1']);
   });
 });
@@ -751,7 +805,7 @@ const row = (id: string, p: Partial<Row> = {}): Row => ({ id, subject: 'ACME dis
 /** One logging canvas of these rows, as a batch stages it. */
 function canvasOf(rows: Row[]) {
   const events = rows.map((r) => eventRow({ ...r, origin: 'calendar' }));
-  const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events, updates: [], sourceLabel: 'Control Center · Nov 4' });
+  const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events, updates: [], sourceLabel: 'Command Center · Nov 4' });
   return { title: `Activity log · Nov 4 · ${rows.length} rows`, markdown: md, eventIds: rows.map((r) => r.id), hours: rows.reduce((s, r) => s + r.durationH, 0), updates: 0, updateIds: [], part: 1, parts: 1 };
 }
 
@@ -774,3 +828,135 @@ function ctxOf(over: Record<string, Partial<PreflightActivity>>) {
     taskTypeRequired: true,
   };
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// C6 (D-102 lane 3): Sending, one line per batch with four steps; the rows Org62 lacks sit under their batch
+describe('lane 3: sending-derive', () => {
+  const part = (total: number, inOrg62: number, missing = 0) => ({ total, inOrg62, missing });
+  const canvas = (o: Partial<LogCanvas> & Pick<LogCanvas, 'draftId' | 'state'>): LogCanvas => ({
+    title: `Activity log · ${o.draftId}`,
+    url: null,
+    createdAt: '2026-11-20T10:00:00.000Z',
+    appliedAt: null,
+    rows: 6,
+    hours: 6.5,
+    dcs: 0,
+    updates: 0,
+    useCases: 0,
+    rowIds: [],
+    org62: null,
+    quarters: [],
+    maybeCreated: false,
+    progress: null,
+    ...o,
+  });
+  const row = (id: string, status: ActivityEntry['status'] = 'synced_to_canvas', issues = [NOT_IN_ORG62_FLAG]) => ({ id, status, issues, version: 1, durationH: 1 }) as unknown as ActivityEntry;
+  const sent = canvas({ draftId: 'b_sent', state: 'applied', appliedAt: '2026-11-21T12:00:00.000Z', rowIds: ['r1', 'r2', 'r3', 'r4', 'r5', 'r6'], org62: { logged: 4, waiting: 0, missing: 2 }, progress: { events: part(6, 4, 2), dcs: part(0, 0), useCases: part(0, 0), state: 'missing', toldAt: '2026-11-21T12:05:00.000Z', checkedAt: '2026-11-21T13:00:00.000Z', nextCheckAt: null } });
+  const waiting = canvas({ draftId: 'b_wait', state: 'pending', createdAt: '2026-11-22T09:00:00.000Z', rows: 14, hours: 14.5 });
+  const told = canvas({ draftId: 'b_created', state: 'applied', appliedAt: '2026-11-19T12:00:00.000Z', org62: { logged: 0, waiting: 6, missing: 0 }, progress: { events: part(6, 0), dcs: part(0, 0), useCases: part(0, 0), state: 'waiting', toldAt: null, checkedAt: null, nextCheckAt: null } });
+  const done = (id: string, at: string) => canvas({ draftId: id, state: 'verified', appliedAt: at, org62: { logged: 6, waiting: 0, missing: 0 }, progress: { events: part(6, 6), dcs: part(0, 0), useCases: part(0, 0), state: 'in_org62', toldAt: at, checkedAt: at, nextCheckAt: null } });
+  const notFound = [row('r5'), row('r6'), row('r_old', 'verify_failed', [DELETED_IN_ORG62])];
+
+  it('one line per batch, newest first, the four steps with the current one, and its one next action', () => {
+    const m = sendingOf({ canvases: [told, sent, waiting, done('b_d1', '2026-11-18T10:00:00.000Z')], notFound, weekStart: '2026-11-16', tz: 'UTC' });
+    expect(m.batches.map((b) => b.canvas.draftId)).toEqual(['b_wait', 'b_sent', 'b_created']);
+    const [w, s, c] = m.batches;
+    expect(w!.label).toBe('Batch 22 Nov');
+    expect(w!.counts).toBe('14 rows · 14.5 h');
+    // the filled step is the one the batch is at (R2-11): Staged while it waits for Apply, its next action Review & apply
+    expect(w!.steps.map((x) => `${x.label}:${x.state}`)).toEqual(['Staged:current', 'Applied:todo', 'Sent:todo', 'Checked:todo']);
+    expect(w!.next).toBe('apply');
+    expect(NEXT_LABEL[w!.next!]).toBe('Review & apply');
+    expect(c!.steps.map((x) => x.state)).toEqual(['done', 'current', 'todo', 'todo']);
+    expect(c!.next).toBe('send');
+    expect(s!.steps.map((x) => `${x.label}:${x.state}`)).toEqual(['Staged:done', 'Applied:done', 'Sent:done', 'Checked 4 of 6:problem']);
+    expect(s!.next).toBe('recheck');
+  });
+
+  it('two batches on the same day are named apart by their time; a batch alone on its day keeps the day (R2-5)', () => {
+    const am = canvas({ draftId: 'b_am', state: 'pending', createdAt: '2026-11-22T09:14:00.000Z' });
+    const pm = canvas({ draftId: 'b_pm', state: 'applied', appliedAt: '2026-11-22T16:40:00.000Z' });
+    const m = sendingOf({ canvases: [am, pm, sent], notFound: [], tz: 'UTC' });
+    expect(m.batches.map((b) => b.label)).toEqual(['Batch 22 Nov 16:40', 'Batch 22 Nov 09:14', 'Batch 21 Nov']);
+    expect(batchLabel(am, [am], 'UTC')).toBe('Batch 22 Nov');
+    // the same minute too: numbered in the order they came
+    const twin = canvas({ draftId: 'b_twin', state: 'applied', appliedAt: '2026-11-22T09:14:00.000Z' });
+    expect([batchLabel(am, [am, twin], 'UTC'), batchLabel(twin, [am, twin], 'UTC')]).toEqual(['Batch 22 Nov 09:14', 'Batch 22 Nov 09:14 (2)']);
+  });
+
+  it('F4: a batch has one name and one row count on Sending and History, before and after it finishes', () => {
+    // a finished batch and an in-flight one on the same day: both carry the time, wherever each is shown
+    const doneAm = done('b_done_am', '2026-11-22T09:02:00.000Z');
+    const pm = canvas({ draftId: 'b_pm', state: 'applied', appliedAt: '2026-11-22T16:40:00.000Z', rows: 8, rowIds: ['p1', 'p2'] });
+    const all = [doneAm, pm, sent];
+    const s = sendingOf({ canvases: all, notFound: [], tz: 'UTC', unsettled: new Set() });
+    const h = finishedBatchesOf(all, { tz: 'UTC', unsettled: new Set() });
+    expect(s.batches.map((b) => b.label)).toEqual(['Batch 22 Nov 16:40']);
+    expect(h.find((b) => b.canvas.draftId === 'b_done_am')!.label).toBe('Batch 22 Nov 09:02');
+    // History's in-batch line names the in-flight batch exactly as Sending does
+    expect(inBatchOf(all, { tz: 'UTC', unsettled: new Set() }).get('p1')!.label).toBe('in batch 22 Nov 16:40');
+    // one row count: the rows on the batch as staged (8), on Sending and once it is History's
+    expect(s.batches[0]!.counts).toBe('8 rows · 6.5 h');
+    expect(batchRows(pm)).toBe(8);
+    const pmDone = { ...pm, state: 'verified' as const, org62: { logged: 8, waiting: 0, missing: 0 } };
+    expect(finishedBatchesOf([doneAm, pmDone, sent], { tz: 'UTC', unsettled: new Set() }).find((b) => b.canvas.draftId === 'b_pm')!.line).toBe('Batch 22 Nov 16:40 · 8 rows · 6.5 h · Checked 8 of 8');
+    // a not-found row is still a row of its batch
+    expect(sendingOf({ canvases: [sent], notFound: notFound.slice(0, 2), unsettled: new Set(['r5', 'r6']) }).batches[0]!.counts).toBe('6 rows · 6.5 h');
+  });
+
+  it('F4: "Finished this week" counts a batch finished since Monday; nothing finished renders in the lane', () => {
+    const m = sendingOf({ canvases: [done('b_mon', '2026-11-23T08:30:00.000Z'), done('b_last', '2026-11-20T10:00:00.000Z'), waiting], weekStart: '2026-11-23', tz: 'UTC' });
+    expect(m.batches.map((b) => b.canvas.draftId)).toEqual(['b_wait']);
+    expect(m.finishedThisWeek).toBe(1);
+  });
+
+  it('not-found rows sit under their batch; one whose batch is not in the list goes under Earlier batches', () => {
+    const m = sendingOf({ canvases: [sent, waiting], notFound });
+    expect(m.batches.find((b) => b.canvas.draftId === 'b_sent')!.notFound.map((e) => e.id)).toEqual(['r5', 'r6']);
+    expect(m.orphans.map((e) => e.id)).toEqual(['r_old']);
+    // the row shows the short reason; its title and the details panel the long one (R2-10)
+    expect(failureReason(notFound[0]!)).toEqual({ short: 'Not found in Org62', long: 'Not found in Org62 after the batch ran' });
+    expect(failureReason(notFound[2]!)).toEqual({ short: 'Deleted in Org62', long: 'Deleted in Org62 after it was logged' });
+  });
+
+  it('a batch that failed as a whole is a red line with its one fix; the header counts match lanesOf', () => {
+    const retry = canvas({ draftId: 'b_retry', state: 'retry', createdAt: '2026-11-22T11:00:00.000Z' });
+    const unsure = canvas({ draftId: 'b_unsure', state: 'retry', maybeCreated: true, createdAt: '2026-11-22T10:00:00.000Z' });
+    const lost = canvas({ draftId: 'b_lost', state: 'unverified', appliedAt: '2026-11-21T08:00:00.000Z' });
+    const canvases = [retry, unsure, lost, sent, waiting];
+    const m = sendingOf({ canvases, notFound });
+    const by = (id: string) => m.batches.find((b) => b.canvas.draftId === id)!;
+    expect([by('b_retry').next, by('b_unsure').next, by('b_lost').next]).toEqual(['apply_again', 'review', 'recheck']);
+    expect(by('b_retry').failure).toBe('The Apply did not go through');
+    expect(by('b_lost').failure).toBe('Not found in Slack after Apply');
+    expect(by('b_sent').failure).toBeNull();
+    const lanes = lanesOf({ path: { needs: { groups: [{ kind: 'org62', rows: notFound }] } as never, readyIds: [], internal: { rows: [] } as never }, rows: [], canvases });
+    expect(m.header.failed).toBe(lanes.sending.failed);
+    expect(m.header.batches).toBe(lanes.sending.batches);
+    expect(sendingFailure(m.header)).toBe('3 not found · 3 batches failed');
+    expect(sendingCount(m.header)).toBe('5 batches · 40.5 h');
+  });
+
+  it('finished batches never render in the lane: only their count this week', () => {
+    const m = sendingOf({ canvases: [done('b_d1', '2026-11-18T10:00:00.000Z'), done('b_d2', '2026-11-17T10:00:00.000Z'), done('b_old', '2026-11-10T10:00:00.000Z'), waiting], weekStart: '2026-11-16' });
+    expect(m.batches.map((b) => b.canvas.draftId)).toEqual(['b_wait']);
+    expect(m.finishedThisWeek).toBe(2);
+    expect(sendingOf({ canvases: [], notFound: [] }).header).toEqual({ batches: 0, hours: 0, notFound: 0, failedBatches: 0, failed: 0 });
+    expect(sendingCount(sendingOf({}).header)).toBe('Nothing on its way');
+  });
+
+  it('C10: a batch whose missing rows were all logged again or left out is finished: it leaves Sending (and lanesOf) for History', () => {
+    // r5 and r6 (missing) still unsettled: the batch stays, with them under it
+    const open = sendingOf({ canvases: [sent, waiting], notFound: notFound.slice(0, 2), weekStart: '2026-11-16', unsettled: new Set(['r5', 'r6']) });
+    expect(open.batches.map((b) => b.canvas.draftId)).toEqual(['b_wait', 'b_sent']);
+    // both settled (Log again puts each on the list; Leave out dismisses it): nothing of it is unsettled any more
+    const settled = sendingOf({ canvases: [sent, waiting], notFound: [], weekStart: '2026-11-16', unsettled: new Set() });
+    expect(settled.batches.map((b) => b.canvas.draftId)).toEqual(['b_wait']);
+    expect(settled.finishedThisWeek).toBe(1);
+    const lanes = lanesOf({ path: { needs: { groups: [] } as never, readyIds: [], internal: { rows: [] } as never }, rows: [], canvases: [sent, waiting], unsettled: new Set() });
+    expect(lanes.sending.batches).toBe(1);
+    expect(finishedBatchesOf([sent, waiting], { unsettled: new Set() }).map((b) => b.canvas.draftId)).toEqual(['b_sent']);
+    // a batch Slackbot has not been told about yet waits on Org62: never finished by the settled rule
+    expect(sendingOf({ canvases: [told], unsettled: new Set() }).batches.map((b) => b.canvas.draftId)).toEqual(['b_created']);
+  });
+});

@@ -11,7 +11,7 @@ import type { PersonaFeature } from '@/contract';
 import { allows } from '@/personas/gates';
 import type { ResolvedPersona } from '@/personas/types';
 
-export type NavCountKey = 'today' | 'triage' | 'agentsWaiting' | 'outbox' | 'briefsUnread' | 'adminWaiting' | 'assistantPending';
+export type NavCountKey = 'needs' | 'today' | 'triage' | 'agentsWaiting' | 'outbox' | 'briefsUnread' | 'adminWaiting' | 'assistantPending';
 
 export interface NavItemDef {
   href: string;
@@ -38,7 +38,8 @@ export const NAV_GROUPS: NavGroupDef[] = [
   {
     id: 'main',
     items: [
-      { href: '/', label: 'Home', icon: 'home', chord: 'g h' },
+      // 01 R5 / D-86: the one Needs-you count (the queue's total, src/engines/needs/count.ts) sits on Home until Needs you has its own page
+      { href: '/', label: 'Home', icon: 'home', chord: 'g h', count: 'needs' },
       { href: '/today', label: 'Today', icon: 'event', chord: 'g y', count: 'today' },
       { href: '/triage', label: 'Triage', icon: 'filterList', chord: 'g t', count: 'triage' },
       { href: '/outbox', label: 'Outbox', icon: 'send', chord: 'g o', count: 'outbox' },
@@ -55,7 +56,7 @@ export const NAV_GROUPS: NavGroupDef[] = [
       { href: '/briefs', label: 'Briefs', icon: 'summary', chord: 'g b', count: 'briefsUnread' },
       { href: '/agents', label: 'Agents', icon: 'agent_session', chord: 'g a', count: 'agentsWaiting' },
       { href: '/activity', label: 'Activity', icon: 'clock', chord: 'g l', count: 'adminWaiting', also: ['/time'] },
-      { href: '/history', label: 'History', icon: 'recent', chord: 'g i' },
+      { href: '/history', label: 'Journal', icon: 'recent', chord: 'g i' },
     ],
   },
 ];

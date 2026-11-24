@@ -35,7 +35,7 @@ export function BuildWatch() {
       if (!v || !isNewerBuild(mine, v.sha)) return;
       told = true;
       markStaleBuild();
-      toast({ key: 'new-build', tone: 'info', title: 'Control Center was updated', body: `Version ${v.version} is ready. Reload to use it; the next page you open loads it too.`, durationMs: null, action: { label: 'Reload', onClick: () => window.location.reload() } });
+      toast({ key: 'new-build', tone: 'info', title: 'Command Center was updated', body: `Version ${v.version} is ready. Reload to use it; the next page you open loads it too.`, durationMs: null, action: { label: 'Reload', onClick: () => window.location.reload() } });
     };
     const onChunkError = (msg: string) => {
       if (!CHUNK_ERROR.test(msg)) return;

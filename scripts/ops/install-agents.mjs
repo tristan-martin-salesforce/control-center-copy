@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Install (or render) the two LaunchAgents: com.controlcenter.web and com.controlcenter.worker.
+// Install (or render) the two LaunchAgents: com.commandcenter.web and com.commandcenter.worker.
 //
 //   node scripts/ops/install-agents.mjs --out <dir>      render + plutil -lint into <dir> only (touches nothing else)
 //   node scripts/ops/install-agents.mjs --yes            write to ~/Library/LaunchAgents and load with launchctl
@@ -13,6 +13,9 @@ import { dirname, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 import { fileMode } from './lib/envfile.mjs';
+import { launchctlBin } from './lib/launchctl.mjs';
+import { ensureStateMigrated } from './lib/migrate-state-real.mjs';
+import { STATE_FOLDER_NAME } from './lib/paths.mjs';
 import { renderAgent, WEB_LABEL, WORKER_LABEL } from './lib/plist.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -30,8 +33,8 @@ export function resolveTool(name, candidates) {
 }
 
 export function planInstall({ repo, home = homedir(), env = process.env, port = 4327, node, npm } = {}) {
-  const stateDir = env.CC_STATE_DIR ?? join(home, 'Library', 'Application Support', 'control-center');
-  const logDir = env.CC_LOG_DIR ?? join(home, 'Library', 'Logs', 'control-center');
+  const stateDir = env.CC_STATE_DIR ?? join(home, 'Library', 'Application Support', STATE_FOLDER_NAME);
+  const logDir = env.CC_LOG_DIR ?? join(home, 'Library', 'Logs', STATE_FOLDER_NAME);
   node ??= resolveTool('node', ['/opt/homebrew/bin/node', '/usr/local/bin/node']) ?? process.execPath;
   npm ??= resolveTool('npm', [join(dirname(node), 'npm'), '/opt/homebrew/bin/npm', '/usr/local/bin/npm']);
   return { repo, home, port, node, npm, stateDir, logDir, envFile: join(stateDir, 'env'), templateDir: join(repo, 'ops', 'launchd') };
@@ -72,7 +75,8 @@ async function main() {
     return;
   }
 
-  // Real install.
+  // Real install (a 1.x state folder moves first: D-101).
+  await ensureStateMigrated();
   const mode = fileMode(plan.envFile);
   if (mode === null) throw new Error(`env file missing: ${plan.envFile}. Run: npm run setup`);
   if (mode & 0o077) {
@@ -101,11 +105,11 @@ async function main() {
     }
     // bootout first so a re-install picks up changes; ignore "not loaded".
     try {
-      execFileSync('/bin/launchctl', ['bootout', `gui/${uid}/${r.label}`], { stdio: 'pipe' });
+      execFileSync(launchctlBin(), ['bootout', `gui/${uid}/${r.label}`], { stdio: 'pipe' });
     } catch {
       /* not loaded */
     }
-    execFileSync('/bin/launchctl', ['bootstrap', `gui/${uid}`, f], { stdio: 'pipe' });
+    execFileSync(launchctlBin(), ['bootstrap', `gui/${uid}`, f], { stdio: 'pipe' });
     console.log(`installed and started ${r.label}`);
   }
   console.log('Done. Check with: npm run doctor');

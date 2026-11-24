@@ -293,7 +293,8 @@ function Loaded({ detail, now, tz }: { detail: InitiativeDetail; now: string; tz
               <span>Initiative</span>
               <StatePill tone={status.tone} icon={false} label={status.label} size="md" />
             </p>
-            <h1 className="mt-1 text-heading font-bold text-balance text-fg-heading">{ini.title}</h1>
+            {/* h2: the topbar holds the page's one h1 */}
+            <h2 className="mt-1 text-heading font-bold text-balance text-fg-heading">{ini.title}</h2>
           </div>
           <div className="flex shrink-0 items-center gap-1.5 pt-1">
             <Button size="sm" variant="ghost" icon="sparkles" onClick={askAssistant} title="The assistant has this initiative in context (⌘J)">

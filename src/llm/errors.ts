@@ -4,6 +4,8 @@
  * Detail strings carry signature codes only, never message bodies (tenet: Local data, privacy-safe logs).
  */
 import { vdpRefreshCommand } from '@/contract';
+import { familyOf, toCatalogCode } from '@/errors/aliases';
+import { gatewayConfigured } from '@/errors/gateway';
 import type { ConnectorHealthProbe, ConnectorId } from '../scanner/types';
 import { safeLogText } from './redact';
 
@@ -22,7 +24,15 @@ const SIGNATURES: Signature[] = [
   // a service's maintenance page (devbar's MCP gateway on 2026-11-13): an outage, retried; first, because the page
   // is HTML and would otherwise read as an SSO redirect (auth) or nothing at all
   { cls: 'transient', code: 'maintenance', re: /down for maintenance|under maintenance|\[gateway_down\]/i },
+  // the error catalog's causes (08 R2): before the generic ones, so they stop reading as "a run failed" or as a
+  // sign-in. Parse drift (a format change) is not retried like an outage; usage limit and no credit are the plan's.
+  { cls: 'config', code: 'parse_drift', re: /\bParseDrift\b|parser drift in /i },
+  { cls: 'rate_limited', code: 'llm_usage_limit', re: /usage limit (?:reached|exceeded)|claude ai usage limit|\b(?:5-hour|weekly) limit\b/i },
+  { cls: 'config', code: 'llm_credit', re: /credit balance (?:is )?too low|insufficient (?:credit|funds)/i },
+  { cls: 'config', code: 'server_not_declared', re: /is not declared in the user Claude config|MCP server \S+ (?:is )?not declared/i },
+  { cls: 'config', code: 'cli_outdated', re: /unknown option '--|unrecognized option|requires? (?:a )?newer version of claude/i },
   { cls: 'auth', code: 'gateway_invalid_api_key', re: /invalid api key|fix external api key|authentication_failed|apiKeyHelper/i, gateway: true },
+  { cls: 'auth', code: 'llm_signed_out', re: /please run \/login|not logged in to claude/i },
   { cls: 'auth', code: 'needs_auth', re: /needs-auth|needs auth|requires? (?:re-?)?auth(?:entication|orization)?/i },
   { cls: 'auth', code: 'invalid_auth', re: /\b(invalid_auth|not_authed|token_revoked|token_expired|account_inactive|invalid_grant|INVALID_SESSION_ID|INVALID_AUTH_HEADER)\b/i },
   { cls: 'auth', code: 'http_401', re: /\b401\b|unauthori[sz]ed/i },
@@ -46,14 +56,16 @@ export interface Classification {
   errorClass: ErrorClass;
   code: string;
   gateway: boolean;
+  /** The error catalog's code for this signature, source-free (src/errors/classify.ts adds the source's own). */
+  catalog?: string;
 }
 
 export function classifyError(err: unknown): Classification {
   const text = errorText(err);
   for (const s of SIGNATURES) {
-    if (s.re.test(text)) return { errorClass: s.cls, code: s.code, gateway: s.gateway ?? false };
+    if (s.re.test(text)) return { errorClass: s.cls, code: s.code, gateway: s.gateway ?? false, catalog: toCatalogCode(s.code) ?? 'BUG.UNKNOWN' };
   }
-  return { errorClass: 'unknown', code: 'unknown', gateway: false };
+  return { errorClass: 'unknown', code: 'unknown', gateway: false, catalog: 'BUG.UNKNOWN' };
 }
 
 /** Init `mcp_servers[].status` → classification (brief 09 §7). */
@@ -89,9 +101,19 @@ export const MCP_SERVER_NAME: Partial<Record<ConnectorId, string>> = {
   org62: 'Org62-Sobject-Read',
 };
 
-export function reauthFor(connector: ConnectorId, c: Classification): ConnectorHealthProbe['reauth'] | undefined {
+/** Claude Code's own sign-in (no company gateway on this Mac): /login, never devbar (CONN-6). */
+export const CLAUDE_LOGIN_REAUTH: NonNullable<ConnectorHealthProbe['reauth']> = {
+  kind: 'terminal_command',
+  command: 'claude',
+  instructions: "Claude Code isn't signed in: in Terminal run claude, then type /login. All model stages pause until it is fixed.",
+};
+
+export function reauthFor(connector: ConnectorId, c: Classification, o: { gatewayConfigured?: boolean } = {}): ConnectorHealthProbe['reauth'] | undefined {
   if (c.errorClass !== 'auth') return undefined;
+  if (c.code === 'llm_signed_out') return CLAUDE_LOGIN_REAUTH;
   if (c.gateway) {
+    // the key the CLI was refused is the company gateway's only when one is configured; else it is Claude Code's own
+    if (!(o.gatewayConfigured ?? gatewayConfigured())) return CLAUDE_LOGIN_REAUTH;
     return { kind: 'terminal_command', command: 'devbar auth login', instructions: 'Sign in to devbar; all LLM stages pause until it is fixed.' };
   }
   const server = MCP_SERVER_NAME[connector];
@@ -103,7 +125,11 @@ export function reauthFor(connector: ConnectorId, c: Classification): ConnectorH
     };
   }
   if (connector === 'vdp') return { kind: 'refresh_script', command: vdpRefreshCommand(null) };
-  return { kind: 'instructions', instructions: 'Reconnect this source from Settings → Connectors.' };
+  // Google sources sign in through devbar (the fix is never in Settings, PKG-7)
+  if (familyOf(connector) === 'google') {
+    return { kind: 'in_app', command: 'devbar mcpgw connectors connect google-workspace-readonly', instructions: 'Reconnect Google: opens your browser, then this page updates by itself.' };
+  }
+  return { kind: 'instructions', instructions: 'Re-auth this source from Health.' };
 }
 
 /** Build the probe recorded on failure. `detail` holds the signature code plus a short redacted hint. */

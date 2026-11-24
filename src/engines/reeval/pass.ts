@@ -9,7 +9,10 @@
  *   user-locked status + "done"        → a proposal; the item doesn't move, so the next signal sees it unchanged
  *   requirement on a done item         → reopen (≤ window) or a sibling; the original stays as it was
  */
-import { applyDecision, applySignal, changeKindOf, type ClosureDecision } from '@/engines/closure';
+import { applyDecision } from '@/engines/closure/apply';
+import { applySignal } from '@/engines/closure/machine';
+import { changeKindOf } from '@/engines/closure/signals';
+import type { ClosureDecision } from '@/engines/closure/types';
 import type { ChangeKind, ClosureItem, ClosureSettings, Signal, WorkItemStatus } from '@/engines/types';
 import { LIVE_STATUSES } from '@/engines/types';
 

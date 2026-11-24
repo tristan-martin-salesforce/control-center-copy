@@ -10,7 +10,7 @@
  *
  * `placeholderDraft` is the fake model (mock mode, tests, and a db lane that is not live): deterministic, no calls.
  */
-import { createSdkMcpServer, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, tool, type McpSdkServerConfigWithInstance, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import { createSdkMcpServer, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, tool, type McpSdkServerConfigWithInstance, type McpServerConfig } from '@/llm/provider';
 import { z } from 'zod';
 
 import type { ForecastDraftSource, SpecialistForecast } from '@/contract';
@@ -166,7 +166,8 @@ export function draftContext(i: ForecastDraftInput) {
     },
     notes: { current: clipText(r.notes, 2500), lastWeek: clipText(r.prevNotes, 2500), manager: clipText(r.mgrNotes, 2500), updatedAt: r.notesUpdatedAt },
     opportunity: { stage: r.oppStage, nextStep: clipText(r.oppNextStep, 600), closeDate: r.oppCloseDate },
-    meetingsSince: i.meetingsSince.slice(0, 12).map((m) => ({ title: redactText(m.title).slice(0, 160), start: m.start })),
+    // every meeting since the notes last changed (caps audit 2026-11-21: was the newest 12); titles stay short
+    meetingsSince: i.meetingsSince.map((m) => ({ title: redactText(m.title).slice(0, 160), start: m.start })),
     names: i.names.slice(0, 6).map((n) => redactText(n).slice(0, 80)),
     template: i.template.slice(0, 600),
     since,

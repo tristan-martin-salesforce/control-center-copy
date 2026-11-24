@@ -70,6 +70,8 @@ export const Opportunity = z.object({
   nextStepRead: z.boolean().default(true),
   products: z.array(z.string()).default([]),
   owner: PersonRef.nullable().default(null),
+  /** Opportunity team members besides the owner, when read (D-103 (a): a covered AE matches as one). Absent: not read. */
+  team: z.array(PersonRef.extend({ org62UserId: z.string().nullable().optional() })).optional(),
   org62Url: Url.nullable().default(null),
   /** My DC on it (split, role), or null. */
   myDc: MyDc.nullable().default(null),
@@ -262,12 +264,24 @@ export const DealsPipeline = z.object({
 });
 export type DealsPipeline = z.infer<typeof DealsPipeline>;
 
+/**
+ * GET /deals paging (p4-page-scoped-reads, additive): `limit` accounts from `cursor` (the previous page's
+ * `nextCursor`). No `limit` = every account, as before; the summary, pipeline and needs always count every account.
+ */
+export const DealsQuery = z.object({
+  cursor: z.string().max(64).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+export type DealsQuery = z.infer<typeof DealsQuery>;
+
 export const DealsPayload = z.object({
   accounts: z.array(AccountRow),
   missedCount: z.number().int(),
   pipeline: DealsPipeline,
   /** What needs you on a deal (Log & fix, Think ahead, Chase), set-aside rows left out: the same rows the Assistant reads. */
   needs: z.array(DealsNeed).default([]),
+  /** With `limit`: the cursor of the next page, null on the last (absent without `limit`). */
+  nextCursor: z.string().nullable().optional(),
 });
 export type DealsPayload = z.infer<typeof DealsPayload>;
 

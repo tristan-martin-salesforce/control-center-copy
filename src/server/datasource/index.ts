@@ -1,6 +1,5 @@
 import { AppError } from '../errors';
-import { createDbDataSource } from './db';
-import { createMockDataSource, MockDataSource } from './mock';
+import { createMockDataSource, mockCodeText } from './mock';
 import type { DataSource } from './types';
 
 export type { DataSource } from './types';
@@ -10,11 +9,11 @@ type Holder = { __ccDataSource?: DataSource; __ccMockCode?: { hash: string; load
 /**
  * Dev only: which mock code made the singleton. A dev server outlives many edits and merges, and the globalThis
  * singleton outlived them too, so a route added since start-up (getHome) 500'd with "reading 'call'" and changed
- * engines served stale payloads until a restart. A bundle that loaded a different MockDataSource later than the
- * one that built the singleton replaces it (the mock store reloads from the seed); an older bundle never swaps
- * it back, so bundles don't thrash.
+ * engines served stale payloads until a restart. A bundle that loaded different mock code (mockCodeText: the facade,
+ * its context and every domain) later than the one that built the singleton replaces it (the mock store reloads from
+ * the seed); an older bundle never swaps it back, so bundles don't thrash.
  */
-const MOCK_CODE = process.env.NODE_ENV === 'development' ? { hash: hashOf(String(MockDataSource)), loadedAt: Date.now() } : null;
+const MOCK_CODE = process.env.NODE_ENV === 'development' ? { hash: hashOf(mockCodeText()), loadedAt: Date.now() } : null;
 
 function hashOf(text: string): string {
   let h = 0x811c9dc5;
@@ -32,6 +31,17 @@ function staleMock(g: Holder): boolean {
 /** db mode: one DataSource per route bundle (its state is Postgres; pool, clock and bus are shared, see db/). */
 let bundleDb: DataSource | undefined;
 
+const dataKind = () => (process.env.CC_DATA ?? 'mock').toLowerCase();
+
+/**
+ * R7 step 5: the db implementation (db-entry.ts) loads only in db mode. The specifier is computed so that a module
+ * graph on the mock (Vite's, and `vitest related`) never reaches pg, drizzle or the jobs; webpackInclude keeps
+ * Next's bundle to that one file.
+ */
+const DB_ENTRY = 'db-entry';
+const dbEntry: typeof import('./db-entry') | null =
+  dataKind() === 'db' ? await import(/* webpackInclude: /[\\/]db-entry\.ts$/ */ /* @vite-ignore */ `./${DB_ENTRY}`) : null;
+
 /**
  * The process-wide DataSource. CC_DATA=mock (default) | db (Postgres at DATABASE_URL, src/server/datasource/db).
  * Mock: stored on globalThis so every route bundle (and dev HMR) shares one in-memory store and event bus.
@@ -47,9 +57,10 @@ export function getDataSource(): DataSource {
     delete g.__ccDataSource;
   }
   if (g.__ccDataSource) return g.__ccDataSource;
-  const kind = (process.env.CC_DATA ?? 'mock').toLowerCase();
+  const kind = dataKind();
   if (kind === 'db') {
-    bundleDb ??= createDbDataSource({ shared: true });
+    if (!dbEntry) throw new AppError('internal', 'CC_DATA=db was set after the data source module loaded: restart the process', undefined, false);
+    bundleDb ??= dbEntry.createDbDataSource({ shared: true });
     return bundleDb;
   }
   if (kind !== 'mock') {

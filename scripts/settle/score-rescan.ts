@@ -9,8 +9,8 @@
  * Buckets as in score.ts: owed (still_yours), ask (gone_quiet), settled (the rest).
  */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { inStateDir } from '../../src/lib/state-folder';
 
 import { sql } from 'drizzle-orm';
 
@@ -21,7 +21,7 @@ const opt = (n: string) => {
   const i = args.indexOf(`--${n}`);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const SK = path.join(os.homedir(), 'Library/Application Support/control-center/stress/settle-key');
+const SK = inStateDir('stress', 'settle-key');
 const readJsonl = <T>(f: string): T[] =>
   fs
     .readFileSync(f, 'utf8')

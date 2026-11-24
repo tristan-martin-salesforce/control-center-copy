@@ -6,6 +6,7 @@ import { AutonomyLevel, ChatModel, DispatchMode, Id, IsoDate, IsoDateTime, SaveM
 import { DEFAULT_FEEDBACK_SETTINGS, FeedbackSettings } from './feedback';
 import { DEFAULT_GUIDE_SETTINGS, GuideSettings } from './guide';
 import { DEFAULT_PERSONA_SETTINGS, PersonaSettings, PersonaSettingsPatch } from './persona';
+import { DEFAULT_PRIORITY_SETTINGS, PrioritySettings } from './priority';
 
 // ---------------------------------------------------------------------------
 // Priority policy
@@ -157,15 +158,36 @@ export const SendingChannels = z.object({
 });
 export type SendingChannels = z.infer<typeof SendingChannels>;
 
+/**
+ * VDP autopilot's trusted asset sites (D-60 amended 2026-11-21, SEC-6). Autopilot adds an asset link by itself only when
+ * it is an https link whose host is one of these, or a subdomain of one (no port, no user:password@, no IP address);
+ * any other link waits for your Apply with "Held for you: link is on <host>, not a trusted site". Lower-case host
+ * names (IDN as punycode), never a scheme, path or wildcard.
+ */
+export const DEFAULT_AUTOPILOT_ASSET_HOSTS: readonly string[] = Object.freeze(['salesforce.com', 'force.com', 'my.salesforce.com', 'salesforce-sites.com', 'trailhead.com', 'sfdcstatic.com', 'drive.google.com', 'docs.google.com', 'slides.google.com']);
+/** One trusted site: a DNS host name (letters, digits, hyphens, dots; the last label starts with a letter). */
+export const AutopilotAssetHost = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(253)
+  .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/, 'a site name such as docs.google.com');
+
 export const SendingSettings = z.object({
   version: Version,
   defaultMode: DispatchMode,
   /** Global dry-run switch. Defaults ON; turning it off needs an explicit Save + confirm. */
   dryRun: z.boolean(),
   verifyReadback: z.boolean(),
+  /** Kept at 60 s: the send waits on the open composer's timer (send-flow.ts); a longer hold is Draft mode. */
   undoWindowSec: z.number().int().min(0).max(60),
   /** BE-OUTBOX (additive): per-channel mode. Optional on input (older seeds and rows): both default to `draft`. */
   channels: SendingChannels.default(() => ({ slack: { ...DEFAULT_SENDING_CHANNELS.slack }, gmail: { ...DEFAULT_SENDING_CHANNELS.gmail }, vdp: { ...DEFAULT_SENDING_CHANNELS.vdp }, slack_canvas: { ...DEFAULT_SENDING_CHANNELS.slack_canvas } })),
+  /**
+   * SEC-6 (additive): the sites VDP autopilot adds asset links from by itself; anything else waits for your Apply. No
+   * count limit (P25-11, no arbitrary caps): it is your list, and each name is checked on its own.
+   */
+  autopilotAssetHosts: z.array(AutopilotAssetHost).default(() => [...DEFAULT_AUTOPILOT_ASSET_HOSTS]),
 });
 export type SendingSettings = z.infer<typeof SendingSettings>;
 /** Safe defaults: dry-run ON, message channels in `draft` (VDP: `send` = Apply, autopilot off), read-back on, 10 s undo window. */
@@ -176,6 +198,7 @@ export const DEFAULT_SENDING_SETTINGS: SendingSettings = {
   verifyReadback: true,
   undoWindowSec: 10,
   channels: { slack: { mode: 'draft' }, gmail: { mode: 'draft' }, vdp: { mode: 'send', autopilot: false, dailyCap: DEFAULT_VDP_AUTOPILOT_CAP }, slack_canvas: { mode: 'send' } },
+  autopilotAssetHosts: [...DEFAULT_AUTOPILOT_ASSET_HOSTS],
 };
 /**
  * PATCH /settings/sending body: any subset; `channels` may name one channel (the other keeps its mode). VDP's row takes
@@ -335,14 +358,27 @@ export const ChatSettings = z.object({
   /** The assistant's own spend per day (USD), inside the global hard cap. */
   dailyUsd: z.number().min(0).max(100).default(3),
   /** Cost cap per message, by model (USD). A capped message offers a one-time "allow more". */
-  messageUsd: z.object({ sonnet: z.number().min(0.01).max(10), opus: z.number().min(0.01).max(10) }).default({ sonnet: 0.25, opus: 0.6 }),
-  /** Model steps (tool rounds) per message. */
-  maxSteps: z.number().int().min(1).max(80).default(30),
-  /** One deep research run (chat_research: live Slack, Gmail, Calendar, Drive, Org62), on the assistant's day line. */
+  messageUsd: z.object({ sonnet: z.number().min(0.01).max(10), opus: z.number().min(0.01).max(10), haiku: z.number().min(0.01).max(10).default(0.05) }).default({ sonnet: 0.25, opus: 0.6, haiku: 0.05 }),
+  /**
+   * Model steps (tool rounds) per message: a runaway guard only (Assistant v2, lane 05 §3a: cost bounds a turn, through
+   * the governor's estimate → raise a hand → continue). Any positive whole number (caps audit F-1: no fixed ceiling;
+   * the Assistant stops and asks when a message reaches it). A stored value is kept.
+   */
+  maxSteps: z.number().int().positive().default(200),
+  /**
+   * One deep research run (chat_research: live Slack, Gmail, Calendar, Drive, Org62): its own line per run (D-51), on
+   * the assistant's day line, never taken from what is left of the message's cap (ASSIST-1, 2026-11-20).
+   */
   researchUsd: z.number().min(0.05).max(5).default(0.5),
+  /**
+   * Assistant v2 (H-6): which model answers. `auto` routes each turn (src/llm/chat/router.ts: Haiku for lookups and
+   * actions, Sonnet for drafts and explanations, Opus for research synthesis and multi-step plans); the others are
+   * the owner's override ("Always Sonnet"). A message's own choice (the composer menu) still wins for that message.
+   */
+  routing: z.enum(['auto', 'haiku', 'sonnet', 'opus']).default('auto'),
 });
 export type ChatSettings = z.infer<typeof ChatSettings>;
-export const DEFAULT_CHAT_SETTINGS: ChatSettings = { version: 1, defaultModel: 'sonnet', dailyUsd: 3, messageUsd: { sonnet: 0.25, opus: 0.6 }, maxSteps: 30, researchUsd: 0.5 };
+export const DEFAULT_CHAT_SETTINGS: ChatSettings = { version: 1, defaultModel: 'sonnet', dailyUsd: 3, messageUsd: { sonnet: 0.25, opus: 0.6, haiku: 0.05 }, maxSteps: 200, researchUsd: 0.5, routing: 'auto' };
 
 /**
  * Settings ▸ Time (onsite lane): onsite days and travel. Onsite hours are "HH:MM" in the trip's time zone; the
@@ -382,6 +418,45 @@ export const DEFAULT_LOGGING_SETTINGS: LoggingSettings = { mode: 'on_demand', ca
 export const TimeOverlaps = z.enum(['log_all_accepted', 'count_once']);
 export type TimeOverlaps = z.infer<typeof TimeOverlaps>;
 
+/**
+ * Settings ▸ Time ▸ AEs I cover (holistic review 2026-11-20, H-9): the AEs whose deals the attribution engine, Org62
+ * discovery and DC suggestions include, each toggled on or off. Default: none.
+ */
+/** D-103 (a): an AE I support (`ae`), a teammate I cover while they are out (`ooo`), or a subject-matter assist (`sme`). */
+export const CoverageKind = z.enum(['ae', 'ooo', 'sme']);
+export type CoverageKind = z.infer<typeof CoverageKind>;
+const IsoDateSetting = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'a date like 2026-11-03');
+
+export const CoveredAe = z.object({
+  name: z.string().trim().min(2).max(120),
+  org62UserId: z
+    .string()
+    .regex(/^005[A-Za-z0-9]{12}([A-Za-z0-9]{3})?$/, 'an Org62 user id starts with 005')
+    .nullable()
+    .optional(),
+  email: z.string().trim().email().max(200).nullable().optional(),
+  enabled: z.boolean().default(true),
+  /**
+   * D-103 (a): what the coverage is. `ae` (default): an AE I support; their deals are suggested as DCs without a touch
+   * (unticked). `ooo`: covering for a teammate while they are out. `sme`: a subject-matter assist. `ooo` and `sme`
+   * matches still need evidence of my work to be suggested.
+   */
+  kind: CoverageKind.optional(),
+  /** When the coverage holds (ISO dates, `to` inclusive, open-ended without it). `ooo` and `sme` usually have one. */
+  window: z.object({ from: IsoDateSetting, to: IsoDateSetting.optional() }).refine((w) => !w.to || w.to >= w.from, 'to must be on or after from').optional(),
+  /** The default DC split for a deal matched through this row. Absent: 100 for `ae`, 50 for `ooo`, 25 for `sme`. */
+  creditShare: z.union([z.literal(100), z.literal(50), z.literal(25)]).optional(),
+  /** One line: "covering for <TA> OOO", "SME on Data Cloud call". */
+  note: z.string().trim().max(120).optional(),
+});
+export type CoveredAe = z.infer<typeof CoveredAe>;
+
+/** The default credit share of a coverage kind (D-103 (a)). */
+export const COVERAGE_DEFAULT_SHARE: Readonly<Record<CoverageKind, 100 | 50 | 25>> = { ae: 100, ooo: 50, sme: 25 };
+
+/** The products a DC counts for by default (today's D360 sweep words): Settings ▸ Time ▸ DC products changes them. */
+export const DEFAULT_DC_PRODUCTS: readonly string[] = ['Data 360', 'Data Cloud', 'D360', 'Data Services', 'Private Connect', 'Marketing Data Bundle'];
+
 export const TimeSettings = z.object({
   version: Version,
   detectOnsite: z.boolean(),
@@ -391,7 +466,10 @@ export const TimeSettings = z.object({
    * other than the old default 60 applies to both (src/engines/activity/onsite.ts `airportBuffers`).
    */
   airportBufferMin: z.number().int().min(0).max(240),
-  /** Travel before a flight's departure, minutes. Absent: 120 (2026-11-14). */
+  /**
+   * Travel before a flight's departure, minutes. Absent: 120 (2026-11-14). The 360 (240 legacy) bounds are safety: each
+   * buffer becomes Travel proposals split at midnight (propose.meetings.ts), so an unbounded one would propose days of travel.
+   */
   airportBufferBeforeMin: z.number().int().min(0).max(360).optional(),
   /** Travel after a flight lands, minutes. Absent: 60. */
   airportBufferAfterMin: z.number().int().min(0).max(360).optional(),
@@ -399,8 +477,21 @@ export const TimeSettings = z.object({
   logging: LoggingSettings.default(() => ({ ...DEFAULT_LOGGING_SETTINGS })),
   /** Optional on input (rows saved before D-18 was amended): every accepted meeting logs. */
   overlaps: TimeOverlaps.default('log_all_accepted'),
+  /** AEs I cover (attribution, discovery and DC suggestions include their deals while toggled on). Absent: none. No count bound (owner reads go 200 ids a query; the team read is one IN list, see 26-caps-audit). */
+  coveredAes: z.array(CoveredAe).optional(),
+  /** Products a DC suggestion counts for (a product's or the opp's words; empty: every product; no count bound, matched locally). Absent: DEFAULT_DC_PRODUCTS. */
+  dcProducts: z.array(z.string().trim().min(2).max(60)).optional(),
+  /** A suggested DC's default split: 100% (`full`, default: a lower split keeps a use case off Org62) or its evidence share. */
+  dcSplit: z.enum(['full', 'evidence']).optional(),
+  /** How often the app looks in Org62 for deals it doesn't have yet (my teams, accounts I engaged, my covered AEs). Absent: daily. */
+  discovery: z.enum(['daily', 'weekly', 'off']).optional(),
 });
 export type TimeSettings = z.infer<typeof TimeSettings>;
+
+/** The attribution settings with their defaults (Settings ▸ Time). */
+export function attributionSettingsOf(t: Partial<Pick<TimeSettings, 'coveredAes' | 'dcProducts' | 'dcSplit' | 'discovery'>> | null | undefined): { coveredAes: CoveredAe[]; dcProducts: string[]; dcSplit: 'full' | 'evidence'; discovery: 'daily' | 'weekly' | 'off' } {
+  return { coveredAes: t?.coveredAes ?? [], dcProducts: t?.dcProducts ?? [...DEFAULT_DC_PRODUCTS], dcSplit: t?.dcSplit ?? 'full', discovery: t?.discovery ?? 'daily' };
+}
 export const DEFAULT_TIME_SETTINGS: TimeSettings = { version: 1, detectOnsite: true, onsiteHours: { start: '08:00', end: '17:00' }, airportBufferMin: 60, dinnersCustomerFacing: true, logging: { ...DEFAULT_LOGGING_SETTINGS }, overlaps: 'log_all_accepted' };
 
 /**
@@ -450,8 +541,11 @@ export type ClosingReason = z.infer<typeof ClosingReason>;
 /** close: closed for you (Auto-closed list, Undo) · ask: Triage asks you · leave: stays as it is. */
 export const ClosingAction = z.enum(['close', 'ask', 'leave']);
 export type ClosingAction = z.infer<typeof ClosingAction>;
-/** Confidence the check needs before it acts; calibrated on the answer key (docs/ui/FIRST-SCAN-RAMP.md §7). */
+/** Confidence the check needs before it acts; calibrated on the answer key (docs/archive/2026-build/FIRST-SCAN-RAMP.md §7). */
 export const ClosingStrictness = z.enum(['cautious', 'balanced', 'eager']);
+/** Which closer acts (ClosingSettings.resolutionEngine). */
+export const ResolutionEngineMode = z.enum(['legacy', 'shadow', 'live']);
+export type ResolutionEngineMode = z.infer<typeof ResolutionEngineMode>;
 export type ClosingStrictness = z.infer<typeof ClosingStrictness>;
 
 export const DEFAULT_CLOSING_REASONS: Record<ClosingReason, ClosingAction> = {
@@ -475,26 +569,36 @@ export const ClosingSettings = z.object({
   strictness: ClosingStrictness.default('balanced'),
   /** Always ask before closing a commitment to someone outside the company (a customer or partner). */
   askFirstExternalCommitments: z.boolean().default(true),
-  /** Always ask before closing anything involving these people (names) or channels (#name). */
-  askFirstPeople: z.array(z.string().trim().min(1).max(120)).max(50).default([]),
-  askFirstChannels: z.array(z.string().trim().min(1).max(120)).max(50).default([]),
+  /** Always ask before closing anything involving these people (names) or channels (#name). No count bound (matched locally). */
+  askFirstPeople: z.array(z.string().trim().min(1).max(120)).default([]),
+  askFirstChannels: z.array(z.string().trim().min(1).max(120)).default([]),
   /** Your rules, added to the check's instructions (the built-in instructions stay fixed). */
   rules: z.string().max(1000).default(''),
-  /** Reopen an item closed for you when someone writes again in its conversation addressing you. */
+  /**
+   * Reopen an item closed for you when someone writes again in its conversation addressing you (R2: read by the scanner's
+   * DUP-1 check, which then links the chase as a `follow_up:` contradiction, and by Settle's selection of engine-closed items).
+   */
   reopenOnFollowUp: z.boolean().default(true),
-  /** An ask older than this when first found goes to Still needed? unless the check settles it (DEEP-1). */
-  oldAskDays: z.number().int().min(3).max(365).default(30),
+  /** An ask older than this when first found goes to Still needed? unless the check settles it (DEEP-1; read by the scanner stores). */
+  oldAskDays: z.number().int().min(3).default(30),
   /** Use the stronger model for unclear cases, up to this much a day. */
   strongerModelForUnclear: z.boolean().default(true),
   strongerModelUsdPerDay: z.number().min(0).max(20).default(1),
   /** Home's "Closed N for you since you left" line. */
   tellMeWhatClosed: z.boolean().default(true),
+  /**
+   * The resolution check (src/engines/resolution), the one closer that replaces the completion pass and Settle's decision
+   * (holistic review H-7, R8). `shadow` (1.x default): it runs and records to closure_checks while the legacy closers
+   * still act, and Health compares them. `live`: it acts and the legacy completion pass and Settle's decision stop.
+   * `legacy`: it does not run.
+   */
+  resolutionEngine: ResolutionEngineMode.default('shadow'),
 });
 export type ClosingSettings = z.infer<typeof ClosingSettings>;
 export const DEFAULT_CLOSING_SETTINGS: ClosingSettings = ClosingSettings.parse({ version: 1 });
 
 
-export const SettingsSectionKey = z.enum(['profile', 'agentBehavior', 'sending', 'budgets', 'display', 'chat', 'time', 'scanning', 'closing', 'persona', 'feedback', 'guide']);
+export const SettingsSectionKey = z.enum(['profile', 'agentBehavior', 'sending', 'budgets', 'display', 'chat', 'time', 'scanning', 'closing', 'persona', 'feedback', 'guide', 'priority']);
 export type SettingsSectionKey = z.infer<typeof SettingsSectionKey>;
 
 /** Save model per section (UI-SPEC §8). Policy is separate: preview → explicit Apply. */
@@ -511,8 +615,31 @@ export const SETTINGS_SAVE_MODEL: Record<SettingsSectionKey | 'policy', SaveMode
   persona: 'explicit_save',
   feedback: 'explicit_save',
   guide: 'instant',
+  priority: 'instant',
   policy: 'explicit_apply',
 };
+
+/**
+ * D-90 (H-12): where compiled releases are published and announced. The Drive folder holds the builds and the
+ * release feed (`manifest.json`); the worker's daily update check reads that feed through the devbar Drive read path,
+ * and `npm run release -- <bump> --publish` stages the upload handoff and the announcement draft for this folder and
+ * channel. Ids only (no links with credentials, no tokens). Empty here falls back to config/team.json
+ * (`distributionDriveFolderId`, `distributionAnnounceChannel`), so a team sets it once.
+ */
+export const DistributionSettings = z.object({
+  version: z.literal(1).default(1),
+  /** The shared Google Drive folder's id (the part after /folders/ in its link). */
+  driveFolderId: z.string().trim().regex(/^([A-Za-z0-9_-]{10,})?$/).default(''),
+  /** The Slack channel id the release announcement is drafted to (C…/G…). */
+  announceChannel: z.string().trim().regex(/^([CG][A-Z0-9]{8,})?$/).default(''),
+  announceChannelName: z.string().trim().max(80).default(''),
+  /** stable (default) or beta: which releases this install's update check offers. */
+  channel: z.enum(['stable', 'beta']).default('stable'),
+  /** The daily update check (a read of one small JSON file; nothing is downloaded or installed by it). */
+  checkForUpdates: z.boolean().default(true),
+});
+export type DistributionSettings = z.infer<typeof DistributionSettings>;
+export const DEFAULT_DISTRIBUTION_SETTINGS: DistributionSettings = { version: 1, driveFolderId: '', announceChannel: '', announceChannelName: '', channel: 'stable', checkForUpdates: true };
 
 export const Settings = z.object({
   profile: ProfileSettings,
@@ -535,8 +662,45 @@ export const Settings = z.object({
   feedback: FeedbackSettings.default(() => ({ ...DEFAULT_FEEDBACK_SETTINGS })),
   /** Guidance seen and dismissed. Optional on input: nothing seen yet. */
   guide: GuideSettings.default(() => structuredClone(DEFAULT_GUIDE_SETTINGS)),
+  /** priority@2 (lane 07 R8): which engine ranks: v1, shadow (default: v2 beside v1, recorded), v2. Optional on input. */
+  priority: PrioritySettings.default(() => ({ ...DEFAULT_PRIORITY_SETTINGS })),
+  /** D-90: release distribution (Drive folder, announcement channel, update channel). Optional: absent = team defaults. */
+  distribution: DistributionSettings.optional(),
 });
 export type Settings = z.infer<typeof Settings>;
+
+/**
+ * Data retention knobs (`settings.retention`, Settings ▸ Data). The rules live in src/db/retention/policy.ts; these are
+ * the horizons the user may change. Stored under `user_settings` key `retention`; absent = these defaults.
+ */
+/**
+ * The longest horizon a date can express (no product bound; was 10 years): the nightly cut-off is `now − days`, and an
+ * ECMAScript Date reaches ±100,000,000 days from 1970, so a horizon past this would make the cut-off an invalid date.
+ * "Keep everything" is `enabled: false`.
+ */
+export const RETENTION_DAYS_MAX = 100_000_000;
+export const RetentionSettings = z.object({
+  enabled: z.boolean().default(true),
+  llmTextDays: z.number().int().min(1).max(RETENTION_DAYS_MAX).default(30),
+  traceDays: z.number().int().min(1).max(RETENTION_DAYS_MAX).default(14),
+  eventsDays: z.number().int().min(1).max(RETENTION_DAYS_MAX).default(30),
+  orphanSourceDays: z.number().int().min(7).max(RETENTION_DAYS_MAX).default(90),
+});
+export type RetentionSettings = z.infer<typeof RetentionSettings>;
+
+/** POST /retention/run: "Run retention now" (`dry`: the plan only, nothing changes). */
+export const RunRetentionRequest = z.object({ dry: z.boolean().default(false) });
+export type RunRetentionRequest = z.infer<typeof RunRetentionRequest>;
+export const RetentionRunPayload = z.object({
+  dry: z.boolean(),
+  skipped: z.enum(['disabled', 'scan_active']).optional(),
+  tables: z.array(z.object({ rule: z.string(), table: z.string(), action: z.string(), rows: z.number().int().nullable(), note: z.string().optional() })),
+  bytesBefore: z.number(),
+  bytesAfter: z.number(),
+  estimatedReclaimBytes: z.number(),
+  settings: RetentionSettings,
+});
+export type RetentionRunPayload = z.infer<typeof RetentionRunPayload>;
 
 /** Partial patch schemas per section (used to validate PATCH /settings/:section bodies). */
 export const SETTINGS_SECTION_SCHEMAS = {
@@ -561,4 +725,5 @@ export const SETTINGS_SECTION_SCHEMAS = {
   persona: PersonaSettingsPatch,
   feedback: FeedbackSettings.omit({ version: true }).partial(),
   guide: GuideSettings.omit({ version: true }).partial(),
+  priority: PrioritySettings.omit({ version: true }).partial(),
 } as const;

@@ -94,7 +94,7 @@ export function AgentSection() {
   return (
     <Section
       id="agent"
-      title="Agent behavior"
+      title="Autonomy"
       meta="How far the agent may go, how it sounds, and what it reads. Sends and writes never go above what you set here, and each one is audited."
       actions={<Instant>Each block saves on its own</Instant>}
       jump={

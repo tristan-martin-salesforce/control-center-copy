@@ -53,12 +53,32 @@ export function patchLocks(patch: PatchActivityRequest['patch'], extra: readonly
 }
 
 /**
+ * D-103 (c): a patch's `target` as the fields it stands for: `opp` is `oppId`, `internal` is `internal: true`, and
+ * `account` clears the opportunity (patchedEntry sets the account). Without a target the patch is unchanged.
+ */
+export function targetPatch(cur: Pick<ActivityEntry, 'internal'>, patch: PatchActivityRequest['patch']): Omit<PatchActivityRequest['patch'], 'target'> {
+  const { target, ...rest } = patch;
+  if (!target) return rest;
+  if (target.kind === 'opp') return { ...rest, oppId: target.id };
+  if (target.kind === 'internal') return { ...rest, internal: true };
+  return { ...rest, oppId: null, ...(cur.internal ? { internal: false } : {}) };
+}
+
+/**
  * The row after PATCH /activity/:id, before it is stored: the patch, the picked opp's names (`opp`), internal-ness and
  * the locks (old and new). `newLocks` are the ones this edit adds (the db locks those columns).
  */
-export function patchedEntry(cur: ActivityEntry, patch: PatchActivityRequest['patch'], opp: { name: string; accountName: string | null } | null): { next: ActivityEntry; newLocks: ActivityLockableField[] } {
+export function patchedEntry(
+  cur: ActivityEntry,
+  patch0: PatchActivityRequest['patch'],
+  opp: { name: string; accountName: string | null } | null,
+  account: { id: string; name: string } | null = null,
+): { next: ActivityEntry; newLocks: ActivityLockableField[] } {
+  const patch = targetPatch(cur, patch0);
+  const toAccount = patch0.target?.kind === 'account';
+  if (toAccount && !account) throw invalid('That account is not in the app');
   const ip = internalPatch(cur, patch);
-  const newLocks = patchLocks(patch, ip?.locks ?? []);
+  const newLocks = patchLocks(patch, [...(ip?.locks ?? []), ...(toAccount ? (['oppId'] as const) : [])]);
   const locks = new Set(lockableActivityFields(cur.userLockedFields));
   for (const k of newLocks) locks.add(k);
   const { internal: _internal, ...fields } = patch;
@@ -72,6 +92,9 @@ export function patchedEntry(cur: ActivityEntry, patch: PatchActivityRequest['pa
     // D-66: your note is yours (locked): no longer the app's draft; an emptied one logs the CC# key alone
     ...(patch.logNote !== undefined ? { logNote: patch.logNote.replace(/\s+/g, ' ').trim(), logNoteBasis: null } : {}),
   };
+  // D-103 (c): the account target: no opportunity, the account itself (its open-opp questions go)
+  if (toAccount) Object.assign(next, { accountId: account!.id, accountName: account!.name, oppId: null, oppName: null, issues: cur.issues.filter((i) => !/^NEEDS WhatId|^WhatId = account fallback/i.test(i)) });
+  else if (patch.oppId || patch.internal) delete next.accountId; // absent, as the db reads a row with no account target
   next.internal = isInternalEntry(next);
   return { next, newLocks };
 }

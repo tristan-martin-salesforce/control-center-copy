@@ -460,14 +460,15 @@ describe('audit 10: Org62 is only read; writes are canvas rows the user Applies'
   const md = withUseCaseRows(renderWorkOrder({ ...base, events: [], updates: [] }), p.creates, [upd], ME);
 
   it('the rule creates as me, skips any opp + title that exists, never edits or deletes another record; fixes are Stage / Go-Live only', () => {
-    expect(md).toMatch(/^3\. \*\*USE CASES table:\*\* create one Use_Case__c per row with OwnerId `005XX0000000MEAAAA`/m);
+    expect(md).toMatch(/^\*\*USE CASES TO CREATE:\*\* create one Use_Case__c per row with OwnerId `005XX0000000MEAAAA`/m);
     expect(md).toMatch(/Skip a row ONLY if a Use_Case__c with the same Opportunity__c and Use_Case_Name__c already exists, whoever owns it/);
     expect(md).toMatch(/Never edit or delete an existing use case from this table/);
-    expect(md).toMatch(/change only that Use_Case__c \(the Record Id\), and only if `005XX0000000MEAAAA` owns it/);
+    expect(md).toMatch(/\*\*USE CASES TO UPDATE:\*\* each row changes one field on an existing Use_Case__c: on the record whose Id is in Record Id, and only if `005XX0000000MEAAAA` owns it/);
     expect(md).not.toMatch(/\bDelete\b/);
-    expect(md.indexOf('# USE CASES (2 rows)')).toBeLessThan(md.indexOf('# UPDATE (1 rows · 1 use-case fix)'));
-    expect(md).toContain(`|1|Use_Case__c|Use case 1|${OPP}|${ACC}|Data Cloud|D360 Custom|Flex||`);
-    expect(md).toContain('|1|Use_Case__c|a1XXX0000000UC9AAA|Stage__c|U05 - Implementation|U03 - Scoping|Use case 3: VDP execution phase is Build|');
+    expect(md.indexOf('## USE CASES TO CREATE (2 rows)')).toBeGreaterThan(0);
+    expect(md.indexOf('## USE CASES TO CREATE (2 rows)')).toBeLessThan(md.indexOf('## USE CASES TO UPDATE (1 row · 1 use-case fix)'));
+    expect(md).toContain(`|1|Use case 1|${OPP}|${ACC}|Data Cloud|D360 Custom|Flex||`);
+    expect(md).toContain('|1|a1XXX0000000UC9AAA|Stage__c|U05 - Implementation|U03 - Scoping|Use case 3: VDP execution phase is Build|');
   });
 
   it('the rows read back; the work-order parser never takes them for Events; the preview and prompt count them', () => {
@@ -480,11 +481,12 @@ describe('audit 10: Org62 is only read; writes are canvas rows the user Applies'
     expect(canvasPromptFor(dest, { url: null, recordTypeName: 'Solutions Event' })).toMatch(/3 VDP use cases \(Use_Case__c\) to create or update/);
   });
 
-  it('on a work order with DC rows, both rules are numbered once', () => {
+  it('on a work order with DC rows, each table has its own paragraph once, in the fixed order', () => {
     const withDc = withDcAdds(renderWorkOrder({ ...base, events: [], updates: [] }), [{ requestId: 'r1', org62OpportunityId: OPP, oppName: 'x', role: 'AI + Data Architect', split: 100, comment: 'c' }], ME);
     const both = withUseCaseRows(withDc, p.creates, [], ME);
-    expect(both.match(/^\d+\. /gm)).toEqual(['1. ', '2. ', '3. ', '4. ', '5. ', '6. ']);
-    expect(both).toMatch(/^4\. \*\*USE CASES table/m);
+    expect(both.match(/^\d+\. /gm)).toEqual(['1. ', '2. ']);
+    expect(both.match(/^\*\*[A-Z ]+:\*\*/gm)).toEqual(['**DEAL CONTRIBUTIONS TO CREATE:**', '**USE CASES TO CREATE:**']);
+    expect(both.indexOf('## DEAL CONTRIBUTIONS TO CREATE')).toBeLessThan(both.indexOf('## USE CASES TO CREATE'));
   });
 });
 

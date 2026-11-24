@@ -1,7 +1,7 @@
 /**
  * A placeholder Slack day and a fake `query()` that plays the CLI (PreToolUse hook → canUseTool gate → cc tools on the
  * real in-process MCP server, Slack tools rendered by the stress replay, a PostToolUse hook and the tool_result
- * message). Same shapes as tests/stress/rec1-triage.test.ts. No real names, ids or text.
+ * message). Same shapes as tests/scanner/stress/rec1-triage.test.ts. No real names, ids or text.
  */
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';

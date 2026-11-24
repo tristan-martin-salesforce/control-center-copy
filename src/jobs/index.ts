@@ -1,4 +1,4 @@
-/** Job kinds, handlers and queue operations (docs/ui/WORKER.md). */
+/** Job kinds, handlers and queue operations (docs/reference/WORKER.md). */
 import type { ConnectorId } from '@/scanner/types';
 
 import { backupHandler, type BackupLib } from './handlers/backup';
@@ -6,6 +6,7 @@ import { briefJobDef } from './handlers/brief';
 import { completionJobDef } from './handlers/completion';
 import { readInJobDef } from './handlers/readin';
 import { retentionHandler } from './handlers/retention';
+import { dataRetentionHandler, DATA_RETENTION_KIND } from './handlers/data-retention';
 import { vdpAssetsJobDef } from './handlers/vdp-assets';
 import { forecastJobDefs } from './handlers/forecast-sync';
 import { vdpAesJobDef } from './handlers/vdp-specialist-aes';
@@ -14,9 +15,16 @@ import { vdpIdentityJobDef } from './handlers/vdp-identity';
 import { enrichJobDef } from './handlers/enrich';
 import { activityNotesJobDef } from './handlers/activity-notes';
 import { activitySuggestJobDef } from './handlers/activity-suggest';
+import { org62DiscoverJobDef } from './handlers/org62-discover';
+import { oppEngagementJobDef } from './handlers/opp-engagement';
+import { dcSuggestJobDef } from './handlers/dc-suggest';
+import { extractUseCasesJobDef } from './handlers/use-cases-extract';
 import { hygieneJobDef } from './handlers/hygiene';
 import { org62ReadbackJobDef } from './handlers/org62-readback';
 import { toolRunJobDef } from './handlers/tool-run';
+import { doctorJobDef } from './handlers/doctor';
+import { updateCheckJobDef } from './handlers/update-check';
+import { kvBackfillJobDef } from './handlers/kv-backfill';
 import { JobRegistry, notWired, QUEUES } from './registry';
 import { reauthHandler, scanHandler, type ReauthStarter, type ScanHandlerDeps } from './scan';
 
@@ -57,6 +65,7 @@ export function createDefaultRegistry(deps: DefaultRegistryDeps = {}): JobRegist
   r.register({ kind: 'activity.sync', queue: QUEUES.maintenance, wired: false, description: 'activity logging + canvas sync', handler: notWired('activity.sync', 'BE-5') });
   r.register({ kind: 'missed_opps.sweep', queue: QUEUES.maintenance, wired: false, description: 'Org62 missed-opportunity sweep', handler: notWired('missed_opps.sweep', 'BE-5') });
   r.register({ kind: 'retention.scrub', queue: QUEUES.maintenance, wired: true, description: '90-day body retention + audit image scrub + table retention (jobs, scan runs, health checks, LLM rollups)', handler: retentionHandler });
+  r.register({ kind: DATA_RETENTION_KIND, queue: QUEUES.maintenance, wired: true, description: 'retention policy: llm text, scan trace, resolved events, orphan source items, jobs, priority runs, backups', handler: dataRetentionHandler() });
   r.register({ kind: 'backup.nightly', queue: QUEUES.maintenance, wired: true, description: 'nightly pg_dump when due', handler: backupHandler(deps.backup) });
   r.register(readInJobDef()); // BE-READIN: queue `readin`, concurrency 1 (src/jobs/handlers/readin.ts)
   // CMP-1: completion pass, queue `completion`, concurrency 1; enqueued by the scan afterRun hook (src/worker/scanning.ts).
@@ -76,5 +85,13 @@ export function createDefaultRegistry(deps: DefaultRegistryDeps = {}): JobRegist
   // D-66: the cheap model's Org62 Description note where meeting notes exist (queued by the worker's activity.notes hook)
   r.register(activityNotesJobDef());
   r.register(activitySuggestJobDef()); // Time: the model's opportunity suggestion for rows the rules can't place (handle: the worker's configureActivitySuggest)
+  r.register(doctorJobDef()); // 11 R6: the setup checks every 15 min and after start (src/jobs/handlers/doctor.ts)
+  // the attribution engine (src/engines/attribution): Org62 discovery (fixed SOQL, read-only), the engagement rollup, the DC suggestion batch
+  r.register(org62DiscoverJobDef());
+  r.register(oppEngagementJobDef());
+  r.register(dcSuggestJobDef());
+  r.register(updateCheckJobDef()); // D-90: the daily read of the release feed in the shared Drive folder (src/jobs/handlers/update-check.ts)
+  r.register(extractUseCasesJobDef()); // use cases to add (src/engines/use-cases): notes, meetings, Slack, mail → candidates
+  r.register(kvBackfillJobDef()); // D-98 / 0036: kv side-car → columns (idempotent, chunked, resumable)
   return r;
 }

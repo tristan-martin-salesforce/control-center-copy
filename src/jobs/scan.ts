@@ -20,6 +20,7 @@ import type { Db } from '@/db/client';
 import { enqueueJob } from '@/db/queue';
 import type { ScanSkillRunInput } from '@/llm/skill-runner';
 import type { ScanSkillRunResult } from '@/scanner/runtime/contract-ext';
+import { toInterpret } from '@/scanner/runtime/reread';
 import { retryJobOf, type JobOutcome, type RuntimeJob } from '@/scanner/runtime/jobs';
 import type { ScannerRuntime } from '@/scanner/runtime/scanner-runtime';
 import type { ConnectorId, ReevaluateEnqueuer, ScannerStore, SkillRunner } from '@/scanner/types';
@@ -42,11 +43,13 @@ export class DeferredSkillRunner implements SkillRunner {
     if (input.mode === 'relink' || input.mode === 'relink_escalated') return { ok: true, ...base, counts, summary: 'deferred: LLM linking is off' };
     if (!input.prefetched) return { ok: false, ...base, counts, error: { message: 'LLM scanning is off: traversal sources need the skill agent', errorClass: 'config' } };
     const res = await store.recordSourceItems(input.runId, input.prefetched);
+    // ask #14 (W2): a message an interrupted run stored but nobody judged is flagged too, not only new or changed ones
+    const flag = new Set((await toInterpret(store, res)).map((r) => r.sourceItemId));
     for (const r of res) {
       counts.recorded += 1;
       if (r.isNew) counts.new += 1;
       if (r.changed) counts.changed += 1;
-      if (r.isNew || r.changed) {
+      if (flag.has(r.sourceItemId)) {
         await store.flagUnlinked(input.runId, { sourceItemId: r.sourceItemId, reason: this.reason });
         counts.unlinked += 1;
       }

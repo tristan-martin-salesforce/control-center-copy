@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { inStateDir } from '@/lib/state-folder';
 import type { DigestStore, DriveSample } from './types';
 
 export class MemoryDigestStore implements DigestStore {
@@ -25,7 +25,7 @@ export class MemoryDigestStore implements DigestStore {
   }
 }
 
-export const defaultDigestDir = () => join(homedir(), 'Library', 'Application Support', 'control-center', 'drive-digests');
+export const defaultDigestDir = () => inStateDir('drive-digests');
 
 const safe = (id: string) => id.replace(/[^A-Za-z0-9_-]/g, '_');
 

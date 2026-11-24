@@ -1,0 +1,53 @@
+{
+  "id": "scn-14-two-deliverables-one-dm",
+  "title": "SCN-14: two different deliverables about the same deck, asked in one DM, stay two items",
+  "storyline": "03-scanner-quality.md SCN-14 (DUP-1 can merge two different deliverables), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-12T15:00:00.000Z",
+      "seen_at": "2026-11-12T15:10:00.000Z",
+      "from_me": false,
+      "body": "Can you share the ACME deck with PERSON_F before the call?",
+      "meta": { "channelId": "D0PERSONE1", "channelType": "im", "author": { "name": "PERSON_E", "email": "person_e@example.com", "externalId": "U0PERSONE" }, "participants": [{ "name": "PERSON_E", "externalId": "U0PERSONE" }] },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-12T15:02:00.000Z",
+      "seen_at": "2026-11-12T15:10:00.000Z",
+      "from_me": false,
+      "body": "Also, can you review the ACME deck for PERSON_F's team? They want your comments by Friday.",
+      "meta": { "channelId": "D0PERSONE1", "channelType": "im", "author": { "name": "PERSON_E", "email": "person_e@example.com", "externalId": "U0PERSONE" }, "participants": [{ "name": "PERSON_E", "externalId": "U0PERSONE" }] },
+      "agent": [{ "propose": "i2" }]
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Share the ACME deck with PERSON_F",
+      "keywords": ["share", "ACME deck"],
+      "origin": "s1",
+      "ask_quote": "can you share the acme deck"
+    },
+    {
+      "id": "i2",
+      "kind": "ask",
+      "title": "Review the ACME deck for PERSON_F",
+      "keywords": ["review", "ACME deck"],
+      "origin": "s2",
+      "ask_quote": "can you review the acme deck",
+      "note": "sameDeliverable sees {acme, deck} shared out of three words and merges the review into the share"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "why": "nothing shared yet" },
+    { "item": "i2", "expect": "open", "class": "still_owed", "why": "nothing reviewed yet" }
+  ]
+}

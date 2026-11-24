@@ -1,0 +1,1716 @@
+{
+  "gmail": {
+    "chunkMs": 43200000,
+    "connector": "gmail",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxItemsPerRun": 25,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-gmail.md",
+    "type": "deterministic"
+  },
+  "calendar": {
+    "chunkMs": 43200000,
+    "connector": "calendar",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "firstScanChunkMsFor": {
+      "inbox": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "channel:C1": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "events": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "opps": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "book": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "missed_opps": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "mine": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "all": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "tracked": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "primary": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "poll": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      },
+      "gmail": {
+        "incremental": 86400000,
+        "backfill": 86400000,
+        "head": 86400000,
+        "continuation": 86400000,
+        "relink": 86400000
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxItemsPerRun": 25,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-calendar.md",
+    "type": "deterministic"
+  },
+  "drive": {
+    "chunkMs": 86400000,
+    "connector": "drive",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxItemsPerRun": 25,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-drive.md",
+    "type": "deterministic"
+  },
+  "gemini_notes": {
+    "chunkMs": 43200000,
+    "connector": "gemini_notes",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxItemsPerRun": 25,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-gemini-notes.md",
+    "type": "deterministic"
+  },
+  "claude_sessions": {
+    "chunkMs": 43200000,
+    "connector": "claude_sessions",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxItemsPerRun": 25,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-claude-sessions.md",
+    "type": "deterministic"
+  },
+  "trainings": {
+    "chunkMs": 43200000,
+    "connector": "trainings",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxItemsPerRun": 25,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-trainings.md",
+    "type": "deterministic"
+  },
+  "watch": {
+    "allowedTools": [
+      "mcp__slack__slack_read_channel",
+      "mcp__slack__slack_read_thread"
+    ],
+    "chunkMs": 43200000,
+    "connector": "watch",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "initialLookbackMs": 86400000,
+    "maxItemsPerRun": 25,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "mcpServers": "fn",
+    "model": "claude-haiku-5-5",
+    "skillPath": "skills/scan-watch.md",
+    "type": "deterministic"
+  },
+  "vdp": {
+    "chunkMs": 2678400000,
+    "connector": "vdp",
+    "costCapUsd": {
+      "inbox": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "channel:C1": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "events": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "book": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "missed_opps": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "mine": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "all": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "tracked": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "primary": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "poll": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      },
+      "gmail": {
+        "incremental": 0.05,
+        "backfill": 0.1,
+        "head": 0.1,
+        "continuation": 0.1,
+        "relink": 0.05
+      }
+    },
+    "firstScanChunkMsFor": {
+      "inbox": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "channel:C1": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "events": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "opps": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "book": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "missed_opps": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "mine": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "all": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "tracked": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "primary": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "poll": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      },
+      "gmail": {
+        "incremental": 2678400000,
+        "backfill": 2678400000,
+        "head": 2678400000,
+        "continuation": 2678400000,
+        "relink": 2678400000
+      }
+    },
+    "initialLookbackMs": 1800000,
+    "maxItemsPerRun": 500,
+    "maxTurns": {
+      "inbox": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "channel:C1": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "events": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "book": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "missed_opps": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "mine": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "all": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "tracked": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "primary": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "poll": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      },
+      "gmail": {
+        "incremental": 20,
+        "backfill": 20,
+        "head": 20,
+        "continuation": 20,
+        "relink": 12
+      }
+    },
+    "model": "claude-haiku-5-5",
+    "persistAuthPause": {
+      "changed": true
+    },
+    "readsCurrentState": {
+      "inbox": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "channel:C1": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "events": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "opps": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "book": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "missed_opps": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "mine": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "all": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "tracked": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "primary": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "poll": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      },
+      "gmail": {
+        "incremental": true,
+        "backfill": true,
+        "head": true,
+        "continuation": true,
+        "relink": true
+      }
+    },
+    "skillPath": "skills/scan-vdp.md",
+    "type": "deterministic"
+  }
+}

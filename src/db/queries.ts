@@ -2,7 +2,7 @@
  * DATA-MODEL §6: the home-screen reads (Q1-Q16) and the write paths (W1-W7), verbatim, as
  * positional-parameter SQL for node-postgres: `pool.query(Q.Q1.text, [ownerUserId])`, or via
  * runStatement(); inside a drizzle transaction use `tx.execute(statementSql('Q1', [ownerUserId]))`.
- * Extracted from docs/ui/DATA-MODEL.md; tests/be0/queries.test.ts runs every statement and EXPLAINs
+ * Extracted from docs/reference/DATA-MODEL.md; tests/be0/queries.test.ts runs every statement and EXPLAINs
  * every read. One fix: W1 casts `$9::timestamptz + interval '90 days'` (uncast, Postgres deduces
  * $9 as interval there and timestamptz in the VALUES list, and rejects the statement).
  *

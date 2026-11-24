@@ -4,6 +4,7 @@
  *  - Deterministic (Gmail, Calendar, Drive, Gemini notes, Claude sessions, trainings…): BE-2b's
  *    `DeterministicFetcher` fetches; the same skill-driven agent interprets and links the items.
  */
+import { manifestOf, scanSkillPath } from '../../connectors/registry';
 import { MCP_SERVER_NAME } from '../../llm/errors';
 import { restrictedTools, traversalMcpServers } from '../../llm/mcp-config';
 import { ESCALATION_MODEL, SCANNER_MODEL } from '../../llm/models';
@@ -135,13 +136,14 @@ export type ConnectorSpec = TraversalConnectorSpec | DeterministicConnectorSpec;
 
 /** Slack scopes: `inbox` (DMs/MPIMs, @mentions, threads I'm in, my own messages) + `channel:<id>` (watched + customer). */
 export function slackSpec(overrides: Partial<TraversalConnectorSpec> = {}): TraversalConnectorSpec {
-  const tools = restrictedTools('slack');
+  const m = manifestOf('slack');
+  const tools = restrictedTools('slack', m.readTools);
   return {
     type: 'traversal',
     connector: 'slack',
-    skillPath: 'skills/scan-slack.md',
+    skillPath: scanSkillPath('slack'),
     model: SCANNER_MODEL,
-    initialLookbackMs: 24 * H,
+    initialLookbackMs: m.windows.default,
     chunkMs: 6 * H,
     // The inbox (DMs, @mentions, my messages) backfills in 2 h chunks: a busy 6 h morning window held 33–47 messages
     // and Haiku proposed nothing from it, while ~9-message runs triaged fine (stress finding SLK-1).
@@ -198,14 +200,15 @@ export function slackSpec(overrides: Partial<TraversalConnectorSpec> = {}): Trav
  * A catch-up plans each as one head run plus one backfill chunk, and the skill makes no Org62 call in the backfill.
  */
 export function org62Spec(overrides: Partial<TraversalConnectorSpec> = {}): TraversalConnectorSpec {
-  const tools = restrictedTools('org62');
+  const m = manifestOf('org62');
+  const tools = restrictedTools('org62', m.readTools);
   const unwindowed = (scope: string) => scope === 'missed_opps' || scope === 'book';
   return {
     type: 'traversal',
     connector: 'org62',
-    skillPath: 'skills/scan-org62.md',
+    skillPath: scanSkillPath('org62'),
     model: SCANNER_MODEL,
-    initialLookbackMs: 30 * 24 * H,
+    initialLookbackMs: m.windows.default,
     chunkMs: 7 * 24 * H, // one paged SystemModstamp query per week of backlog
     chunkMsFor: (scope) => (unwindowed(scope) ? 31 * 24 * H : 7 * 24 * H),
     // D-65 (TL-43): a worker down for more than 14 days still catches up every Event of this quarter and the last weeks of
@@ -244,30 +247,35 @@ export function org62PersonaVars(persona: ResolvedPersona | undefined): Record<s
   return { 'org62.book': persona?.org62Book ?? 'team_member', 'org62.dcs': !persona || persona.features.dealContributions ? 'on' : 'off' };
 }
 
-/** Wrap a BE-2b fetcher. The skill path defaults to `skills/scan-<connector>.md`. */
+/**
+ * Wrap a BE-2b fetcher. Registry dispatch (08 R1): the per-source values come from the connector's manifest
+ * (`scan`, `windows`; src/connectors/<id>/manifest.ts) instead of branches on the id:
+ *  - skill `skills/<scan.skill>.md`; a new scope starts `windows.default` back; backfill in `scan.chunkMs` chunks
+ *    (Drive: a day; VDP: a month);
+ *  - `scan.firstScanChunkMs`: Calendar's first-scan history is one listing call per day and no agent run (FS-CAL-1);
+ *  - `scan.readsCurrentState`: VDP is current state (the mirror, record-only), history windows make no call;
+ *  - `scan.persistAuthPause` (E3): VDP's Okta cookie lives an hour, so its auth pause survives a restart and lifts at
+ *    startup when the cookie was refreshed after the last refusal;
+ *  - `scan.maxItemsPerRun`: every VDP of mine is recorded in the one live run (500), the rest hand 25 to the agent;
+ *  - `scan.hybrid` (scan-watch): the agent also reads two Slack tools through Slack's server.
+ */
 export function deterministicSpec(fetcher: DeterministicFetcher, overrides: Partial<DeterministicConnectorSpec> = {}): DeterministicConnectorSpec {
-  const name = fetcher.connector === 'gemini_notes' ? 'gemini-notes' : fetcher.connector === 'claude_sessions' ? 'claude-sessions' : fetcher.connector;
-  const hybrid =
-    fetcher.connector === 'watch'
-      ? { allowedTools: restrictedTools('slack', ['slack_read_channel', 'slack_read_thread']).allowedTools, mcpServers: () => traversalMcpServers('slack') }
-      : {};
+  const m = manifestOf(fetcher.connector);
+  const s = m.scan;
+  const via = s.hybrid;
+  const hybrid = via ? { allowedTools: restrictedTools(via.via, via.tools).allowedTools, mcpServers: () => traversalMcpServers(via.via) } : {};
   return {
     type: 'deterministic',
     connector: fetcher.connector,
     fetcher,
     ...hybrid,
-    skillPath: `skills/scan-${name}.md`,
+    skillPath: scanSkillPath(fetcher.connector),
     model: SCANNER_MODEL,
-    initialLookbackMs: 24 * H,
-    chunkMs: fetcher.connector === 'drive' ? 24 * H : 12 * H,
-    // Calendar's first-scan history is one listing call per chunk and no agent run (record-only, FS-CAL-1).
-    ...(fetcher.connector === 'calendar' ? { firstScanChunkMsFor: () => 24 * H } : {}),
-    // VDP is current state (the mirror, record-only): a new scope starts 30 min back, history windows make no call
-    // and come in month chunks, and every VDP of mine is recorded in the one live run.
-    ...(fetcher.connector === 'vdp' ? { initialLookbackMs: 30 * 60_000, chunkMs: 31 * 24 * H, firstScanChunkMsFor: () => 31 * 24 * H, readsCurrentState: () => true } : {}),
-    // E3: VDP's Okta cookie lives an hour, so its auth pause is the one a restart kept undoing: it now survives one,
-    // and lifts at startup when the cookie was refreshed after the last refusal
-    ...(fetcher.connector === 'vdp'
+    initialLookbackMs: m.windows.default,
+    chunkMs: s.chunkMs ?? 12 * H,
+    ...(s.firstScanChunkMs ? { firstScanChunkMsFor: () => s.firstScanChunkMs! } : {}),
+    ...(s.readsCurrentState ? { readsCurrentState: () => true } : {}),
+    ...(s.persistAuthPause
       ? {
           persistAuthPause: {
             credentialsChangedSince: (ms: number) => {
@@ -277,7 +285,7 @@ export function deterministicSpec(fetcher: DeterministicFetcher, overrides: Part
           },
         }
       : {}),
-    maxItemsPerRun: fetcher.connector === 'vdp' ? 500 : 25,
+    maxItemsPerRun: s.maxItemsPerRun ?? 25,
     maxTurns: (_s, mode) => (mode === 'relink' ? 12 : 20),
     // MIN-25: a first-scan window of 25 long items (Gemini meeting notes at $0.063, old Gmail threads at $0.061) went
     // over the flat $0.05, so every busy window failed once before its 12-item retry. Backfill-type runs (head,
@@ -298,7 +306,9 @@ const ORG62_ACCOUNT_ID = /^001[A-Za-z0-9]{12}(?:[A-Za-z0-9]{3})?$/;
 
 /**
  * My Org62 Account Ids for SOQL `IN (…)`, from the account alias map: an `accountId` that is itself an
- * Org62 id, or an alias name of the form `org62:<001…>` (BE-1 seeds it that way). Quoted, comma-separated.
+ * Org62 id, or an alias name of the form `org62:<001…>` (BE-1 seeds it that way). Quoted, comma-separated. Every id
+ * (caps audit 2026-11-21: was the first 200 by id, so a bigger book lost opp coverage); the fetch splits the list
+ * into IN clauses of ORG62_IN_CHUNK (src/scanner/fetch/org62.ts).
  */
 export function org62AccountIds(ctx: ScanContext): string {
   const ids = new Set<string>();
@@ -311,7 +321,6 @@ export function org62AccountIds(ctx: ScanContext): string {
   }
   return [...ids]
     .sort()
-    .slice(0, 200)
     .map((i) => `'${i}'`)
     .join(',');
 }

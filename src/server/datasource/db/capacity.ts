@@ -13,7 +13,8 @@
  * Pure: no I/O.
  */
 import type { TodayHeader, WorkItemRecord } from '@/contract';
-import { estimateKindOf, type Capacity, type CapacityChore, type EffortActual, type PriorityInputs, type RunningAgent } from '@/engines/priority';
+import { estimateKindOf, type EffortActual } from '@/engines/priority/estimate';
+import type { Capacity, CapacityChore, PriorityInputs, RunningAgent } from '@/engines/priority/types';
 
 import type { ReadModel } from './model';
 import { connectorRowsFor, personaOf } from '@/personas';

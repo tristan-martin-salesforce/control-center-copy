@@ -4,13 +4,17 @@
  * them. Verb sections in focus order, each 3 rows (5 at 2,400 px) with "See all N →":
  *   Looks done: confirm (LD-1) · Confirm asks and promises · Confirm meeting takeaways · Answer mapping questions
  *   · Claim missed opps
- * Rows are dashed two-line LineRows with one quiet verb (filled on the selected row).
+ * Rows are dashed ActionRows (the kit) with one quiet verb (filled on the selected row).
  *
  * Detail lives in the docked right panel: click or Enter calls openDetails (work_item for suggestions,
  * missed_opp and triage_mapping for the rest; their renderers are in @/components/lists/triage-panels).
  * j/k move the selection (an open Details tab follows), Esc closes. Keys: a accept · e edit then accept ·
  * n dismiss (reason) · m merge · o source · 1-9 answer a mapping · Space expand · ⇧Enter page.
  * Everything is optimistic with Undo (auditId), and the nav badge's Triage count drops in the same step.
+ *
+ * The header is the kit's PageHeader (the topbar holds the title). "Review N" opens the drain mode (TriageReview.tsx,
+ * the kit's ReviewQueue) over the guesses to confirm; the list stays the default. Counts: the sentence, the position
+ * line and the sidebar badge read triageCount (src/engines/activity/needs-count.ts): guesses, never the closed rows.
  */
 import { AppLink } from '@/components/shell/AppLink';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,6 +33,9 @@ import { TRIAGE_PANELS_REGISTERED } from '@/components/lists/triage-panels';
 import { useTriageActions } from '@/components/lists/useTriageActions';
 import { Button, EmptyState, LivePill, PanelBoundary, PanelError, usePanelState } from '@/ui';
 import { useArrivalHold, useSelectionSurvives } from '@/components/lists/live-list';
+import { PageHeader } from '@/components/kit';
+import { triageCount, triagePhrase } from '@/engines/activity/needs-count';
+import { reviewableGuesses, TriageReview } from './TriageReview';
 import { DismissDialog, MergePicker, TriageEditor } from './TriageParts';
 import { closedAt, closedDayLabel, closedMessageUrl, TriageRow } from './TriageRows';
 import { openDeepLink } from '@/components/detail/nba/ClaudeLaunchPanel';
@@ -284,7 +291,14 @@ function TriageInner() {
     { scope: 'list:triage', enabled: lk.active },
   );
 
-  useCommands([{ id: 'triage.open-missed', title: 'Triage: view missed opportunities in Deals', group: 'View', keywords: ['deals'], run: () => navigate('/deals/missed') }]);
+  // Drain mode: one guess at a time (the list stays the default view)
+  const [reviewing, setReviewing] = useState(false);
+  const reviewable = useMemo(() => reviewableGuesses(flatItems ?? []), [flatItems]);
+  const refetch = useCallback(() => void q.refetch(), [q]);
+  useCommands([
+    { id: 'triage.open-missed', title: 'Triage: view missed opportunities in Deals', group: 'View', keywords: ['deals'], run: () => navigate('/deals/missed') },
+    ...(reviewable.length && !reviewing ? [{ id: 'triage.review', title: `Triage: review ${reviewable.length} one at a time`, group: 'Triage', keywords: ['drain', 'queue', 'accept'], run: () => setReviewing(true) }] : []),
+  ]);
   useFocusedCommands(
     { label: active?.title ?? 'Triage item', kind: active ? PANEL_KIND[active.kind] : undefined },
     active && active.group === CLOSED
@@ -312,8 +326,10 @@ function TriageInner() {
       : [],
   );
 
-  const count = q.data?.count ?? 0;
   const n = (g: string) => sections.find((s) => s.group === g)?.items.length ?? 0;
+  // one count: the sentence, the position line and the sidebar badge (navCounts.triage, pinned by tests/ui/counts-parity)
+  const tc = triageCount({ guesses: q.data?.count ?? 0, closed: n(CLOSED) });
+  const count = tc.guesses;
   const asks = n('asks_promises') + n('meeting_takeaways');
   const questions = n('mappings');
   const missed = n('missed_opps');
@@ -336,25 +352,45 @@ function TriageInner() {
     </>
   ) : (
     <>
-      <b data-testid="triage-count">
-        {count} {count === 1 ? 'guess' : 'guesses'} to confirm
-      </b>
+      <b data-testid="triage-count">{triagePhrase(tc)}</b>
       {parts.length ? `: ${parts.join(', ')}` : ''}.{closedNote}
     </>
   );
 
+  if (reviewing) return <TriageReview items={flatItems ?? []} onEdit={openDetails} onExit={() => setReviewing(false)} refetch={refetch} />;
+
+  const position = explicit && activeId ? allIds.indexOf(activeId) : -1;
   return (
     <>
       <ListFrame
         label="Triage"
         data-state={state}
-        lead={q.isLoading ? 'Loading what came in…' : lead}
-        sub={<TriageKeys />}
-        aside={
+        header={
           <>
-            {q.isError && q.data ? <StaleRefresh onRetry={() => void q.refetch()} /> : null}
-            {/* SETTLE-1: closed rows are not guesses, so with them in the list the position counts items */}
-            <SelectionPosition index={explicit && activeId ? allIds.indexOf(activeId) : -1} total={allIds.length} noun={closedN ? 'item' : 'guess'} nouns={closedN ? 'items' : 'guesses'} />
+            <PageHeader
+              route="triage"
+              titleIn="topbar"
+              inset={false}
+              rule={false}
+              sentence={<span data-testid="list-lead">{q.isLoading ? 'Loading what came in…' : lead}</span>}
+              actions={
+                <>
+                  {q.isError && q.data ? <StaleRefresh onRetry={() => void q.refetch()} /> : null}
+                  {/* the position counts every row while one is selected; otherwise the guesses (never the closed rows) */}
+                  <span className="text-caption text-muted">
+                    <SelectionPosition index={position} total={position >= 0 ? tc.rows : tc.guesses} noun={position >= 0 && closedN ? 'item' : 'guess'} nouns={position >= 0 && closedN ? 'items' : 'guesses'} />
+                  </span>
+                  {reviewable.length ? (
+                    <Button size="sm" variant="secondary" icon="preview" onClick={() => setReviewing(true)} title="Go through the guesses one at a time: a accept · s later · x not mine · j skip" data-testid="triage-review-open">
+                      Review {reviewable.length}
+                    </Button>
+                  ) : null}
+                </>
+              }
+            />
+            <div className="cc-list-sub">
+              <TriageKeys />
+            </div>
           </>
         }
         bodyRef={bodyRef}
@@ -368,7 +404,7 @@ function TriageInner() {
             <EmptyState
               icon="success"
               title="Triage is clear"
-              body="New asks, promises, meeting takeaways and mapping questions show up here as they are found."
+              body="New asks, promises, meeting takeaways and mapping questions land here as the scanners read Slack, Gmail and meeting notes, each time the worker runs a scan."
               action={
                 <AppLink href="/work">
                   <Button variant="secondary" size="sm">

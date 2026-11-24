@@ -4,6 +4,8 @@
  * scan ran 17:19, and the step read "waiting" all evening. So, per canvas:
  *
  *   copied   you copied its Slackbot prompt: the app re-checks Org62 for it about 5, 15, 30 and 60 min later
+ *   applied  you Applied the canvas (the outbox hook): the same re-checks, but it does not mark Slackbot as told, so
+ *            the canvas does not read "checking" until you copy the prompt (W0-10)
  *   now      "Slackbot's done: check now": one check at once
  *
  * A check queues the Org62 `events` and `dcs` scans (and the use-case read-back when use cases are on the canvas)
@@ -53,11 +55,13 @@ export interface RecheckPlan {
   slots: string[];
 }
 
-/** What a copy or a "check now" adds to the map: the checks to queue, and the map without entries past KEEP_MS. */
-export function planRecheck(prev: CanvasChecks, draftId: string, reason: 'copied' | 'now', now: Date): RecheckPlan {
+/** What a copy, an Apply or a "check now" adds to the map: the checks to queue, and the map without entries past KEEP_MS. */
+export type RecheckReason = 'copied' | 'applied' | 'now';
+
+export function planRecheck(prev: CanvasChecks, draftId: string, reason: RecheckReason, now: Date): RecheckPlan {
   const nowIso = now.toISOString();
   const cur = prev[draftId] ?? { toldAt: null, askedAt: null, at: [] };
-  const slots = reason === 'copied' ? RECHECK_AFTER_MIN.map((m) => slotOf(new Date(now.getTime() + m * 60_000).toISOString())) : [slotOf(nowIso)];
+  const slots = reason !== 'now' ? RECHECK_AFTER_MIN.map((m) => slotOf(new Date(now.getTime() + m * 60_000).toISOString())) : [slotOf(nowIso)];
   const entry: CanvasCheck = {
     toldAt: reason === 'copied' ? nowIso : cur.toldAt,
     askedAt: reason === 'now' ? nowIso : cur.askedAt,

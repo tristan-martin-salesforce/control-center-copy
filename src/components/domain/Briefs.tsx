@@ -136,7 +136,7 @@ export function BriefSummary({ brief: b, selected, className, onOpen, ...rest }:
         className,
       )}
     >
-      <span className={cn('size-2 shrink-0 rounded-full', b.unread ? 'bg-accent' : 'bg-transparent')} aria-label={b.unread ? 'Unread' : undefined} />
+      <span className={cn('size-2 shrink-0 rounded-full', b.unread ? 'bg-accent' : 'bg-transparent')} role={b.unread ? 'img' : undefined} aria-label={b.unread ? 'Unread' : undefined} aria-hidden={b.unread ? undefined : true} />
       <Icon name={b.kind === 'opp' ? 'opportunity' : b.kind === 'channel' ? 'slack' : b.kind === 'person' ? 'user' : 'search'} size="sm" className="shrink-0 text-faint" />
       <span className={cn('min-w-0 flex-1 truncate text-body', b.unread ? 'font-bold text-fg-heading' : 'text-fg')}>{b.title}</span>
       {b.status === 'generating' ? (

@@ -71,13 +71,13 @@ export function ForecastPanel({ id }: { id: string }) {
           <RoleFix row={row} />
         </Block>
       ) : null}
-      <Block title="Current note (ForecastNotes__c)" empty="No notes yet">
+      <Block title="Current note" empty="No notes yet">
         {r.notes ? <p className="text-body whitespace-pre-wrap text-fg">{r.notes}</p> : null}
       </Block>
       <Block title="Last week's note" empty="Not seen yet: the mirror keeps the note before each change it reads">
         {r.prevNotes ? <p className="text-body whitespace-pre-wrap text-muted">{r.prevNotes}</p> : null}
       </Block>
-      <Block title="Manager notes (MgrForecastNotes__c)" empty="None">
+      <Block title="Manager notes" empty="None">
         {r.mgrNotes ? <p className="text-body whitespace-pre-wrap text-muted">{r.mgrNotes}</p> : null}
       </Block>
       <Block title="Opportunity next step" empty="None">

@@ -144,7 +144,10 @@ describe('capacity: today-scoped, hands-on only', () => {
     const pr = rankWork(inputs({ now: at('23:30'), workingHours: pt, items: [late] }));
     expect(pr.capacity.todayItemIds).toEqual(['late']);
     const utc = rankWork(inputs({ now: at('15:30'), items: [late] }));
-    expect(utc.capacity.todayItemIds).toEqual([]); // in UTC it is due tomorrow
+    // in UTC it is due tomorrow 07:00, before tomorrow's working hours start: its start-by is today, so it is
+    // today's load (PRIO-3, lane 07: work that must start today counts today, whenever it is due)
+    expect(utc.capacity.todayItemIds).toEqual(['late']);
+    expect(utc.scores.late!.startByLabel).toBe('17:55'); // the last 5 minutes of today's 09:00–18:00
   });
 });
 
@@ -154,16 +157,17 @@ describe('MIN-22: after working hours the capacity counts the next working day',
     expect(c.day).toBe('next');
     expect(c.dayLabel).toBe('tomorrow');
     expect(c.freeMin).toBe(540); // Friday 09:00–18:00, no meetings
-    // due Friday (log, mia), pinned, and the badges' start-by (now Friday); Thursday's unfinished work is overdue
-    // from an earlier day, so it is a pull-forward, not load
-    expect([...c.todayItemIds].sort()).toEqual(['badges', 'log', 'mia', 'pinned']);
+    // due Friday (log, mia), pinned, the badges' start-by (now Friday), and the Saturday load whose start-by has
+    // passed (PRIO-3: must start by then, so it is that day's load); Thursday's unfinished work is overdue from an
+    // earlier day, so it is a pull-forward, not load
+    expect([...c.todayItemIds].sort()).toEqual(['badges', 'load', 'log', 'mia', 'pinned']);
     expect(c.todayItemIds).not.toContain('post');
     // the approval for Mia's draft is part of answering Mia; the other two still wait, and so does the re-auth
     expect(c.chores.map((x) => [x.id, x.count])).toEqual([
       ['chore:approve', 2],
       ['reauth:vdp', 1],
     ]);
-    expect(c.youMinToday).toBe(30 + 15 + 15 + 150 + 4 + 2);
+    expect(c.youMinToday).toBe(30 + 15 + 15 + 150 + 30 + 4 + 2);
     expect(c.fits).toBe(true);
     expect(c.openMin).toBe(540 - c.youMinToday);
   });

@@ -1,22 +1,16 @@
 'use client';
 /**
- * Time ▸ Log it (docs/ui/time-redesign.md): what is ready to log, and each logging run with its own status.
+ * Time ▸ Log it (docs/archive/2026-build/time-redesign.md): what is ready to log, and each logging run with its own status.
  *
- *   Ready to log   the rows that have ended with what they need, listed (./ReadyToLog.tsx), editable inline, then
+ *   Ready to log   lane 2 (./ReadyLane.tsx, C5): the rows that have ended with what they need, ticked on the lane, then
  *                  (D-70) the updates to Events already in Org62 and the use cases ready for Org62, each a row you tick
- *                  the same way; the button names what it takes ("Log 3 rows, 2 use cases and 1 update to Slackbot ·
- *                  4.5 h", or the ticked ones). POST /time/log/batches stages ONE new private canvas item (D-47).
- *   Logging runs   every logging canvas still going is its own item (./CanvasRuns.tsx): Staged → Applied → Slackbot
- *                  told → In Org62, its Org62 progress, why its rows are read only, and the one thing it waits on:
- *                  Review & apply (the draft panel, D-52, which pages through every waiting one), Copy Slackbot
- *                  prompt (nothing is sent from here; the app re-checks Org62 after), Slackbot's done: check now.
- *                  Finished runs (everything in Org62) fold under "Show N finished"; each still opens. A run's
- *                  writes (every create and update exactly as sent, "update · Duration 2 h → 3 h") open under it.
+ *                  the same way; "Log N · h" (N = everything ticked) re-reads the ticked rows, then POST /time/log/batches stages ONE new private canvas item (D-47).
+ *   Sending        lane 3 (./SendingLane.tsx, C6) on To log's LanePage (C7): each batch on its way, its next action.
  *
- * Exactly one button is the page's filled one: Log these rows, else the first run waiting for Apply, else the first
- * run to tell Slackbot; ⌘↵ runs it. Human hours only: agent time is never totalled here.
+ * ⌘↵ logs the ready rows (the Review page), else runs the Sending lane's first next action (sending-derive `sendNext`:
+ * Review & apply, Send to Org62 via Slackbot). Human hours only: agent time is never totalled here.
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { ActivityEntry, LogCanvas, TimeSettings, TimeWeek } from '@/contract';
 import { useApi } from '@/client/hooks';
 import { usePersona } from '@/client/persona';
@@ -24,20 +18,18 @@ import { featureActive } from '@/personas/gates';
 import { api } from '@/client/api';
 import { useCommands, useKeyBinding, type Command } from '@/client/keyboard';
 import { toast } from '@/client/toast';
-import { copySlackbotPrompt, OpenResult, usePromptWording } from '@/components/domain/ResultLinks';
+import { copySlackbotPrompt, usePromptWording } from '@/components/domain/ResultLinks';
 import { useDetails } from '@/components/deals/context-frame';
 import { AppLink } from '@/components/shell/AppLink';
 import { useDraftQueueSource } from '@/components/detail/lib/draft-queue';
-import { clock, dayLabel } from '@/components/domain/lib/time';
 import { Button, Icon } from '@/ui';
 import { errorText } from '@/lib/error-text';
 import { dcWaitingCount, ucWaitingCount } from '@/lib/waiting-work';
 import { usePatchRows } from './bulk';
-import { CanvasRuns } from './CanvasRuns';
-import { canvasPrompt, confirmPrompt, type Q4Step } from './derive';
+import { canvasPrompt, confirmPrompt, q4Range, type Q4Step } from './derive';
 import { type LogPath } from './path-derive';
-import { ReadyToLog, type ReadySelection } from './ReadyToLog';
-import { runCounts, splitRuns, type CanvasRun } from './rows-derive';
+import { ReadyLane, type ReadyLog } from './ReadyLane';
+import { NEXT_LABEL, sendingOf, type SendingBatch } from './sending-derive';
 import { copyText } from './shared';
 
 /**
@@ -101,11 +93,6 @@ export function useUcPending(): number | null {
   return sync.isError ? 0 : null;
 }
 
-/** "3 rows · 4.5 h · 1 DC request" */
-export function canvasCounts(c: Pick<LogCanvas, 'rows' | 'hours' | 'dcs' | 'updates'> & Partial<Pick<LogCanvas, 'useCases'>>): string {
-  return runCounts({ useCases: 0, ...c });
-}
-
 /** "Slackbot's done: check now": the Org62 reads for this canvas at once (read only, deduped with the queued ones). */
 export function useCanvasCheck() {
   const [busy, setBusy] = useState<string | null>(null);
@@ -118,7 +105,7 @@ export function useCanvasCheck() {
           key: `canvas-check:${c.draftId}`,
           tone: r.queued.length ? 'success' : 'info',
           title: r.queued.length ? `Checking Org62 for ${c.title}` : `Nothing to check for ${c.title}`,
-          body: r.note ?? 'The Org62 reads run now (read only); this canvas’s line updates when they finish.',
+          body: r.note ?? 'The Org62 reads run now (read only); this batch’s line updates when they finish.',
         });
     } catch (err) {
       toast({ key: `canvas-check:${c.draftId}`, tone: 'error', title: `Couldn't queue the Org62 check for ${c.title}`, body: errorText(err) });
@@ -142,33 +129,36 @@ export interface LogItProps {
   onShow: (ids: string[]) => void;
   /** Open a row in the docked panel. */
   onOpen?: (id: string) => void;
-  /** Open Needs you (a run with rows missing in Org62). */
-  onNeeds?: () => void;
   /** Tell Slackbot's session memory (useConfirmCopied): the copy moves the stop to waiting. */
   markCopied: (n: number | null) => void;
+  /** Open the Review page ("Review N to log"). */
+  onReview: () => void;
   /** The page's key scope: ⌘↵ runs the current stop. */
   scope?: string;
+  /** Lane 2's state, held by To log so LanePage's header carries "Log N · h" (C7); the lane then draws no header. */
+  log?: ReadyLog;
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-export function LogIt({ path, week, rows, now: _now, tz, dryRun, onShow, onOpen, onNeeds, markCopied, scope = 'page:time' }: LogItProps) {
+export function LogIt({ path, week, rows, tz, dryRun, onShow, onOpen, markCopied, onReview, scope = 'page:time', log }: LogItProps) {
   const canvasUrl = useWorkOrderCanvasUrl();
   const wording = usePromptWording();
-  const { many, busy: approving } = usePatchRows();
-  const { check: checkCanvas, busy: checkingId } = useCanvasCheck();
+  const { many } = usePatchRows();
+  const { check: checkCanvas } = useCanvasCheck();
   const { stages, steps } = path;
   const label = week.quarter.label;
   const ready = stages.find((s) => s.id === 'ready')!;
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r] as const)), [rows]);
   const readyRows = useMemo(() => path.readyIds.map((id) => byId.get(id)).filter((e): e is ActivityEntry => !!e).sort((a, b) => a.start.localeCompare(b.start)), [path.readyIds, byId]);
-  const { active, finished } = useMemo(() => splitRuns(week.logCanvases, tz), [week.logCanvases, tz]);
+  // ⌘↵ past the ready rows: the Sending lane's first batch waiting on you (one rule, sending-derive's)
+  const nextBatch = useMemo(() => sendingOf({ canvases: week.logCanvases, tz }).batches.find((b) => b.next === 'apply' || b.next === 'review' || b.next === 'apply_again' || b.next === 'send') ?? null, [week.logCanvases, tz]);
   const lastCanvas = (week.logCanvases ?? []).find((c) => c.state !== 'pending' && c.state !== 'retry' && c.state !== 'applying') ?? null;
   // D-52: canvas items are applied here, in the same draft panel as the Outbox; it pages through every waiting one
   const { open: openPanel } = useDetails();
   const canvasIds = steps.find((x) => x.id === 'outbox')?.draftIds;
   useDraftQueueSource('time-log', canvasIds);
-  const openCanvas = useCallback((id: string) => openPanel({ kind: 'draft', id, label: 'Logging canvas' }), [openPanel]);
+  const openCanvas = useCallback((id: string) => openPanel({ kind: 'draft', id, label: 'Logging batch' }), [openPanel]);
   const pick = { taskTypeRequired: wording.taskType, taskTypes: wording.taskTypes, internalActivity: wording.internal };
   // D-70: use cases ready for Org62 and updates to Events already there are rows of Ready to log like any other
   const persona = usePersona();
@@ -180,7 +170,8 @@ export function LogIt({ path, week, rows, now: _now, tz, dryRun, onShow, onOpen,
   const anyReady = readyRows.length + readyUcs.length + readyUps.length > 0;
   // the button names what it logs: it waits until the use cases and Event updates are counted too (they load apart)
   const counting = (vdpOn && ucq.isPending) || upq.isPending;
-  const readySel = useRef<ReadySelection>(null);
+  // the re-check before staging: the rows as they are now on the server
+  const loadFresh = useCallback(async () => (await api('getActivityLog', { query: q4Range(week) })).entries, [week]);
 
   const approveAll = useCallback(
     async (ids: string[]) => {
@@ -193,50 +184,23 @@ export function LogIt({ path, week, rows, now: _now, tz, dryRun, onShow, onOpen,
     [many, byId],
   );
 
-  // Log to Slackbot: stage the batch (one canvas item); nothing leaves until its Apply, here.
+  // D-58: a batch with only the DC requests on it (lane 2 stages the rows; this is the DCs-only "Log DCs now")
   const [logging, setLogging] = useState(false);
-  const logBatch = useCallback(
-    async (opts: { dcOnly?: boolean; sel?: ReadySelection } = {}) => {
-      const dcOnly = !!opts.dcOnly;
-      setLogging(true);
-      try {
-        const sel = opts.sel;
-        const body = dcOnly ? { dcOnly: true } : sel ? { ...(sel.ids.length ? { ids: sel.ids } : {}), useCases: sel.useCases, updates: sel.updates } : {};
-        const r = (await api('stageLogBatch', { body })).entity;
-        if (dcOnly) {
-          toast(
-            r.draftIds.length
-              ? { key: 'time:log-batch', tone: 'success', title: 'DC canvas ready to apply', body: 'Only your DC requests are on it. It is under Logging runs: Review & apply, then tell Slackbot "Execute this canvas".', action: { label: 'Review & apply', onClick: () => openCanvas(r.draftIds[0]!) } }
-              : { key: 'time:log-batch', tone: 'info', title: 'No DC requests waiting', body: 'They may already be on a canvas waiting for your Apply (Deals ▸ DCs).' },
-          );
-          return;
-        }
-        if (!r.draftIds.length) {
-          if (r.waiting.rows) {
-            toast({ key: 'time:log-batch', tone: 'info', title: 'Already waiting for your Apply', body: `${r.waiting.rows} ${r.waiting.rows === 1 ? 'row is' : 'rows are'} on a canvas you have not applied yet (Logging runs).`, action: { label: 'Review & apply', onClick: () => openCanvas(r.waiting.draftIds[0]!) } });
-            return;
-          }
-          toast({ key: 'time:log-batch', tone: 'info', title: 'Nothing ready to log', body: r.skipped.length ? `${r.skipped.length} ${r.skipped.length === 1 ? 'row needs' : 'rows need'} ${wording.taskType ? 'a task type or ' : ''}an opportunity first (Needs you).` : 'Fix the rows in Needs you first.' });
-          return;
-        }
-        const n = r.canvases.length;
-        const waiting = r.waiting.rows ? ` ${r.waiting.rows} ${r.waiting.rows === 1 ? 'row was' : 'rows were'} already waiting on an earlier canvas.` : '';
-        const extra = [r.useCases.rows ? plural(r.useCases.rows, 'use case') : null, r.eventUpdates ? plural(r.eventUpdates, 'update') : null].filter(Boolean).join(' · ');
-        toast({
-          key: 'time:log-batch',
-          tone: 'success',
-          title: `New logging run: ${n === 1 ? '1 canvas' : `${n} canvases`} · ${plural(r.events, 'row')}${extra ? ` · ${extra}` : ''} · ${r.hours} h`,
-          body: `${r.approved ? `${r.approved} complete ${r.approved === 1 ? 'row' : 'rows'} approved. ` : ''}It is under Logging runs, waiting for your Apply; then tell Slackbot "Execute this canvas".${waiting}`,
-          action: { label: 'Review & apply', onClick: () => openCanvas(r.draftIds[0]!) },
-        });
-      } catch (err) {
-        toast({ key: 'time:log-batch-err', tone: 'error', durationMs: null, title: "Couldn't build the batch", body: errorText(err, 200) });
-      } finally {
-        setLogging(false);
-      }
-    },
-    [openCanvas, wording.taskType],
-  );
+  const logDcs = useCallback(async () => {
+    setLogging(true);
+    try {
+      const r = (await api('stageLogBatch', { body: { dcOnly: true } })).entity;
+      toast(
+        r.draftIds.length
+          ? { key: 'time:log-batch', tone: 'success', title: 'DC batch ready to apply', body: 'Only your DC requests are on it. It is under Sending: Review & apply, then send it to Org62 via Slackbot.', action: { label: 'Review & apply', onClick: () => openCanvas(r.draftIds[0]!) } }
+          : { key: 'time:log-batch', tone: 'info', title: 'No DC requests waiting', body: 'They may already be in a batch waiting for your Apply (Deals ▸ DCs).' },
+      );
+    } catch (err) {
+      toast({ key: 'time:log-batch-err', tone: 'error', durationMs: null, title: "Couldn't build the batch", body: errorText(err, 200) });
+    } finally {
+      setLogging(false);
+    }
+  }, [openCanvas]);
 
   // Tell Slackbot for every created canvas at once (⌘K): each one's own prompt, copied in one go
   const confirm = useCallback(
@@ -249,37 +213,35 @@ export function LogIt({ path, week, rows, now: _now, tz, dryRun, onShow, onOpen,
       toast({
         key: 'slackbot-prompt',
         tone: ok ? 'success' : 'error',
-        title: ok ? `Slackbot prompt copied: ${plural(s.ids.length, 'row')}${n > 1 ? ` on ${n} canvases` : ''}` : "Couldn't copy the prompt",
-        body: ok ? 'Paste it to Slackbot yourself; it runs the canvas in Org62. Nothing was sent from here.' : 'Open the canvas in Slack and tell Slackbot "Execute this canvas" instead.',
+        title: ok ? `Slackbot prompt copied: ${plural(s.ids.length, 'row')}${n > 1 ? ` in ${n} batches` : ''}` : "Couldn't copy the prompt",
+        body: ok ? 'Paste it to Slackbot yourself; it runs the batch in Org62. Nothing was sent from here.' : 'Open the batch in Slack and send it to Org62 via Slackbot instead.',
         undo: ok ? { label: 'Not yet', run: () => markCopied(null) } : undefined,
       });
     },
     [wording, week.canvas.label, rows, markCopied, checkCanvas],
   );
 
-  // the page's one filled button: log the ready rows, else the first run waiting for Apply, else the first to tell
-  const applyRun = active.find((r) => r.next === 'apply' || r.next === 'check_slack') ?? null;
-  const tellRun = active.find((r) => r.next === 'tell') ?? null;
-  const primary: { kind: 'log' } | { kind: 'run'; run: CanvasRun } | null = anyReady ? { kind: 'log' } : applyRun ? { kind: 'run', run: applyRun } : tellRun ? { kind: 'run', run: tellRun } : null;
+  // ⌘↵: log the ready rows, else the Sending lane's first batch waiting on you
+  const primary: { kind: 'log' } | { kind: 'batch'; batch: SendingBatch } | null = anyReady ? { kind: 'log' } : nextBatch ? { kind: 'batch', batch: nextBatch } : null;
   const runPrimary = (): false | void => {
     if (!primary) return false;
     // the same as the button: the ticked ones, or everything ready; never while the use cases and updates are counted
     if (primary.kind === 'log') {
       if (counting) return false;
-      void logBatch({ sel: readySel.current });
-    } else if (primary.run.next === 'tell') {
-      const c = primary.run.canvas;
+      onReview();
+    } else if (primary.batch.next === 'send') {
+      const c = primary.batch.canvas;
       void copySlackbotPrompt(canvasPrompt(c, wording), c.title).then((ok) => {
         if (ok) void checkCanvas(c, 'copied');
       });
-    } else openCanvas(primary.run.canvas.draftId);
+    } else openCanvas(primary.batch.canvas.draftId);
   };
   useKeyBinding('mod+enter', runPrimary, { scope, enabled: !!primary });
 
   const run = (s: Q4Step) => {
     if (s.id === 'approve') void approveAll(s.ids);
-    else if (s.id === 'submit') void logBatch();
-    else if (s.id === 'dcs') void logBatch({ dcOnly: true });
+    else if (s.id === 'submit') onReview();
+    else if (s.id === 'dcs') void logDcs();
     else if (s.id === 'outbox' && s.draftIds?.length) openCanvas(s.draftIds[0]!);
     else if (s.id === 'confirm') void confirm(s);
     else onShow(s.ids);
@@ -287,19 +249,21 @@ export function LogIt({ path, week, rows, now: _now, tz, dryRun, onShow, onOpen,
   const commands = useMemo<Command[]>(
     () => [
       ...stages.flatMap((st) => [st.step, ...st.secondary]).filter((s): s is Q4Step => !!s).map((s) => ({ id: `time.q4.${s.id}`, title: `${label} log: ${s.verb}`, subtitle: s.why, group: 'Time', run: () => run(s) })),
-      ...(lastCanvas?.url ? [{ id: 'time.last-canvas', title: 'Open the last logging canvas', subtitle: lastCanvas.title, group: 'Time', run: () => window.open(lastCanvas.url!, '_blank', 'noopener,noreferrer') }] : []),
+      ...(lastCanvas?.url ? [{ id: 'time.last-canvas', title: 'Open the last batch', subtitle: lastCanvas.title, group: 'Time', run: () => window.open(lastCanvas.url!, '_blank', 'noopener,noreferrer') }] : []),
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [stages.map((s) => `${s.id}:${s.state}:${s.rows}:${s.secondary.map((x) => x.ids.length).join(',')}`).join('|'), label, lastCanvas?.url],
   );
   useCommands(commands);
 
-  const approveNow = ready.secondary.find((s) => s.id === 'approve');
+  // F3 (R2-9): lane 2 has no "Approve N now": a proposed row waiting on approval is lane 1's (Check and approve), and
+  // the ⌘K command above still runs it
   const dcsStep = steps.find((s) => s.id === 'dcs');
+  const secondaryOn = !anyReady && !!dcsStep;
   // D-58: DC requests ride along on the canvas (D-70: use cases are rows of their own above, no longer riders)
   const along = ready.dcs ? (
     <span>
-      {anyReady ? 'Riding along on it: ' : 'Waiting for your next canvas: '}
+      {anyReady ? 'Riding along on it: ' : 'Waiting for your next batch: '}
       <AppLink href="/deals/dcs" className="font-bold text-link hover:underline" data-testid="q4-dcs-link">
         {ready.dcs === 1 ? 'your DC request' : `your ${ready.dcs} DC requests`}
       </AppLink>
@@ -307,11 +271,6 @@ export function LogIt({ path, week, rows, now: _now, tz, dryRun, onShow, onOpen,
   ) : null;
   const secondary = (
     <>
-      {approveNow ? (
-        <Button size="xs" variant="quiet" onClick={() => run(approveNow)} loading={approving} title={approveNow.why} data-testid="q4-approve">
-          {approveNow.verb}
-        </Button>
-      ) : null}
       {!anyReady && dcsStep ? (
         <Button size="xs" variant={primary ? 'quiet' : 'secondary'} onClick={() => run(dcsStep)} loading={logging} title={dcsStep.why} data-testid="q4-dcs">
           {dcsStep.verb}
@@ -322,59 +281,32 @@ export function LogIt({ path, week, rows, now: _now, tz, dryRun, onShow, onOpen,
 
   return (
     <div className="@container/logit flex min-w-0 flex-col gap-5" data-guide="log-steps">
-      <section aria-labelledby="q4-ready-h" className="min-w-0 rounded-lg bg-surface" data-testid="q4-ready" data-step="ready">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 px-4 pt-3 pb-2">
-          <h3 id="q4-ready-h" className="text-body-lg font-bold text-fg-heading">
-            Ready to log
-          </h3>
-          <span className="text-caption text-muted tabular-nums" data-testid="stage-count-ready">
-            {ready.count}
-          </span>
-          <span className="min-w-0 basis-full text-caption text-muted @min-[44rem]/logit:basis-auto">{anyReady ? 'Check them and change anything inline, then log them: they go on one new canvas.' : ready.why}</span>
-        </div>
-        <ReadyToLog rows={readyRows} useCases={readyUcs} updates={readyUps} tz={tz} pick={pick} onLog={(sel) => void logBatch({ sel })} logging={logging} counting={counting} selectionRef={readySel} primary={primary?.kind === 'log'} along={along} secondary={secondary} onOpen={(id) => onOpen?.(id)} onShow={onShow} />
+      {/* C5: lane 2, Ready to log (./ReadyLane.tsx): ticks on the lane, one "Log N · h" stages one batch for your Apply */}
+      <section aria-labelledby={log ? undefined : 'time-ready-h'} className="min-w-0" data-testid="q4-ready" data-step="ready">
+        <ReadyLane log={log} header={!log} ready={readyRows} useCases={readyUcs} updates={readyUps} pick={pick} dryRun={dryRun} loadFresh={loadFresh} onOpen={(id) => onOpen?.(id)} tz={tz} />
+        {secondaryOn || along ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-caption text-muted">
+            {secondary}
+            {along}
+          </div>
+        ) : null}
       </section>
 
-      <section aria-labelledby="q4-runs-h" className="min-w-0 rounded-lg bg-surface" data-testid="q4-runs" data-step="runs">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 px-4 pt-3 pb-2">
-          <h3 id="q4-runs-h" className="text-body-lg font-bold text-fg-heading">
-            Logging runs
-          </h3>
-          <span className="text-caption text-muted tabular-nums">{active.length ? `${plural(active.length, 'run')} in progress` : 'None in progress'}</span>
-          <span className="min-w-0 basis-full text-caption text-muted @min-[44rem]/logit:basis-auto">Each batch you log is a run: Apply it here, tell Slackbot, and the app checks Org62. Click one to see its rows.</span>
-        </div>
-        <CanvasRuns
-          active={active}
-          finished={finished}
-          tz={tz}
-          a={{ onOpen: openCanvas, onCheck: (c, r) => void checkCanvas(c, r), checkingId, onMissing: onNeeds, primaryId: primary?.kind === 'run' ? primary.run.canvas.draftId : null }}
-          empty={<p className="border-t border-line px-4 py-3 text-caption text-muted">Nothing in flight. Logging the rows above starts a run here.</p>}
-        />
-      </section>
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-muted">
-        <span>{dryRun ? 'Dry run: Apply shows the payload and creates nothing.' : 'Apply creates one private canvas; Slackbot writes Org62.'}</span>
-        {lastCanvas ? (
-          <span className="ml-auto inline-flex items-center gap-2 tabular-nums" data-testid="q4-last-canvas">
-            <span>{`Last canvas: ${lastCanvas.appliedAt ? `${dayLabel(lastCanvas.appliedAt, tz)} ${clock(lastCanvas.appliedAt, tz)}` : lastCanvas.title}`}</span>
-            {lastCanvas.url ? <OpenResult href={lastCanvas.url} title="Open the last canvas in Slack" testId="q4-last-canvas-open" /> : null}
-          </span>
-        ) : canvasUrl ? (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 pb-2 text-caption text-muted">
+        {/* C7: the lane's own line says dry run; this one said it twice */}
+        {log ? null : <span>{dryRun ? 'Dry run: Apply shows the payload and creates nothing.' : 'Apply creates one batch; Slackbot writes Org62.'}</span>}
+        {/* F3 (R2-4): no "Last batch" line here; Sending owns the batch's life */}
+        {canvasUrl ? (
           <a href={canvasUrl} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 font-bold text-link hover:underline">
-            Work-order canvas <Icon name="new_window" size="xs" />
+            Your Slackbot work order <Icon name="new_window" size="xs" />
           </a>
         ) : null}
       </div>
       {primary ? (
         <span className="sr-only" aria-live="polite">
-          {primary.kind === 'log' ? `Next: log ${plural(readyRows.length + readyUcs.length + readyUps.length, 'row')} to Slackbot` : `Next: ${primary.run.status} (${primary.run.canvas.title})`}
+          {primary.kind === 'log' ? `Next: log ${plural(readyRows.length + readyUcs.length + readyUps.length, 'row')} to Slackbot` : `Next: ${NEXT_LABEL[primary.batch.next!]} (${primary.batch.label})`}
         </span>
       ) : null}
     </div>
   );
-}
-
-/** ⌘↵ / ⌘K: run the current step from outside the card. */
-export function q4CurrentStep(steps: Q4Step[]): Q4Step | null {
-  return steps.find((s) => s.state === 'current') ?? null;
 }

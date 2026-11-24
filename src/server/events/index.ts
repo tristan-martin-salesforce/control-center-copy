@@ -1,5 +1,5 @@
 /**
- * Live events over Postgres LISTEN/NOTIFY (BE-1a). See docs/ui/WORKER.md "Live events".
+ * Live events over Postgres LISTEN/NOTIFY (BE-1a). See docs/reference/WORKER.md "Live events".
  *
  *   // web (CC_DATA=db), inside the DB DataSource:
  *   import { dbLiveEvents } from '@/server/events';

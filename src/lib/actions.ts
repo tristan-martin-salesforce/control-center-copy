@@ -8,21 +8,23 @@ import { adminSurfaceOf } from '@/contract';
 import { canvasActionPayload, canvasInputOf } from '@/lib/canvas/payload';
 import { feedbackActionPayload, feedbackInputOf } from '@/lib/feedback/payload';
 import { vdpActionPayload } from '@/lib/vdp/payload';
+import { RELEASE_UPLOAD_KIND, releaseActionPayload, releaseRowFacts } from '@/outbox/adapters/release-handoff';
 
 export type ActionFamily = OutboxAction extends `${infer F}.${string}` ? F : never;
 
 export const actionFamily = (a: OutboxAction): ActionFamily => a.slice(0, a.indexOf('.')) as ActionFamily;
 
 /** The app the action lands in, for labels ("Apply this change to VDP?"). */
-const APP: Record<ActionFamily, string> = { vdp: 'VDP', slack_canvas: 'Slack', feedback: 'Slack' };
+const APP: Record<ActionFamily, string> = { vdp: 'VDP', slack_canvas: 'Slack', feedback: 'Slack', release: 'Slack' };
 /** The source kind the Home draft line shows. */
-const SOURCE: Record<ActionFamily, SourceKind> = { vdp: 'vdp', slack_canvas: 'slack', feedback: 'slack' };
+const SOURCE: Record<ActionFamily, SourceKind> = { vdp: 'vdp', slack_canvas: 'slack', feedback: 'slack', release: 'slack' };
 /** SLDS utility icon. */
-const ICON: Record<ActionFamily, string> = { vdp: 'record_update', slack_canvas: 'note', feedback: 'bug' };
+const ICON: Record<ActionFamily, string> = { vdp: 'record_update', slack_canvas: 'note', feedback: 'bug', release: 'announcement' };
 
-export const actionApp = (a: OutboxAction): string => APP[actionFamily(a)];
-export const actionSource = (a: OutboxAction): SourceKind => SOURCE[actionFamily(a)];
-export const actionIcon = (a: OutboxAction): string => ICON[actionFamily(a)];
+// D-90: the release upload is a hand-off to Drive (the one action whose app is not its family's)
+export const actionApp = (a: OutboxAction): string => (a === RELEASE_UPLOAD_KIND ? 'Drive' : APP[actionFamily(a)]);
+export const actionSource = (a: OutboxAction): SourceKind => (a === RELEASE_UPLOAD_KIND ? 'drive' : SOURCE[actionFamily(a)]);
+export const actionIcon = (a: OutboxAction): string => (a === RELEASE_UPLOAD_KIND ? 'upload' : ICON[actionFamily(a)]);
 
 /** What an action item is, in words ("Logging canvas", "Forecast canvas", "VDP change", "Feedback"). */
 export function actionKindLabel(dest: Pick<ActionDestination, 'action' | 'input'>): string {
@@ -33,6 +35,8 @@ export function actionKindLabel(dest: Pick<ActionDestination, 'action' | 'input'
       return adminSurfaceOf({ destination: { kind: 'action', target: { label: '', url: null }, changes: [], text: null, action: dest.action, input: dest.input } }) === 'forecast' ? 'Forecast canvas' : 'Logging canvas';
     case 'feedback':
       return 'Feedback';
+    case 'release':
+      return dest.action === RELEASE_UPLOAD_KIND ? 'Release upload' : 'Release announcement';
   }
 }
 
@@ -45,6 +49,10 @@ export function actionHeading(dest: Pick<ActionDestination, 'action' | 'input'>)
   if (family === 'feedback') {
     const f = feedbackInputOf(dest);
     return { kind: 'Feedback', where: f.channelName ? (f.channelName.startsWith('#') ? f.channelName : `#${f.channelName}`) : 'Slack' };
+  }
+  if (family === 'release') {
+    const r = releaseRowFacts({ kind: 'action', target: { label: '', url: null }, changes: [], text: null, action: dest.action, input: dest.input });
+    return { kind: actionKindLabel(dest), where: r.kind === 'upload' ? 'Drive' : (r.where ?? 'Slack') };
   }
   return { kind: actionKindLabel(dest), where: APP[family] };
 }
@@ -59,6 +67,8 @@ export function actionPayloadFor(dest: ActionDestination): Record<string, unknow
       return canvasActionPayload(dest);
     case 'feedback':
       return feedbackActionPayload(dest);
+    case 'release':
+      return releaseActionPayload(dest);
   }
 }
 
@@ -94,5 +104,7 @@ export function actionTargetId(dest: ActionDestination): string | null {
       return `log:${canvasInputOf(dest).eventIds[0] ?? 'batch'}`;
     case 'feedback':
       return feedbackInputOf(dest).channelId || null;
+    case 'release':
+      return `release:${String((dest.input as { version?: unknown }).version ?? '')}`;
   }
 }

@@ -6,6 +6,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 
 import type { Db } from '@/db/client';
+import { cutHead } from '@/engines/prompt-cut';
 
 import { SOURCE_EXCERPT_MAX, type RawEvent, type RawItem, type RawSibling, type RawSource, type SettleRaw } from './context';
 
@@ -237,12 +238,14 @@ export async function loadSettleRaw(db: Db, userId: string, itemId: string, o: L
     const dm = withNamed(x) ? (x.channelType === 'im' ? 3 : x.channelType === 'mpim' ? 1 : 0) : 0;
     return ov * 2 + (x.fromMe ? 1 : 0) + soon + dm + (firstMine.has(x.id) ? 2 : 0);
   };
-  const elsewhere = [...pool.values()]
-    .map((x) => ({ x, s: scoreOf(x) }))
-    .filter((e) => e.s >= 3)
-    .sort((a, b) => b.s - a.s || Date.parse(a.x.at) - Date.parse(b.x.at))
-    .slice(0, 14)
-    .map((e) => e.x);
+  const elsewhere = cutHead(
+    'settle.load.elsewhere',
+    [...pool.values()]
+      .map((x) => ({ x, s: scoreOf(x) }))
+      .filter((e) => e.s >= 3)
+      .sort((a, b) => b.s - a.s || Date.parse(a.x.at) - Date.parse(b.x.at)),
+    14,
+  ).map((e) => e.x);
 
   // Calendar events between a day before the ask and two days from now: on the topic, or with these people.
   const events: RawEvent[] = [];
@@ -270,7 +273,7 @@ export async function loadSettleRaw(db: Db, userId: string, itemId: string, o: L
                              and split_part(lower(at.email), '@', 2) like any(${textArr(domainLike)}) and split_part(lower(at.email), '@', 2) not like '%salesforce%')))
          order by ce.starts_at limit 60`),
     );
-    const scored = evRows
+    const ranked = evRows
       .map((r) => {
         const people = Number(r.n_people ?? 0);
         const att = Number(r.n_att ?? 0);
@@ -278,8 +281,8 @@ export async function loadSettleRaw(db: Db, userId: string, itemId: string, o: L
         return { r, s };
       })
       .filter((e) => e.s >= 2)
-      .sort((a, b) => b.s - a.s || Date.parse(String(a.r.starts_at)) - Date.parse(String(b.r.starts_at)))
-      .slice(0, 8);
+      .sort((a, b) => b.s - a.s || Date.parse(String(a.r.starts_at)) - Date.parse(String(b.r.starts_at)));
+    const scored = cutHead('settle.load.events', ranked, 8);
     events.push(
       ...scored.map(({ r }) => ({
         id: String(r.id),
@@ -397,9 +400,18 @@ export function emailsFor(name: string, dir: Pick<Directory, 'emailsByName' | 'a
   return guesses.filter((g) => dir.attendeeEmails.has(g));
 }
 
-/** Me, my timezone and every item id the pass may judge (any status, for scoring). */
-export async function loadSettleUser(db: Db): Promise<{ userId: string; me: string; timezone: string }> {
-  const u = rows<Row>(await db.execute(sql`select id::text as id, display_name, timezone from users where is_active order by created_at limit 1`))[0];
+/**
+ * Me and my timezone: the job's own user (R15: before, the first active user's, whoever the job ran for). Without an
+ * id (operator scripts on a one-user install): the first active user.
+ */
+export async function loadSettleUser(db: Db, userId?: string): Promise<{ userId: string; me: string; timezone: string }> {
+  const u = rows<Row>(
+    await db.execute(
+      userId
+        ? sql`select id::text as id, display_name, timezone from users where id = ${userId}`
+        : sql`select id::text as id, display_name, timezone from users where is_active order by created_at limit 1`,
+    ),
+  )[0];
   if (!u) throw new Error('no active user');
   return { userId: String(u.id), me: String(u.display_name), timezone: String(u.timezone ?? 'UTC') };
 }

@@ -7,11 +7,12 @@
  * Derives attendance for ended meetings (attended / missed / uncertain / n/a) and a `notes-poll` hint for meetings
  * that just ended, which the Gemini-notes fetcher (and the runtime scheduler) act on.
  */
-import { isNonMeetingTitle } from '@/engines/activity/event-kinds';
+import { isNonMeetingTitle } from '@/lib/event-titles';
 import type { ConnectorHealthProbe, CoverageObject, Cursor, DeterministicFetcher, FetchResult, NormalizedSourceItem, PersonRef, TimeWindow } from '@/scanner/types';
 import { redact, redactExcerpt } from '../redact';
 import { decodeCursor, encodeCursor, extractDriveIds, h16, normalizeText, systemClock, throwIfAborted, type Clock } from '../util';
-import type { GoogleTools } from './client';
+// injected: the connector runtime's text port (src/connectors/runtime: GoogleWorkspaceClient behind direct_mcp)
+import type { TextToolPort as GoogleTools } from '../runtime/types';
 import type { Me } from './gmail';
 import { parseEvents, type ParsedEvent } from './parse';
 

@@ -6,20 +6,20 @@
  *
  * A request plays whether or not the page was seen before: a page tour from step 1 (replay), an item's tip always.
  */
-import type { ChecklistItemId } from '@/contract';
+import type { GuideItemId } from './checklist';
 import type { RouteKey } from '@/components/shell/routes';
 
 export interface GuideRequest {
   /** The page to play it on; null: the page you are on (the Assistant, Feedback). */
   page: RouteKey | null;
   /** An action item's tip (items.ts); null: the page's whole tour. */
-  item: ChecklistItemId | null;
+  item: GuideItemId | null;
 }
 
 /** A request as CoachMarks holds it: bound to a page, with a count so asking twice plays twice. */
 export interface ActiveRequest {
   page: RouteKey;
-  item: ChecklistItemId | null;
+  item: GuideItemId | null;
   n: number;
 }
 
@@ -46,7 +46,7 @@ export function parseStoredRequest(raw: string | null, now: number): GuideReques
     const v = JSON.parse(raw) as { page?: unknown; item?: unknown; at?: unknown };
     if (typeof v.at !== 'number' || now - v.at > REQUEST_TTL_MS || now < v.at - 1000) return null;
     const page = typeof v.page === 'string' ? (v.page as RouteKey) : null;
-    const item = typeof v.item === 'string' ? (v.item as ChecklistItemId) : null;
+    const item = typeof v.item === 'string' ? (v.item as GuideItemId) : null;
     return { page, item };
   } catch {
     return null;

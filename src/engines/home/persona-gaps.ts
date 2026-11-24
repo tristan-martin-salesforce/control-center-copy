@@ -11,7 +11,7 @@
  *   vdp_open        "3 VDPs need you" (D-59: the same summary Time ▸ VDP's head reads, src/engines/vdp/status.ts)
  */
 import type { HomeRow } from '@/contract';
-import { buildForecastView } from '@/engines/forecast';
+import { buildForecastView } from '@/engines/forecast/view';
 import type { GapRuleId } from '@/personas';
 import { featureActive } from '@/personas';
 import { clip, plural, shortAccount } from './text';

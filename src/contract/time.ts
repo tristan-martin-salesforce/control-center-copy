@@ -3,6 +3,12 @@
  */
 import { z } from 'zod';
 import { ActivityStatus, Confidence, Id, IsoDate, IsoDateTime, SourceRef, Version } from './common';
+import { Groundwork } from './attribution';
+
+/** The attribution engine's API (learned rules, DC suggestions, the rundown, AEs I cover): src/contract/attribution.ts. */
+export * from './attribution';
+// use-case candidates (src/engines/use-cases; lane 06 R6): their API types ride with Time's
+export * from './use-cases';
 
 export const ActivityLockableField = z.enum(['date', 'start', 'end', 'durationH', 'taskType', 'oppId', 'meetingType', 'description', 'status', 'logNote']);
 export type ActivityLockableField = z.infer<typeof ActivityLockableField>;
@@ -32,7 +38,7 @@ export type TimeDismissSourceKind = z.infer<typeof TimeDismissSourceKind>;
 export const TimeDismissSource = z.object({
   key: z.string().min(3).max(300),
   kind: TimeDismissSourceKind,
-  /** "control-center" (a repo), "unmapped Drive docs", "'Weekly asset sync'" (a series). */
+  /** "command-center" (a repo), "unmapped Drive docs", "'Weekly asset sync'" (a series). */
   label: z.string(),
 });
 export type TimeDismissSource = z.infer<typeof TimeDismissSource>;
@@ -117,6 +123,18 @@ export const ActivityEntry = z.object({
   why: z.string().nullable().default(null),
   /** Derived on read: what the app suggests while the row needs an opportunity (null otherwise). */
   suggestion: ActivitySuggestion.nullable().default(null),
+  /**
+   * Derived on read: the attribution engine's ranked top 3 (src/engines/attribution/row.ts), `suggestion` first when
+   * there is one; Accept takes any of them in one click. Absent or empty on rows that don’t need an opportunity.
+   */
+  suggestions: z.array(ActivitySuggestion).optional(),
+  /**
+   * D-103 (c): the account the row logs to when it has no opportunity (a Solutions Event on the Account); null or
+   * absent: none (an opportunity row, internal work, or a row still to settle).
+   */
+  accountId: Id.nullable().optional(),
+  /** Derived on read (D-103 (c)): why the row logs where it does, one factual sentence. */
+  groundwork: Groundwork.nullable().optional(),
 });
 export type ActivityEntry = z.infer<typeof ActivityEntry>;
 
@@ -475,7 +493,8 @@ export const LogCanvas = z.object({
 export type LogCanvas = z.infer<typeof LogCanvas>;
 
 /** POST /time/canvases/:id/org62-check: `copied` = you just copied its Slackbot prompt; `now` = "Slackbot's done: check now". */
-export const CheckCanvasOrg62Request = z.object({ reason: z.enum(['copied', 'now']) });
+/** copied: its Slackbot prompt was copied · applied: the canvas was just Applied (re-checks, not "told") · now: check now. */
+export const CheckCanvasOrg62Request = z.object({ reason: z.enum(['copied', 'applied', 'now']) });
 export type CheckCanvasOrg62Request = z.infer<typeof CheckCanvasOrg62Request>;
 
 export const CheckCanvasOrg62Result = z.object({
@@ -641,6 +660,8 @@ export type Org62OppSearchRequest = z.infer<typeof Org62OppSearchRequest>;
 export const Org62RecordId = z.string().regex(/^[A-Za-z0-9]{15}([A-Za-z0-9]{3})?$/);
 
 export const Org62OppHit = z.object({
+  /** D-103 (c): an Opportunity (absent: opp) or an Account (logs to the account itself). */
+  kind: z.enum(['opp', 'account']).optional(),
   org62Id: Org62RecordId,
   name: z.string(),
   accountName: z.string().nullable(),

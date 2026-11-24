@@ -8,8 +8,8 @@
  * The run returns candidates; the caller dedupes them against the VDP and records them. Nothing is sent or written.
  */
 import { personaOf, renderPersonaBlock } from '@/personas';
-import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance, type McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
-import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
+import { createSdkMcpServer, tool, type McpSdkServerConfigWithInstance, type McpServerConfig } from '@/llm/provider';
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@/llm/provider';
 import { z } from 'zod';
 
 import { VdpAssetKind, type VdpCandidateSource } from '@/contract';
@@ -20,6 +20,7 @@ import { READIN_MODEL } from '@/llm/readin/prompt';
 import type { LedgerSearch, ToolResult } from '@/llm/readin/tools';
 import { redactText } from '@/llm/redact';
 import { loadSkill } from '@/llm/skill-loader';
+import type { SpendGate } from '@/llm/spend';
 
 import { createResearchState, createResearchTools, type ResearchHandlerMap, type ResearchToolState } from './tools';
 
@@ -205,6 +206,9 @@ export interface VdpAssetsDeps {
   onTool?: (fullName: string) => void;
   /** D-55: the Persona block (renderPersonaBlock), after the dynamic boundary. Absent: the SE persona's. */
   persona?: string;
+  /** F-4: the job's spend hold and the user budget left (src/llm/readin/agent.ts): `costCapUsd` is then the floor. */
+  spend?: SpendGate | null;
+  userLineUsd?: number;
 }
 
 export async function runVdpAssetResearch(t: VdpAssetsTarget, d: VdpAssetsDeps): Promise<VdpAssetsRunResult> {
@@ -252,6 +256,7 @@ export async function runVdpAssetResearch(t: VdpAssetsTarget, d: VdpAssetsDeps):
     state: st.research.inner,
     maxTurns,
     costCapUsd: d.costCapUsd,
+    ...(d.spend ? { spend: d.spend, ...(d.userLineUsd != null ? { userLineUsd: d.userLineUsd } : {}) } : {}),
     signal: d.signal,
     ...(d.onTool ? { onTool: d.onTool } : {}),
     local: { name: ASSETS_SERVER, server: buildServer(handlers, st), tools: ASSETS_ALLOWED_TOOLS, done: () => st.output !== null, call: (bare, args) => callAssetsTool(handlers, st, bare, args) },

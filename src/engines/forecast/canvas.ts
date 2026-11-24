@@ -9,7 +9,8 @@
  * values sit in `input.forecast`, which the next sync compares with Org62 (landed / didn't land).
  */
 import type { ActionDestination, Draft } from '@/contract';
-import { cell } from '@/engines/activity/slackbot';
+import { cell, workOrderCallout } from '@/engines/activity/slackbot';
+import { upsertTable } from '@/lib/canvas/tables';
 import { CANVAS_HOLDING, CANVAS_MAX_BYTES, fitsOneCanvas } from '@/lib/canvas/payload';
 
 export const FORECAST_CANVAS_KIND = 'specialist_forecast';
@@ -50,32 +51,19 @@ export function noteCell(text: string): string {
   return cell(text.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n'));
 }
 
-const UPDATE_HEADER = `|#|Object|Id|${NOTES_FIELD}|${ROLE_FIELD}|`;
+
+/** The SPECIALIST FORECASTS TO UPDATE paragraph (WO-1: one table per object and verb, its rule under its heading). */
+export function forecastUpdateRule(owner: string): string {
+  return `**SPECIALIST FORECASTS TO UPDATE:** each row changes an existing SpecialistForecast__c: on the record whose Id is in Record Id, set ${NOTES_FIELD} and ${ROLE_FIELD} to the values in their columns. A cell with "—" means leave that field as it is. ${NOTES_FIELD} replaces the whole field with the cell's text, exactly as written; " ⏎ " in a cell is a line break. ${ROLE_FIELD} is a picklist value (Lead, Assist, Aware, Portfolio, Accelerate, Incremental or Originate). Only these two fields, only these records: never create or delete a record, and never change another field. Skip a row whose record OwnerId is not \`${owner}\` and report it.`;
+}
 
 export function renderForecastWorkOrder(i: ForecastWorkOrderInput): string {
   const { ownerName: who, ownerOrg62Id: owner } = i;
-  const notes = i.rows.filter((r) => r.notes).length;
-  const roles = i.rows.filter((r) => r.dealRole).length;
-  const out: string[] = [];
-  out.push('::: {.callout}');
-  out.push(`**Slackbot: this canvas is a complete work order. Execute it in Org62 for ${who} (User Id ${owner}) without asking for more context.** Rules:`);
-  out.push(':::');
+  const out: string[] = [...workOrderCallout(who, owner, 'updated / skipped / failed (with the error for each failure)')];
   out.push('');
-  out.push(`1. **UPDATE table, rows with Object = SpecialistForecast__c:** on the record with the given Id, set ${NOTES_FIELD} and ${ROLE_FIELD} to the values given. A cell with "—" means leave that field as it is.`);
-  out.push(`2. **${NOTES_FIELD}** replaces the whole field with the cell's text, exactly as written; " ⏎ " in a cell is a line break. **${ROLE_FIELD}** is a picklist value (Lead, Assist, Aware, Portfolio, Accelerate, Incremental or Originate).`);
-  out.push(`3. **Only these two fields, only these records:** never create or delete a record, and never change another field. Skip a row whose record OwnerId is not \`${owner}\` and report it.`);
-  out.push("4. Work through everything in batches of 25. Don't stop on an individual failure. At the end, reply with counts: updated / skipped / failed (with the error for each failure).");
-  out.push('');
-  out.push(`_Generated ${i.generatedAt.slice(0, 16).replace('T', ' ')} UTC by ${cell(i.sourceLabel)}. Control Center reads these records again afterwards and flags any change that didn't land._`);
-  out.push('');
-  out.push(`# UPDATE (${i.rows.length} rows · ${notes} forecast note${notes === 1 ? '' : 's'} · ${roles} deal role${roles === 1 ? '' : 's'})`);
-  out.push('');
-  out.push(UPDATE_HEADER);
-  out.push('|---|---|---|---|---|');
-  i.rows.forEach((r, n) => {
-    out.push(`|${n + 1}|SpecialistForecast__c|${cell(r.org62Id)}|${r.notes ? noteCell(r.notes) : '—'}|${r.dealRole ? cell(r.dealRole) : '—'}|`);
-  });
-  return out.join('\n');
+  out.push(`_Generated ${i.generatedAt.slice(0, 16).replace('T', ' ')} UTC by ${cell(i.sourceLabel)}. Command Center reads these records again afterwards and flags any change that didn't land._`);
+  const rows = i.rows.map((r, n) => [String(n + 1), 'SpecialistForecast__c', cell(r.org62Id), r.notes ? noteCell(r.notes) : '—', r.dealRole ? cell(r.dealRole) : '—']);
+  return upsertTable(out.join('\n'), 'forecasts_update', forecastUpdateRule(owner), rows);
 }
 
 /**

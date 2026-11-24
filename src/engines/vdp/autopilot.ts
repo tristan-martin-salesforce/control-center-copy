@@ -5,11 +5,13 @@
  *
  *   auto      every value the call sends is a known fact: create the company (list_companies found nothing), create
  *             the VDP (VDP's own company match), add an engaged opp, the account id and fiscal period from Org62, me as
- *             TA, the AE from the opp's Specialist Forecast (D-63), a strong asset (the strongest grade, an http(s)
- *             link), Generate once the use case's five inputs are in
+ *             TA, the AE from the opp's Specialist Forecast (D-63), a strong asset (the strongest grade, an https
+ *             link on a trusted site: SEC-6, src/engines/vdp/asset-hosts.ts), Generate once the use case's five inputs
+ *             are in
  *   suggest   a person approves it: use-case inputs (judgment), a new use case, the entitlement leveraged, a sales
  *             segment, a value that looks wrong (the fiscal-period fix, a closed-lost opp to remove: it would change
- *             what a person entered), anything carrying a default or a guess
+ *             what a person entered), anything carrying a default or a guess, an asset link on a site not in
+ *             Settings ▸ Sending's trusted list ("Held for you: link is on <host>, not a trusted site")
  *   you       nothing the app can send (D-63: such items show disabled until VDP's MCP lists what they need)
  *
  * D-63: autopilot applies each item on its own. An item under a parent that does not exist yet (a VDP under a new
@@ -21,6 +23,8 @@
  */
 import type { VdpAssetItem, VdpAutopilotEntry, VdpAutopilotState, VdpCoveragePayload, VdpCoverageRow, VdpNotInVdpRow, VdpStep, VdpStepAutopilot, VdpStepPolicy, VdpWriteOp } from '@/contract';
 import { isHttpUrl } from '@/lib/vdp/payload';
+
+import { trustedAssetHost } from './asset-hosts';
 
 /** Where each DataSource keeps the ledger (a per-user key-value row). */
 export const VDP_AUTOPILOT_KV = 'cc.vdp.autopilot';
@@ -115,12 +119,17 @@ export function stepPolicy(s: Pick<VdpStep, 'who' | 'apply' | 'gaps' | 'check' |
   }
 }
 
-/** Whether autopilot may add an asset candidate, and why not. */
-export function assetPolicy(c: { status: string; confidence: number; url: string; kind?: string | null }, hasApply: boolean): { policy: VdpStepPolicy; reason: string | null } {
+/**
+ * Whether autopilot may add an asset candidate, and why not. SEC-6: the link came from a search over untrusted text,
+ * so even the strongest match is held for your Apply unless it is an https link on one of `hosts` (the trusted sites).
+ */
+export function assetPolicy(c: { status: string; confidence: number; url: string; kind?: string | null }, hasApply: boolean, hosts: readonly string[]): { policy: VdpStepPolicy; reason: string | null } {
   if (!hasApply) return { policy: 'you', reason: null };
   if (!isHttpUrl(c.url)) return { policy: 'you', reason: 'Not an http(s) link: VDP takes http(s) links only' };
   if (c.kind === 'demo') return { policy: 'suggest', reason: 'A demo-org link: you confirm it' };
   if (c.status !== 'suggested' || c.confidence < STRONG_ASSET_AT) return { policy: 'suggest', reason: 'Not the strongest match: you confirm it' };
+  const site = trustedAssetHost(c.url, hosts);
+  if (!site.trusted) return { policy: 'suggest', reason: site.why };
   return { policy: 'auto', reason: null };
 }
 
@@ -138,6 +147,8 @@ export interface AutopilotSettings {
   on: boolean;
   dryRun: boolean;
   cap: number;
+  /** SEC-6: the sites autopilot adds asset links from (Settings ▸ Sending `autopilotAssetHosts`). */
+  assetHosts: readonly string[];
 }
 
 /** The latest ledger entry per key. */

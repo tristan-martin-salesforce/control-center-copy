@@ -1,0 +1,45 @@
+{
+  "id": "wi-016-asset-delivered-likely",
+  "title": "The asked scene is added to the demo script: likely done, never auto-closed by a Drive edit alone",
+  "storyline": "sample-data/CAST-work.md wi-016 (Add a denied-claim handoff scenario to the Saltmere demo), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-18T00:05:00.000Z",
+      "seen_at": "2026-11-18T00:10:00.000Z",
+      "from_me": false,
+      "body": "<@U0ME00001> one request from our contact-center leads after today: can the next demo show a member asking about a denied claim and the agent handing off to a human rep with the case summary? That is the scenario they worry about most.",
+      "meta": { "channelId": "C0SALT001", "channelType": "channel", "channelName": "saltmere-security", "author": { "name": "PERSON_M", "email": "person_m@example.com", "externalId": "U0PERSONM" } },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "drive",
+      "kind": "drive_file_revision",
+      "occurred_at": "2026-11-18T14:50:00.000Z",
+      "seen_at": "2026-11-18T15:00:00.000Z",
+      "from_me": true,
+      "title": "Saltmere Member Services Demo Script",
+      "body": "doc edited by me: added 'Scene 2: denied claim handoff'",
+      "url": "https://docs.example.com/document/d/FILE_DEMO_SCRIPT_01/edit",
+      "meta": { "fileId": "FILE_DEMO_SCRIPT_01" },
+      "agent": [{ "link": "i1", "role": "completion", "confidence": "likely", "reason": "drive_judge: verdict=done; confidence=0.8; added the denied-claim handoff scene" }]
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Add a denied-claim handoff scenario to the Saltmere demo",
+      "keywords": ["denied-claim", "demo"],
+      "origin": "s1",
+      "ask_quote": "asking about a denied claim"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "likely", "class": "settled", "cite": "s2", "why": "the scene is in the script (the Drive judge says done), but a Drive edit alone never closes: Likely done, one confirm click" }
+  ]
+}

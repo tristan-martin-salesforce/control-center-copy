@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildFindings, classifyLineItems, deriveAccountScopes, distinctiveTokens, narrowEvidence, passesThreshold, soql, type EvidenceSignal, type FindingsInput } from '@/engines/deals';
+import { buildFindings, deriveAccountScopes, type FindingsInput } from '@/engines/deals/findings';
+import { classifyLineItems, passesThreshold } from '@/engines/deals/classify';
+import { distinctiveTokens, narrowEvidence } from '@/engines/deals/evidence';
+import type { EvidenceSignal } from '@/engines/deals/types';
+import * as soql from '@/engines/deals/soql';
 import { A_ACME, A_GLOBEX, A_INITECH, A_UNKNOWN, CORE, CORE2, LIGHT, ME, OTHER_SE, TODAY, WINDOW, dc, line, opp } from '../fixtures/org62/deals';
 
 const T = { minAmount: 10_000, windowStart: WINDOW.start, windowEnd: WINDOW.end };

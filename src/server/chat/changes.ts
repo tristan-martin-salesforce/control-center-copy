@@ -66,7 +66,7 @@ export function changeError(c: ChatChange, item: Pick<WorkItem, 'state' | 'title
     if (c.op === 'create_item' && c.snoozeUntil && Date.parse(c.snoozeUntil) <= now.getTime()) return `create_item: snoozeUntil ${c.snoozeUntil} is in the past`;
     return null;
   }
-  if (!item) return `${c.op}: no work item with id "${c.itemId}" (use an id from chat_app_read find_items or the context pack)`;
+  if (!item) return `${c.op}: no work item with id "${c.itemId}" (use an id from read find_items or the context pack)`;
   const st = item.state;
   switch (c.op) {
     case 'snooze':
@@ -107,9 +107,9 @@ export function activityError(
   patch: Partial<Pick<ActivityEntry, 'taskType' | 'status'>> = {},
   taskTypes: readonly string[] = [],
 ): string | null {
-  if (!e) return `edit_activities: no activity entry with id "${entryId}" (use an id from chat_app_read time)`;
+  if (!e) return `edit_activities: no activity entry with id "${entryId}" (use an id from read time)`;
   if (LOGGED_ROW.has(e.status)) return `edit_activities: "${short(e.description, 60)}" is already ${e.status} in Org62; change it there`;
-  if (oppKnown === false) return 'edit_activities: unknown oppId (use an opportunity id from chat_app_read deals / account, or chat_org62_lookup inApp.oppId)';
+  if (oppKnown === false) return 'edit_activities: unknown oppId (use an opportunity id from read deals / account, or search source org62 inApp.oppId)';
   if (patch.taskType && taskTypes.length && !taskTypes.includes(patch.taskType)) return `edit_activities: unknown task type "${patch.taskType}" (use one of: ${taskTypes.join(', ')})`;
   const type = patch.taskType !== undefined ? patch.taskType : e.taskType;
   if (patch.status === 'approved' && !type) return `edit_activities: "${short(e.description, 60)}" needs a task type before it can be approved${taskTypes.length ? ` (one of: ${taskTypes.join(', ')})` : ''}`;

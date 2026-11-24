@@ -5,7 +5,7 @@
  * item, with global dry-run off. It carries `slack_create_canvas` and `slack_read_canvas` and nothing else: a message
  * send can never go through it.
  */
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@/llm/provider';
 
 import { SLACK_ALL_TOOLS } from '@/llm/mcp-config';
 import { runOneToolCall, type OneCallInput } from '@/llm/one-call';

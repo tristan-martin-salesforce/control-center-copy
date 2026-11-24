@@ -1,62 +1,26 @@
 'use client';
 /**
  * Start in Claude (UI-SPEC §12). POST /agents/launch returns the claude://code/new URL plus the run record
- * (nothing opens yet). A confirm step then shows the repo folder and the first 20 lines of the context pack;
- * only the explicit "Open in Claude" click opens the URL.
+ * (nothing opens yet). Review prompt then shows the repo folder and the whole prompt, with "runs with your
+ * permissions" (SEC-10, ./LaunchReview); only the explicit "Open in Claude" click opens the URL.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { api, ApiError } from '@/client/api';
 import { useApi } from '@/client/hooks';
 import { toast } from '@/client/toast';
-import { Button, Dialog, Icon, Popover } from '@/ui';
-import { openClaudeUrl, parseNewLink, promptPreview, rankTasks, shortPath } from './claude';
+import { Button, Popover } from '@/ui';
+import { openClaudeUrl, rankTasks } from './claude';
+import { LaunchPromptReview, LaunchReviewDialog, OPEN_IN_CLAUDE_LABEL, REVIEW_PROMPT_LABEL } from './LaunchReview';
 
-/** Folder + prompt preview, as the user is about to open it. */
+/** Folder + the whole prompt, as the user is about to open it (SEC-10: the shared review, ./LaunchReview). */
 export function LaunchPreview({ url }: { url: string }) {
-  const parsed = useMemo(() => parseNewLink(url), [url]);
-  const preview = useMemo(() => promptPreview(parsed?.prompt ?? '', 20), [parsed]);
-  if (!parsed) return <p className="text-body text-muted">This link has no prompt to preview.</p>;
-  return (
-    <div className="flex flex-col gap-2" data-testid="launch-preview">
-      <div>
-        <p className="text-caption text-muted">Repo folder</p>
-        <p className="font-mono text-caption text-fg" data-testid="launch-folder">
-          {parsed.folder ? shortPath(parsed.folder) : 'Claude’s default folder'}
-        </p>
-      </div>
-      <div>
-        <p className="text-caption text-muted">Context pack · first {preview.lines.length} lines</p>
-        <pre className="cc-scroll max-h-56 overflow-auto rounded-md bg-surface-muted p-2 font-mono text-caption whitespace-pre-wrap text-fg" data-testid="launch-prompt">
-          {preview.lines.join('\n')}
-        </pre>
-        {preview.hidden ? <p className="mt-1 text-caption text-muted">+ {preview.hidden} more lines are sent with it.</p> : null}
-      </div>
-      <p className="flex items-start gap-1.5 text-caption text-muted">
-        <Icon name="info" size="xs" className="mt-0.5 shrink-0" />
-        Opens a new session in the Claude Desktop Code tab. You run it there; nothing is sent from here.
-      </p>
-    </div>
-  );
+  return <LaunchPromptReview url={url} />;
 }
 
-/** Confirm opening a not-yet-started Claude session whose claude://code/new link we already have. */
+/** Confirm opening a not-yet-started Claude session whose claude://code/new link we already have: Review prompt, then Open in Claude. */
 export function StartConfirmDialog({ url, title, onClose }: { url: string | null; title?: string; onClose: () => void }) {
-  return (
-    <Dialog
-      open={!!url}
-      onClose={onClose}
-      title={title ? `Start in Claude: ${title}` : 'Start in Claude'}
-      width={560}
-      confirmLabel="Open in Claude"
-      onConfirm={() => {
-        if (url && openClaudeUrl(url)) toast({ title: 'Opening in Claude', key: 'start-claude', durationMs: 3000 });
-        onClose();
-      }}
-    >
-      {url ? <LaunchPreview url={url} /> : null}
-    </Dialog>
-  );
+  return <LaunchReviewDialog url={url} title={title} onClose={onClose} onOpen={(u) => openClaudeUrl(u) && toast({ title: 'Opening in Claude', key: 'start-claude', durationMs: 3000 })} />;
 }
 
 /** Header action: pick (optionally) a task, prepare the launch, then confirm and open. */
@@ -133,11 +97,14 @@ export function StartInClaude({ variant = 'primary', open: openProp, onOpenChang
       {({ close }) =>
         launched ? (
           <div className="flex flex-col gap-3 p-3">
-            <p className="text-body-lg font-bold text-fg-heading">Open “{launched.title}” in Claude?</p>
+            <p className="text-body-lg font-bold text-fg-heading">
+              {REVIEW_PROMPT_LABEL}: {launched.title}
+            </p>
             <LaunchPreview url={launched.url} />
             <div className="flex items-center justify-end gap-2">
               <span className="mr-auto text-caption text-muted">Not now keeps it queued here.</span>
-              <Button size="sm" variant="secondary" onClick={close}>
+              {/* the form (and its focused button) is gone: focus lands here, as the dialog's Not now does, so Esc and Tab stay in the popover */}
+              <Button size="sm" variant="secondary" onClick={close} autoFocus data-testid="start-claude-not-now">
                 Not now
               </Button>
               <Button
@@ -150,7 +117,7 @@ export function StartInClaude({ variant = 'primary', open: openProp, onOpenChang
                   close();
                 }}
               >
-                Open in Claude
+                {OPEN_IN_CLAUDE_LABEL}
               </Button>
             </div>
           </div>
@@ -197,12 +164,12 @@ export function StartInClaude({ variant = 'primary', open: openProp, onOpenChang
               </p>
             ) : null}
             <div className="flex items-center justify-end gap-2">
-              <span className="mr-auto text-caption text-muted">Next: preview, then open.</span>
+              <span className="mr-auto text-caption text-muted">Next: review the whole prompt, then open.</span>
               <Button size="sm" variant="secondary" onClick={close}>
                 Cancel
               </Button>
-              <Button size="sm" variant="primary" type="submit" loading={busy}>
-                Preview launch
+              <Button size="sm" variant="primary" type="submit" loading={busy} data-testid="start-claude-review">
+                {REVIEW_PROMPT_LABEL}
               </Button>
             </div>
           </form>

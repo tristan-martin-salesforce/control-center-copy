@@ -13,9 +13,16 @@ export function firstName(name: string | null | undefined): string {
   return (name ?? '').trim().split(/\s+/)[0] ?? '';
 }
 
-export function formatFeedbackMessage(r: FeedbackReport, reporter: string): string {
+/** PKG-4: "modified (3 files)" when the build had local changes, and its channel, so reports group by build. */
+export function buildFlags(build?: { dirty: number; channel: string } | null): string[] {
+  if (!build) return [];
+  return [build.dirty > 0 ? `modified (${build.dirty} file${build.dirty === 1 ? '' : 's'})` : null, build.channel ? `channel ${build.channel}` : null].filter((x): x is string => !!x);
+}
+
+/** `diagnostics`: the Diagnostics block (./diagnostics.ts), placed after the report and before the reporter line. */
+export function formatFeedbackMessage(r: FeedbackReport, reporter: string, build?: { dirty: number; channel: string } | null, diagnostics?: string | null): string {
   const kind = r.kind === 'idea' ? 'Idea' : 'Bug';
-  const ctx = [`v${r.context.version || '?'}`, r.context.sha ? `\`${r.context.sha.slice(0, 7)}\`` : null, r.context.persona ? `persona ${r.context.persona}` : null, r.context.page ? `page ${esc(line(r.context.page))}` : null, r.context.entityKind ? `looking at: ${r.context.entityKind.replace(/_/g, ' ')}` : null]
+  const ctx = [`v${r.context.version || '?'}`, r.context.sha ? `\`${r.context.sha.slice(0, 7)}\`` : null, ...buildFlags(build), r.context.persona ? `persona ${r.context.persona}` : null, r.context.page ? `page ${esc(line(r.context.page))}` : null, r.context.entityKind ? `looking at: ${r.context.entityKind.replace(/_/g, ' ')}` : null]
     .filter(Boolean)
     .join(' · ');
   const out: string[] = [`${r.kind === 'idea' ? ':bulb:' : ':beetle:'} *${kind}: ${esc(line(r.title))}*`, ctx];
@@ -32,6 +39,7 @@ export function formatFeedbackMessage(r: FeedbackReport, reporter: string): stri
     if (d.cause.trim()) out.push(esc(d.cause.trim()));
     if (d.files.length) out.push(`Files: ${d.files.map((f) => `\`${f.replace(/`/g, '')}\``).join(', ')}`);
   }
+  if (diagnostics?.trim()) out.push('', diagnostics.trim());
   const who = firstName(reporter);
   if (who) out.push('', `_Reported by ${esc(who)}_`);
   return out.join('\n');

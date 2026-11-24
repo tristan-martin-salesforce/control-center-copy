@@ -6,13 +6,22 @@
  *   job row:            scanner.executeJob(payload, signal)            via src/jobs/scan.ts
  *   Claude file watch:  an incremental claude_sessions job (coalesces with the scheduled poll)
  *   wake / big gap:     immediate re-plan + a reconcile job (unlinked, stale_active)
+ *
+ * Scan mode (`CC_SCAN_MODE`, src/scanner/runtime/mode.ts): `fti` (default) reads Slack and Org62 by code through their
+ * `claude_relay` runtimes and interprets in batched, tool-less classifier calls (src/scanner/interpret), with the
+ * agentic runner as the fallback for what FTI does not cover; `agentic` is the skill-agent traversal as before.
  */
+import { dbSpendGovernor } from '@/server/datasource/db/spend';
 import { join } from 'node:path';
 
 import { sql } from 'drizzle-orm';
 
 import { CalendarFetcher } from '@/connectors/google/calendar';
 import type { GoogleTools } from '@/connectors/google/client';
+import { manifestOf } from '@/connectors/registry';
+import { buildRuntime, type RuntimeDeps } from '@/connectors/runtime/build';
+import type { ConnectorRuntime } from '@/connectors/runtime/types';
+import { textPort } from '@/connectors/runtime/direct-mcp';
 import { GeminiNotesFetcher } from '@/connectors/google/gemini-notes';
 import { GmailFetcher, type Me } from '@/connectors/google/gmail';
 import { TrainingsFetcher } from '@/connectors/google/trainings';
@@ -21,7 +30,6 @@ import { VdpClient, vdpCookieSecondsLeft } from '@/connectors/vdp/client';
 import { vdpCallLimiter } from '@/connectors/vdp/limiter';
 import { VdpFetcher } from '@/connectors/vdp/fetcher';
 import { dbVdpSink } from '@/server/datasource/db/store/vdp';
-import { actors, withChangeSet } from '@/db/changeset';
 import { enqueueCompletionCheck } from '@/jobs/handlers/completion';
 import type { Db } from '@/db/client';
 import { PgRuntimeJobQueue } from '@/jobs/runtime-queue';
@@ -30,7 +38,12 @@ import { defaultScannerCwd } from '@/llm/env';
 import { AgentSdkSkillRunner } from '@/llm/skill-runner';
 import { stateDir } from '@/ops/paths';
 import { DriveFetcher, FileDigestStore } from '@/scanner/drive-digest';
-import { DEFAULT_WORK_HOURS, type WorkHours } from '@/scanner/runtime/cadence';
+import { DEFAULT_WORK_HOURS, SIGNAL_CADENCE, type WorkHours } from '@/scanner/runtime/cadence';
+import { cadenceSeedFrom, defaultCadenceFile, readCadenceSnapshot, snapshotOf, writeCadenceSnapshot } from '@/scanner/runtime/cadence-state';
+import { ftiDeterministicOverrides, ftiTraversalOverrides } from '@/scanner/runtime/fti-specs';
+import { scanModeOf, type ScanMode } from '@/scanner/runtime/mode';
+import { stateWriteFailed } from '@/scanner/runtime/state-write';
+import { FtiSkillRunner, type ClassifierModel } from '@/scanner/interpret';
 import type { Clock } from '@/scanner/runtime/clock';
 import type { FirstScan } from '@/scanner/runtime/first-scan';
 import { deterministicSpec, org62Spec, slackSpec, type ConnectorSpec, type PrecheckInput } from '@/scanner/runtime/connectors';
@@ -43,7 +56,10 @@ import type { DbScannerStore } from '@/scanner/store-db';
 import type { ConnectorId, DeterministicFetcher, FetchResult, SkillRunner, TimeWindow } from '@/scanner/types';
 
 import { notifyClaudeSessions, type NotifierLike } from './notify';
+import { closeInterruptedEvent, closeInterruptedRuns } from './recovery';
 import type { TickHook } from './runtime';
+import { recordSettingsSourcesEvent } from '@/jobs/handlers/doctor';
+import { noteScanOutcome, settingsSourcesSuspect } from '@/ops/scanner-auth';
 
 const DRIVE_ID = /^[A-Za-z0-9_-]{15,}$/;
 
@@ -68,25 +84,29 @@ export function buildLiveFetchers(o: LiveFetcherOptions): DeterministicFetcher[]
   const want = (c: ConnectorId) => !o.only || o.only.has(c);
   const out: DeterministicFetcher[] = [];
   const clock = o.clock ? () => o.clock!.now() : undefined;
-  if (want('gmail')) out.push(new GmailFetcher({ google: o.google, me: o.me, clock }));
-  if (want('calendar')) out.push(new CalendarFetcher({ google: o.google, me: o.me, clock }));
-  if (want('gemini_notes')) out.push(new GeminiNotesFetcher({ google: o.google, me: o.me, clock }));
+  // registry dispatch: each Google fetcher reads through its manifest's runtime (direct_mcp over the one shared client,
+  // its own read allowlist). Which fetcher class to build stays per source: each takes its own dependencies.
+  const google = (c: ConnectorId) => textPort(buildRuntime(manifestOf(c), { mcp: o.google }));
+  if (want('gmail')) out.push(new GmailFetcher({ google: google('gmail'), me: o.me, clock }));
+  if (want('calendar')) out.push(new CalendarFetcher({ google: google('calendar'), me: o.me, clock }));
+  if (want('gemini_notes')) out.push(new GeminiNotesFetcher({ google: google('gemini_notes'), me: o.me, clock }));
   if (want('drive')) {
     out.push(
       new DriveFetcher({
-        google: o.google,
+        google: google('drive'),
         me: o.me,
         clock,
         store: new FileDigestStore(join(dir, 'drive-digests')),
         // Files linked to open work items (deliverables, links, evidence) are sampled on top of "files I edited".
         linked: async () => {
-          const ctx = await o.store.getContext({ connector: 'drive', scope: 'tracked' }, { maxOpenItems: 500 });
+          // every open item's files (caps audit 2026-11-21: the newest 500 only)
+          const ctx = await o.store.getContext({ connector: 'drive', scope: 'tracked' }, { maxOpenItems: Number.POSITIVE_INFINITY });
           return [...new Set(ctx.openItems.flatMap((i) => i.fileRefs).filter((f) => DRIVE_ID.test(f)))];
         },
       }),
     );
   }
-  if (want('trainings')) out.push(new TrainingsFetcher({ google: o.google, me: o.me, clock }));
+  if (want('trainings')) out.push(new TrainingsFetcher({ google: google('trainings'), me: o.me, clock }));
   // VDP: only when vdp-app-fir is configured with a PAT (a lapsed cookie still runs, and fails as "needs re-auth").
   if (want('vdp') && o.vdp && (o.vdp.client || vdpCookieSecondsLeft().configured)) {
     out.push(new VdpFetcher({ client: o.vdp.client ?? new VdpClient({ limiter: vdpCallLimiter }), sink: dbVdpSink(o.vdp.db, o.vdp.userId), myEmails: [o.me.email, ...(o.me.aliases ?? [])].filter((e) => e.includes('@')), clock }));
@@ -179,6 +199,18 @@ async function budgetStopEvent(db: Db, userId: string, connector: ConnectorId, s
     do update set occurrence_count = app_events.occurrence_count + 1, last_occurred_at = now()`);
 }
 
+/** W0-7: a scope paused because one window is too large to read even in smaller pages (one open event per scope). */
+async function promptCapEvent(db: Db, userId: string, connector: ConnectorId, scope: string): Promise<void> {
+  const sid = `${connector}:${scope}`;
+  await db.execute(sql`
+    insert into app_events (owner_user_id, severity, component, code, message, entity_type, entity_id, detail, fingerprint)
+    values (${userId}, 'warn', ${`scanner.${connector}`}, 'DATA.PROMPT_CAP', ${`${connector} ${scope}: one message set is too large to read, even in smaller pages; paused`.slice(0, 200)},
+            'scope', ${sid}, ${JSON.stringify({ suggestedAction: 'Report this' })}::jsonb,
+            ${`scanner.${connector}|DATA.PROMPT_CAP|${sid}`})
+    on conflict (fingerprint) where resolved_at is null
+    do update set occurrence_count = app_events.occurrence_count + 1, last_occurred_at = now()`);
+}
+
 export interface ScanningOptions {
   db: Db;
   userId: string;
@@ -209,6 +241,16 @@ export interface ScanningOptions {
    * worker with LLM linking (CC_SLACK_PRECHECK=0 turns it off); tests and harnesses opt in explicitly.
    */
   slackPrecheck?: boolean;
+  /** `fti` (fetch then interpret) or `agentic`; default `CC_SCAN_MODE`, else `fti`. */
+  scanMode?: ScanMode;
+  /** FTI: the relay runtime deps (tests and the stress harness pass a fake query or runtime). */
+  relay?: RuntimeDeps['relay'];
+  /** FTI: the runtimes of the relayed sources (overrides `relay`). */
+  relayRuntimes?: Partial<Record<'slack' | 'org62', ConnectorRuntime>>;
+  /** FTI: the classifier model (default: the active provider's `complete()`). */
+  classifier?: ClassifierModel;
+  /** Where the cadence snapshot goes (Health's "next check in N min"); null: not written. Default the state dir. */
+  cadenceFile?: string | null;
 }
 
 /** D5: CC_SLACK_PRECHECK, else on in production (the launchd worker). */
@@ -247,19 +289,33 @@ export function nextFileWatchAt(lastAt: number, nowMs: number, minMs: number): n
 export function buildScanning(o: ScanningOptions): Scanning {
   const queue = new PgRuntimeJobQueue(o.db, o.userId);
   const ov = (c: ConnectorId) => (o.specOverrides?.[c] ?? {}) as Record<string, unknown>;
+  // FTI with LLM linking on: Slack and Org62 are fetched by code, so the D5 pre-check (the same searches) is not run
+  const fti = o.llm && (o.scanMode ?? scanModeOf()) === 'fti';
   const specs: ConnectorSpec[] = [
     ...(o.llm
       ? [
           slackSpec({
-            ...((o.slackPrecheck ?? slackPrecheckOn()) ? { precheck: (i: PrecheckInput) => runSlackPrecheck(i, (look) => runOneReadLookup(look, { skillPath: 'skills/read-lookup.md', timeoutMs: 60_000 })) } : {}),
+            ...(fti ? ftiTraversalOverrides('slack') : (o.slackPrecheck ?? slackPrecheckOn()) ? { precheck: (i: PrecheckInput) => runSlackPrecheck(i, (look) => runOneReadLookup(look, { skillPath: 'skills/read-lookup.md', timeoutMs: 60_000 })) } : {}),
             ...ov('slack'),
           }),
-          org62Spec(ov('org62')),
+          org62Spec({ ...(fti ? ftiTraversalOverrides('org62') : {}), ...ov('org62') }),
         ]
       : []),
-    ...o.fetchers.map((f) => deterministicSpec(windowAligned(f), ov(f.connector))),
+    ...o.fetchers.map((f) => deterministicSpec(windowAligned(f), { ...(fti ? ftiDeterministicOverrides(f.connector) : {}), ...ov(f.connector) })),
   ];
-  const runner = o.runner ?? (o.llm ? new AgentSdkSkillRunner({ logger: (e) => (e.event === 'error' || e.event === 'denied' ? o.log?.(`skill ${e.event}`, { ...logFields(), runId: e.runId, code: e.code, tool: e.tool }) : undefined) }) : new DeferredSkillRunner());
+  const agentic = o.runner ?? (o.llm ? new AgentSdkSkillRunner({ logger: (e) => (e.event === 'error' || e.event === 'denied' ? o.log?.(`skill ${e.event}`, { ...logFields(), runId: e.runId, code: e.code, tool: e.tool }) : undefined) }) : new DeferredSkillRunner());
+  // FTI books every relay read as a `pass` row of its run (src/scanner/interpret/runner.ts), so the relay runtimes get
+  // no ledger of their own (one row per read, never two)
+  const relays: Partial<Record<'slack' | 'org62', ConnectorRuntime>> = fti ? { slack: o.relayRuntimes?.slack ?? buildRuntime(manifestOf('slack'), { relay: o.relay ?? {} }), org62: o.relayRuntimes?.org62 ?? buildRuntime(manifestOf('org62'), { relay: o.relay ?? {} }) } : {};
+  const runner = fti
+    ? new FtiSkillRunner({
+        fallback: agentic,
+        runtimeFor: (c) => (c === 'slack' || c === 'org62' ? (relays[c] ?? null) : null),
+        ...(o.classifier ? { model: o.classifier } : {}),
+        log: (e) => (e.event === 'error' ? o.log?.('fti error', { ...logFields(), runId: e.runId, code: e.code }) : undefined),
+      })
+    : agentic;
+  const cadenceFile = o.cadenceFile === undefined ? defaultCadenceFile() : o.cadenceFile;
   const scanner = new ScannerRuntime({
     store: o.store,
     runner,
@@ -267,9 +323,19 @@ export function buildScanning(o: ScanningOptions): Scanning {
     reevaluate: pgReevaluateEnqueuer(o.db, o.userId),
     clock: o.clock,
     queue,
-    cadence: o.workHours ? { workHours: o.workHours } : undefined,
+    cadence: { ...(o.workHours ? { workHours: o.workHours } : {}), ...(fti ? SIGNAL_CADENCE : {}) },
+    ...(fti && cadenceFile !== null ? { cadenceSeed: cadenceSeedFrom(readCadenceSnapshot(cadenceFile), o.clock.now()) } : {}),
     firstScanDefaultDays: o.firstScanDefaultDays,
     ...(o.firstScan !== undefined ? { firstScan: o.firstScan } : {}),
+    // W0-1: a Slack/Org62 sign-in failure that follows the settingSources change gets its own Health event
+    onScanOutcome: async (e) => {
+      const s = noteScanOutcome(e);
+      if (e.ok || !s) return;
+      const suspect = settingsSourcesSuspect(s);
+      if (suspect) await recordSettingsSourcesEvent(o.db, o.userId, suspect);
+    },
+    // H-5: each run holds its estimate and asks past it (paused, re-queued) instead of failing at a cap
+    spend: dbSpendGovernor({ db: o.db, userId: o.userId, ...(o.clock ? { clock: () => o.clock!.now() } : {}) }),
     onFinding: async (f) => {
       if (f.kind === 'unlinked_item') return; // the store already records those
       await o.db.execute(sql`
@@ -285,10 +351,13 @@ export function buildScanning(o: ScanningOptions): Scanning {
       if (e.event === 'run_fail' || e.event === 'paused' || e.event === 'resumed' || e.event === 'plan' || e.event === 'skip') o.log?.(`scanner ${e.event}`, { ...logFields(), connector: e.connector, scope: e.scope, ...(e.runId ? { runId: e.runId } : {}), ...(e.mode ? { mode: e.mode } : {}), code: e.code, detail: e.event === 'plan' ? e.detail : undefined });
       // AUDIT: a traversal scope paused at the daily hard cap shows in Health's error feed (one open event per scope).
       if (e.event === 'paused' && e.code === 'budget_hard_cap' && e.connector) void budgetStopEvent(o.db, o.userId, e.connector, e.scope ?? '', e.costUsd).catch(() => undefined);
+      if (e.event === 'paused' && e.code === 'DATA.PROMPT_CAP' && e.connector) void promptCapEvent(o.db, o.userId, e.connector, e.scope ?? '').catch(() => undefined);
     },
   });
-  const hasClaude = specs.some((s) => s.connector === 'claude_sessions');
+  // registry dispatch: the source a file watcher feeds between sweeps (Claude sessions)
+  const watched = specs.find((s) => manifestOf(s.connector).scan.watcher)?.connector ?? null;
   let lastFileWatchAt = Number.NEGATIVE_INFINITY;
+  let lastCadenceWrite = Number.NEGATIVE_INFINITY;
   const fileWatchMinMs = Math.max(0, Number(process.env.CC_CLAUDE_WATCH_MIN_S ?? FILE_WATCH_MIN_S)) * 1000;
   // Default: only with the real LLM runner (the production worker passes none); tests and the harness opt in.
   const completionOn = o.completionCheck ?? (o.llm && !o.runner);
@@ -308,6 +377,9 @@ export function buildScanning(o: ScanningOptions): Scanning {
     scanner,
     queue,
     afterRun: async (job, outcome) => {
+      // ask #14: the scope a stopped worker interrupted is read again: its Health row says so and closes (never throws)
+      if (job.kind === 'scan' && outcome.status === 'succeeded') await closeInterruptedEvent(o.db, o.userId, job.connector, job.scope);
+      // domain: the session-status notifications (waiting on me, done) are about Claude sessions themselves
       if (o.notifier && job.kind === 'scan' && job.connector === 'claude_sessions' && outcome.runId && outcome.status === 'succeeded') {
         await notifyClaudeSessions(o.db, o.userId, outcome.runId, o.notifier);
       }
@@ -325,6 +397,16 @@ export function buildScanning(o: ScanningOptions): Scanning {
       run: async (now) => {
         const jobs = await scanner.planJobs(now);
         if (jobs.length) await queue.enqueue(jobs);
+        // Health's "next check in N min" per source, and the backoff a restart resumes from (at most once a minute)
+        if (cadenceFile !== null && now.getTime() - lastCadenceWrite >= 60_000) {
+          lastCadenceWrite = now.getTime();
+          try {
+            writeCadenceSnapshot(snapshotOf(scanner.status(), now), cadenceFile);
+          } catch (err) {
+            o.log?.('cadence snapshot not written', { code: (err as NodeJS.ErrnoException)?.code ?? 'error' });
+            stateWriteFailed('the scan schedule', err);
+          }
+        }
       },
     },
     async dropStalePlans() {
@@ -345,21 +427,18 @@ export function buildScanning(o: ScanningOptions): Scanning {
                   and (j.payload->'window'->>'to')::timestamptz <= sc.high_watermark_at + interval '1 second'))`);
       // Scan runs a killed worker left `running` (its in-memory staged coverage is gone; the job re-runs under a new
       // run). The single-instance lock guarantees no other worker owns them. Before: they stayed `running` forever on
-      // Health (stress finding W-3). Never-committed coverage is simply absent, so cursors are unaffected.
-      await withChangeSet({ db: o.db, userId: o.userId, actor: actors.system('worker-start'), reason: 'close scan runs of a stopped worker' }, async (tx) => {
-        await tx.execute(sql`
-          update scan_runs set status = 'cancelled', finished_at = ${o.clock.now().toISOString()}::timestamptz, error_code = 'aborted',
-                 error_message = 'worker stopped before the run finished', error_count = error_count + 1
-           where owner_user_id = ${o.userId} and status = 'running'`);
-      });
+      // Health (stress finding W-3). Never-committed coverage is simply absent, so cursors are unaffected. What their
+      // model calls cost is booked once, and Health says which scope stopped (src/worker/recovery.ts).
+      await closeInterruptedRuns({ db: o.db, userId: o.userId, store: o.store, ...(o.log ? { log: o.log } : {}) }, o.clock.now());
       // CMP-1 catch-up after downtime: one completion check once the head scans had a moment to run.
       if (completionOn) await enqueueCompletionCheck(o.db, o.userId, { trigger: 'catch_up', delaySeconds: 120 });
       return r.rowCount ?? 0;
     },
     async enqueueFileWatch() {
-      if (!hasClaude) return false;
+      if (!watched) return false;
+      const scope = manifestOf(watched).scopes[0]!;
       const now = o.clock.now();
-      const cursor = await o.store.getCursor({ connector: 'claude_sessions', scope: 'all' });
+      const cursor = await o.store.getCursor({ connector: watched, scope });
       const from = cursor?.at ?? new Date(now.getTime() - 24 * 3600_000).toISOString();
       if (Date.parse(from) >= now.getTime() - 1000) return false;
       // COST-2: busy Claude sessions write transcripts nonstop, and a scan per 5 s debounce cost $6/day (3,142 runs). A
@@ -367,7 +446,7 @@ export function buildScanning(o: ScanningOptions): Scanning {
       // key: the queue keeps the earliest run_at and the latest window end).
       const at = nextFileWatchAt(lastFileWatchAt, now.getTime(), fileWatchMinMs);
       lastFileWatchAt = at;
-      await queue.enqueue([scanJob({ connector: 'claude_sessions', scope: 'all', window: { from, to: now.toISOString() }, mode: 'incremental', trigger: 'file_watch', runAt: new Date(at).toISOString() })]);
+      await queue.enqueue([scanJob({ connector: watched, scope, window: { from, to: now.toISOString() }, mode: 'incremental', trigger: 'file_watch', runAt: new Date(at).toISOString() })]);
       return at <= now.getTime();
     },
     async enqueueResumeReconcile(tag: string) {

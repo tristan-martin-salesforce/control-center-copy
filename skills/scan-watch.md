@@ -19,7 +19,7 @@ allowed_tools:
   - mcp__slack__slack_read_thread
 never_tools: ["*send_message*", "*schedule_message", "*add_reaction", "*mark_read", "*create_*", "*update_*", "*upload*"]
 fetcher: src/connectors/watch.ts  # emits the scope plan only
-spec: docs/ui/SCANNER.md
+spec: docs/reference/SCANNER.md
 requirements: [R-UI-21]
 cadence: per subscription (since the last brief, or daily)
 ---

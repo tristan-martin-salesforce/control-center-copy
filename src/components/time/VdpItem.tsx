@@ -20,6 +20,7 @@ import { api, type ApiError } from '@/client/api';
 import { subscribeLive } from '@/client/live';
 import { toast } from '@/client/toast';
 import { StatusBadge } from '@/components/domain';
+import { ActionRow, type ActionRowVerb } from '@/components/kit';
 import { Button, cn, Icon } from '@/ui';
 import { applyDefaults, applyNeedsInput, applyReady, editableFields, fixedText, nextReadText, STATUS_CHIP, whoText } from './vdp-derive';
 import { autopilotLabel } from './vdp-changes-derive';
@@ -195,11 +196,14 @@ export function AutopilotState({ a, tz }: { a: NonNullable<VdpStep['autopilot']>
 }
 
 /**
- * One item (the details panel's list). `n`: its number in the list; `onDraft`: open a staged draft (Review & apply);
- * `onPush`: push it with what it needs first (D-63: an item under a company or VDP that does not exist yet can only go
- * with them; the Changes tab's confirm lists them); `extra`: what the caller adds (Find assets, Review assets).
+ * One item (the details panel's list), a configuration of the kit ActionRow (docs/UX.md "Component kit"). `n`: its
+ * number in the list (the lead); `onDraft`: open a staged draft (Review & apply); `onPush`: push it with what it needs
+ * first (D-63: an item under a company or VDP that does not exist yet can only go with them; the Changes tab's confirm
+ * lists them); `extra`: what the caller adds (Find assets, Review assets); `emphasis`: the one change the panel is
+ * about (its verb is the filled button). Held (dashed, no verb, the reason first) while VDP refreshes or when VDP's MCP
+ * can't take it yet; AI-tinted when the app suggests the values; Edit opens the inputs as the row's expansion.
  */
-export function VdpItemRow({ step, n, onDraft, onPush, extra, compact, onOpen, tz }: { step: VdpStep; n?: number; after?: number; onDraft: (draftId: string) => void; onPush?: (key: string) => void; extra?: ReactNode; compact?: boolean; onOpen?: () => void; tz?: string }) {
+export function VdpItemRow({ step, n, onDraft, onPush, extra, compact, onOpen, tz, emphasis }: { step: VdpStep; n?: number; after?: number; onDraft: (draftId: string) => void; onPush?: (key: string) => void; extra?: ReactNode; compact?: boolean; onOpen?: () => void; tz?: string; emphasis?: boolean }) {
   const [open, setOpen] = useState(false);
   const stage = useStageItem((d) => {
     setOpen(false);
@@ -210,73 +214,61 @@ export function VdpItemRow({ step, n, onDraft, onPush, extra, compact, onOpen, t
   const chained = (step.requires ?? []).length > 0;
   const go = (values: Record<string, string>) => a && stage.mutate({ key: a.key, values });
   const suggest = step.suggestion && step.state === 'todo' ? step.suggestion : null;
+  const held = off ? step.disabled! : step.state === 'waiting' ? 'Waiting for VDP to refresh' : false;
+  const why = [off ? null : whoText(step), step.state === 'staged' ? 'staged: waiting for your Apply' : null, !compact && step.detail ? step.detail : null].filter(Boolean).join(' · ');
+  const formable = !!a && step.state === 'todo' && !off && !chained;
+  const editable = formable && !applyNeedsInput(a!) && editableFields(a!).length > 0;
+  const verb: ActionRowVerb | null =
+    off || step.state === 'waiting'
+      ? null
+      : step.state === 'staged' && step.draftId && !chained
+        ? { label: 'Review & apply', onClick: () => onDraft(step.draftId!), testId: 'vdp-review' }
+        : a && chained && onPush
+          ? // D-63: it goes with the items above it (a new company, a new VDP), in order, new ids passed down
+            { label: `Apply · ${step.requires.length} first`, onClick: () => onPush(a.key), title: `Pushes ${step.requires.length === 1 ? 'the item it needs' : `the ${step.requires.length} items it needs`} first`, testId: 'vdp-push-one' }
+          : a && suggest && !open
+            ? // one "Apply suggestions" per item: stages the suggested values for you to review and Apply (never auto)
+              { label: 'Apply suggestions', loading: stage.isPending, onClick: () => go({ ...applyDefaults(a), ...suggest.values }), testId: 'vdp-apply-suggestions' }
+            : a && !chained && !open
+              ? { label: 'Apply', loading: stage.isPending, onClick: () => (applyNeedsInput(a) ? setOpen(true) : go(applyDefaults(a))), testId: 'vdp-apply' }
+              : null;
+  const lead =
+    n !== undefined ? (
+      <span aria-hidden className={cn('inline-flex size-6 shrink-0 items-center justify-center rounded-full border text-caption font-bold tabular-nums', off ? 'border-line text-muted' : 'border-line-strong text-fg')}>
+        {n}
+      </span>
+    ) : undefined;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5" data-step={step.kind} data-state={step.state} data-who={step.who} data-disabled={off ? 'true' : undefined} data-testid="vdp-item">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-        {n !== undefined ? (
-          <span aria-hidden className={cn('inline-flex size-6 shrink-0 items-center justify-center rounded-full border text-caption font-bold tabular-nums', off ? 'border-line text-muted' : 'border-line-strong text-fg')}>
-            {n}
-          </span>
-        ) : null}
-        <div className="min-w-0 flex-1">
-          {onOpen ? (
-            <button type="button" className={cn('min-w-0 text-left font-bold hover:underline', off ? 'text-muted' : 'text-fg')} onClick={onOpen} data-testid="vdp-item-open">
-              {step.title}
-            </button>
-          ) : (
-            <p className={cn('min-w-0 font-bold', off ? 'text-muted' : 'text-fg')}>{step.title}</p>
-          )}
-          <p className="text-caption text-muted">
-            {off ? null : whoText(step)}
-            {step.state === 'waiting' ? ' · applied: waiting for VDP to refresh' : step.state === 'staged' ? ' · staged: waiting for your Apply' : ''}
-            {!compact && step.detail ? `${off ? '' : ' · '}${step.detail}` : ''}
-          </p>
-          {off ? <DisabledReason text={step.disabled!} /> : null}
-          {suggest || step.autopilot ? (
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
-              {suggest ? <SuggestionLine s={suggest} /> : null}
-              {step.autopilot ? <AutopilotState a={step.autopilot} tz={tz} /> : null}
-            </div>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {off ? null : step.state === 'waiting' ? (
-            <StatusBadge tone="neutral" icon="clock">
-              Waiting for VDP to refresh
-            </StatusBadge>
-          ) : step.state === 'staged' && step.draftId && !chained ? (
-            <Button size="sm" variant="secondary" onClick={() => onDraft(step.draftId!)} data-testid="vdp-review">
-              Review & apply
-            </Button>
-          ) : a && chained && onPush ? (
-            // D-63: it goes with the items above it (a new company, a new VDP), in order, new ids passed down
-            <Button size="sm" variant="secondary" onClick={() => onPush(a.key)} title={`Pushes ${step.requires.length === 1 ? 'the item it needs' : `the ${step.requires.length} items it needs`} first`} data-testid="vdp-push-one">
-              {`Apply · ${step.requires.length} first`}
-            </Button>
-          ) : a && suggest && !open ? (
-            // one "Apply suggestions" per item: stages the suggested values for you to review and Apply (never auto)
-            <Button size="sm" variant="secondary" loading={stage.isPending} onClick={() => go({ ...applyDefaults(a), ...suggest.values })} data-testid="vdp-apply-suggestions">
-              Apply suggestions
-            </Button>
-          ) : a && !chained ? (
-            open ? null : (
-              <>
-                {/* every value suggested: Apply stages them; Edit changes one first (a choice such as a Type, a quarter) */}
-                {step.state === 'todo' && !off && !applyNeedsInput(a) && editableFields(a).length ? (
-                  <Button size="sm" variant="quiet" onClick={() => setOpen(true)} data-testid="vdp-edit">
-                    Edit
-                  </Button>
-                ) : null}
-                <Button size="sm" variant="secondary" loading={stage.isPending} onClick={() => (applyNeedsInput(a) ? setOpen(true) : go(applyDefaults(a)))} data-testid="vdp-apply">
-                  Apply
-                </Button>
-              </>
-            )
-          ) : null}
-          {extra}
-        </div>
-      </div>
-      {a && open && step.state === 'todo' && !off ? <ApplyForm apply={a} pending={stage.isPending} onStage={go} onCancel={() => setOpen(false)} /> : null}
-    </div>
+    <ActionRow
+      id={step.id}
+      data-step={step.kind}
+      data-state={step.state}
+      data-who={step.who}
+      data-disabled={off ? 'true' : undefined}
+      data-testid="vdp-item"
+      title={step.title}
+      lead={lead}
+      held={held}
+      tint={suggest ? 'ai' : null}
+      why={why || undefined}
+      verb={verb}
+      // every value suggested: Apply stages them; Edit changes one first (a choice such as a Type, a quarter)
+      altVerb={editable && !open && !suggest ? { label: 'Edit', onClick: () => setOpen(true), testId: 'vdp-edit' } : null}
+      emphasis={emphasis}
+      extra={
+        suggest || step.autopilot || off || extra ? (
+          <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2">
+            {off ? <DisabledReason text={step.disabled!} /> : null}
+            {suggest ? <SuggestionLine s={suggest} /> : null}
+            {step.autopilot ? <AutopilotState a={step.autopilot} tz={tz} /> : null}
+            {extra}
+          </div>
+        ) : undefined
+      }
+      expanded={formable && open}
+      onExpandedChange={formable ? setOpen : undefined}
+      expansion={formable ? <ApplyForm apply={a!} pending={stage.isPending} onStage={go} onCancel={() => setOpen(false)} /> : undefined}
+      onOpen={onOpen ? () => onOpen() : undefined}
+    />
   );
 }

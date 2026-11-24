@@ -39,7 +39,7 @@ describe('the masthead', () => {
     await click(radios[1]);
     expect(onDay).toHaveBeenLastCalledWith('next');
     const nudge = $('[data-testid="home-plan-nudge"]', container)!;
-    expect(nudge.textContent).toBe('Your day is wrapping up · Plan tomorrow →');
+    expect(nudge.textContent).toBe('Look ahead · Plan tomorrow →');
     await click(nudge.querySelector('button'));
     expect(onDay).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain('Since you left');
@@ -118,6 +118,6 @@ describe('the lead line', () => {
     expect(leadNote(base([card('a', null), card('b', 'from_today'), card('c', 'moved')], 'next'))).toBe('What tomorrow starts with · 1 carried over from today, 1 moved here.');
     expect(leadNote(base([card('a', null)], 'next'))).toBe('What tomorrow starts with.');
     expect(leadNote(base([], 'next'))).toBe('Nothing lined up for tomorrow yet.');
-    expect(leadNote(base([card('a', null)], 'today'))).toBe('Top 1 of 1 across every tab.');
+    expect(leadNote(base([card('a', null)], 'today'))).toBe('Top 1 of 1.');
   });
 });

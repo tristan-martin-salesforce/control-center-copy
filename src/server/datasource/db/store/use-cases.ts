@@ -15,12 +15,14 @@ import type { Draft, UseCaseSyncPayload } from '@/contract';
 import type { Db, DbOrTx } from '@/db/client';
 import { org62UseCaseReads, org62UseCases } from '@/db/schema';
 import { planUseCases, reconcileUseCaseLinks, ucInScope, ucNormalizeVdp, type Org62UseCase, type UcOpp, type UcVdp, type UseCaseLink, type UseCasePlan, type UseCasePlanInput } from '@/engines/activity/use-cases';
-import { ROW_OVERRIDES_KV, rowOverridesOf, type RowOverrides } from '@/lib/canvas/overrides';
+import type { RowOverrides } from '@/lib/canvas/overrides';
 import { featureActive } from '@/personas';
 import { ucDecisionsOf, ucHolds, ucSyncView } from '@/server/deals/use-cases';
 
 import { draftStatusFromDb, type DbDraftStatus } from '../enums';
-import { needDecisionsOf } from './need-decisions';
+import { loadRowOverridesTable } from '../canvas-overrides';
+import { loadNeedDecisions } from '../needs-decisions';
+import { readMemo } from '../reads/session';
 import { loadPersona } from './persona';
 import { loadGapEntities, loadVdpRecords } from './vdp';
 
@@ -52,10 +54,9 @@ export async function loadUcVdps(db: DbOrTx, userId: string): Promise<{ live: Uc
   return { live: rows.filter((r) => !r.goneAt).map(of), gone: rows.filter((r) => r.goneAt).map(of) };
 }
 
-/** The use-case decisions (D-61 `use_case` / `use_case_readd`), from user_settings. */
+/** The use-case decisions (D-61 `use_case` / `use_case_readd`), from need_decisions (D-98; kv fallback until backfilled). */
 export async function loadUcDecisions(db: DbOrTx, userId: string) {
-  const r = await db.execute<{ key: string; value: unknown }>(sql`select key, value from user_settings where owner_user_id = ${userId} and key like 'cc.need/use\_case%'`);
-  return ucDecisionsOf(needDecisionsOf(new Map(r.rows.map((x) => [x.key, x.value] as const))));
+  return ucDecisionsOf((await loadNeedDecisions(db, userId)).filter((d) => d.rule.startsWith('use_case')));
 }
 
 type RecRow = typeof org62UseCases.$inferSelect;
@@ -88,21 +89,31 @@ export async function loadOrg62UseCases(db: DbOrTx, userId: string): Promise<{ r
 }
 
 /** What the logging canvases hold (pending) or handed off (sent), from the drafts' stored payloads. */
-export async function loadUseCaseHolds(db: DbOrTx, userId: string) {
+export function loadUseCaseHolds(db: DbOrTx, userId: string): Promise<ReturnType<typeof ucHolds>> {
+  // GET /needs reads them twice (the plan's inputs and the use-case candidates): once per request inside the read memo
+  return readMemo(db, `useCaseHolds:${userId}`, () => readUseCaseHolds(db, userId));
+}
+
+async function readUseCaseHolds(db: DbOrTx, userId: string) {
+  // a legacy canvas names the object in a cell (|Use_Case__c|); a WO-1 canvas has its own USE CASES TO CREATE / UPDATE tables
   const r = await db.execute<{ id: string; status: DbDraftStatus; payload: Draft['destination'] | null; updated_at: Date | string; sent_at: Date | string | null }>(sql`
     select id, status::text as status, payload, updated_at, coalesce(sent_at, approved_at) as sent_at from drafts
-     where owner_user_id = ${userId} and payload ->> 'action' = 'slack_canvas.create' and payload::text like '%|Use_Case__c|%'`);
+     where owner_user_id = ${userId} and payload ->> 'action' = 'slack_canvas.create' and (payload::text like '%|Use_Case__c|%' or payload::text like '%## USE CASES TO %')`);
   return ucHolds(r.rows.filter((d) => d.payload).map((d) => ({ id: d.id, status: draftStatusFromDb(d.status), destination: d.payload!, updatedAt: iso(d.updated_at)!, sentAt: iso(d.sent_at) })));
 }
 
 /** Everything the plan reads, from Postgres. */
-/** Your edits on canvas rows before Apply (the canvas review), from user_settings. */
+/** Your edits on canvas rows before Apply (the canvas review), from canvas_row_overrides (D-98; kv fallback until backfilled). */
 export async function loadRowOverrides(db: DbOrTx, userId: string): Promise<RowOverrides> {
-  const r = await db.execute<{ value: unknown }>(sql`select value from user_settings where owner_user_id = ${userId} and key = ${ROW_OVERRIDES_KV}`);
-  return rowOverridesOf(r.rows[0]?.value);
+  return loadRowOverridesTable(db, userId);
 }
 
-export async function loadUseCaseInput(db: Db, userId: string): Promise<UseCasePlanInput> {
+export function loadUseCaseInput(db: Db, userId: string): Promise<UseCasePlanInput> {
+  // Home reads it twice (the VDP coverage and the waiting-for-a-canvas count): once per request (reads/session.ts)
+  return readMemo(db, `useCaseInput:${userId}`, () => readUseCaseInput(db, userId));
+}
+
+async function readUseCaseInput(db: Db, userId: string): Promise<UseCasePlanInput> {
   // one after another: D-70's landing sync reads this inside a batch's transaction (one client, one query at a time)
   const vdps = await loadUcVdps(db, userId);
   const opps = await loadUcOpps(db, userId);
@@ -199,8 +210,8 @@ export async function saveOrg62UseCaseRead(db: Db, userId: string, o: { rows: re
       const g = await tx.execute(sql`
         update org62_use_cases set gone_at = ${o.at.toISOString()}::timestamptz, updated_at = now()
          where owner_user_id = ${userId} and gone_at is null
-           and left(coalesce(org62_opportunity_id, ''), 15) = any(array[${sql.join(complete15.map((x) => sql`${x}::text`), sql`, `)}])
-           and left(org62_use_case_id, 15) <> all(array[${sql.join([...seen, '-'].map((x) => sql`${x}::text`), sql`, `)}])`);
+           and org62_opportunity_id15 = any(array[${sql.join(complete15.map((x) => sql`${x}::text`), sql`, `)}])
+           and org62_use_case_id15 <> all(array[${sql.join([...seen, '-'].map((x) => sql`${x}::text`), sql`, `)}])`);
       res.gone = g.rowCount ?? 0;
     }
     await tx

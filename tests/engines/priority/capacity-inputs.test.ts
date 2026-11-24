@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { TodayHeader, type AgentRun, type Connector, type Draft, type WorkItemRecord } from '@/contract';
-import { rankWork } from '@/engines/priority';
+import { rankWork } from '@/engines/priority/rank';
 import { agentStartedFor, capacityInputs, localDay, toContractCapacity, type CapacitySource } from '@/server/datasource/db/capacity';
 import { priorityInputs, todayCapacity } from '@/server/datasource/db/rank';
 import { MockDataSource } from '@/server/datasource/mock';

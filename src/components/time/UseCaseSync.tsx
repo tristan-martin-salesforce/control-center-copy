@@ -27,7 +27,7 @@ export function UseCaseSync() {
     try {
       if (a.kind === 'undo') await api('clearNeedDecision', { body: { rule: a.rule, subjectIds: [r.key] } });
       else await api('decideNeed', { body: { rule: a.rule, subjectIds: [r.key], kind: 'not_needed', reason: a.kind === 'readd' ? 'Add it to Org62 again' : 'Leave it as it is', label: r.title } });
-      toast({ key: `uc:${r.key}`, tone: 'success', title: a.kind === 'readd' ? `${r.title}: goes on your next logging canvas` : a.kind === 'leave' ? `${r.title}: left as it is` : `${r.title}: back on the list` });
+      toast({ key: `uc:${r.key}`, tone: 'success', title: a.kind === 'readd' ? `${r.title}: goes in your next batch` : a.kind === 'leave' ? `${r.title}: left as it is` : `${r.title}: back on the list` });
     } catch (err) {
       toast({ key: `uc:${r.key}`, tone: 'error', title: 'Could not save that', body: (err as Error).message });
     } finally {

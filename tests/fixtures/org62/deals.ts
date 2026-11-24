@@ -1,5 +1,5 @@
 /** PLACEHOLDER deal fixtures (ACME / Globex / Initech). No real names, ids or amounts. */
-import type { AccountScope, DcRecord, LineItemRecord, OppRecord } from '@/engines/deals';
+import type { AccountScope, DcRecord, LineItemRecord, OppRecord } from '@/engines/deals/types';
 
 export const ME = { userId: '005PLACEHOLDER0001', name: 'Test User' };
 export const OTHER_SE = '005PLACEHOLDER0002';

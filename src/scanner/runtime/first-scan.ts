@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { stateDir } from '../../ops/paths';
+import { stateWriteFailed } from './state-write';
 import type { ConnectorId } from '../types';
 
 const DAY = 24 * 3_600_000;
@@ -79,6 +80,32 @@ export interface FirstScanState {
   late?: Record<string, string>;
   doneAt?: string;
   exhaustedAt?: string;
+  /** FTI first-scan progress per source (connector id): items read, asks and promises found, links, spend, runs. */
+  sources?: Record<string, FirstScanSourceProgress>;
+}
+
+export interface FirstScanSourceProgress {
+  read: number;
+  found: number;
+  linked: number;
+  usd: number;
+  runs: number;
+}
+
+const SOURCE_LABEL: Record<string, [string, string]> = {
+  slack: ['Slack', 'messages'],
+  gmail: ['Gmail', 'emails'],
+  org62: ['Org62', 'records'],
+  drive: ['Drive', 'file changes'],
+  gemini_notes: ['Meeting notes', 'notes'],
+  calendar: ['Calendar', 'events'],
+};
+
+/** "Slack: 1,240 messages read, 31 asks found, $0.42 so far" (data for Health; the surfaces chunk owns the copy). */
+export function firstScanProgressLine(connector: string, p: FirstScanSourceProgress): string {
+  const [label, noun] = SOURCE_LABEL[connector] ?? [connector, 'items'];
+  const n = (x: number) => x.toLocaleString('en-US');
+  return `${label}: ${n(p.read)} ${noun} read, ${n(p.found)} ask${p.found === 1 ? '' : 's'} found, $${p.usd.toFixed(2)} so far`;
 }
 
 export interface FirstScanLedger {
@@ -123,11 +150,16 @@ export class FileFirstScanLedger implements FirstScanLedger {
       return undefined;
     }
   }
+  /** ask #14: a full disk (or a permissions change) skips the write; the state lives on in memory and the next save retries. */
   save(s: FirstScanState): void {
-    fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
-    const tmp = `${this.file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(s, null, 1), { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
+    try {
+      fs.mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
+      const tmp = `${this.file}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 1), { mode: 0o600 });
+      fs.renameSync(tmp, this.file);
+    } catch (err) {
+      stateWriteFailed('first-scan state', err);
+    }
   }
 }
 
@@ -221,6 +253,17 @@ export class FirstScan {
       this.s.exhaustedAt = now.toISOString();
     }
     this.ledger.save(this.s);
+  }
+
+  /** Count one first-scan run of a source; returns its running totals and the progress line. */
+  noteProgress(connector: ConnectorId, add: { read: number; found: number; linked: number; usd: number }): FirstScanSourceProgress & { line: string } {
+    const cur = this.s?.sources?.[connector] ?? { read: 0, found: 0, linked: 0, usd: 0, runs: 0 };
+    const next = { read: cur.read + Math.max(0, add.read), found: cur.found + Math.max(0, add.found), linked: cur.linked + Math.max(0, add.linked), usd: Math.round((cur.usd + Math.max(0, add.usd)) * 1e6) / 1e6, runs: cur.runs + 1 };
+    if (this.s) {
+      this.s.sources = { ...(this.s.sources ?? {}), [connector]: next };
+      this.ledger.save(this.s);
+    }
+    return { ...next, line: firstScanProgressLine(connector, next) };
   }
 
   /** Hole re-plan rounds a scope has used (FS-2). */

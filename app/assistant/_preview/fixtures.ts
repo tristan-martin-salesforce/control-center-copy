@@ -113,6 +113,9 @@ export function fixtureMessages(r: FixtureRefs): ChatMessageView[] {
       role: 'assistant',
       at: at(r.now, 13),
       text: "**No.** It's due Friday at 12:00. Confirming the rows takes about 30 minutes; want me to pull it into your open slot at 15:00, or leave it for tomorrow morning?",
+      // Assistant v2: Auto routed this lookup to Haiku; the receipt is tier · steps · $
+      route: { intent: 'lookup', tier: 'fast', model: 'haiku', why: 'a lookup', override: false },
+      usage: { model: 'claude-haiku-5-5', inputTokens: 9_200, outputTokens: 180, costUsd: 0.0021, turns: 2, tier: 'fast', steps: 1, resumed: true },
     }),
     msg({ id: 'm-q2', role: 'user', at: at(r.now, 10), text: `Why is “${a.title}” #1?` }),
     msg({
@@ -133,6 +136,8 @@ export function fixtureMessages(r: FixtureRefs): ChatMessageView[] {
         `“${b.title}” is #2: it's due 17:00 and needs about 50 minutes of your time.`,
       ].join('\n\n'),
       resources: [{ kind: 'calendar_event', id: 'fx_evt', label: '13:30 customer review', href: '/today' }, itemRes(a)],
+      route: { intent: 'explain', tier: 'balanced', model: 'sonnet', why: 'an explanation', override: false },
+      usage: { model: 'claude-sonnet-5-5', inputTokens: 14_800, outputTokens: 420, costUsd: 0.0182, turns: 5, tier: 'balanced', steps: 4, resumed: true },
     }),
   ];
   if (r.draftId) {
@@ -178,6 +183,30 @@ export function fixtureMessages(r: FixtureRefs): ChatMessageView[] {
       at: at(r.now, 2),
       text: `Here's the change. It needs about 50 minutes of your time, so “${a.title}” starts by 09:20 instead, still hours before the 13:30 review.`,
       proposals: [{ proposal: fixtureProposal(r), summary: `“${b.title}” first, “${c.title}” after 2 pm` }],
+    }),
+    // Assistant v2: a research question shows its plan and price first, and waits for Run / Edit / Skip
+    msg({ id: 'm-q7', role: 'user', at: at(r.now, 1), text: 'Have I done anything for Globex in the past?' }),
+    msg({
+      id: 'm-plan',
+      role: 'assistant',
+      at: at(r.now, 1),
+      streaming: true,
+      status: 'streaming',
+      route: { intent: 'research', tier: 'strong', model: 'opus', why: 'a research question', override: false },
+      spentUsd: 0.0042,
+      spentModel: 'claude-opus-5-5',
+      tools: [tool('p1', 'db.work_items', 'Querying work_items where account contains "globex"', 'work_items: 2 rows')],
+      plans: [
+        {
+          id: 'fx_plan',
+          steps: [
+            { tool: 'query', what: 'Check what the app already has on Globex (items, opps, hours logged)', estUsd: 0.002 },
+            { tool: 'run', run: 'research', what: 'Search Slack, Gmail, Calendar, Drive and Org62 for Globex work since 2024', estUsd: 0.45 },
+          ],
+          estimate: { p50: 0.152, p90: 0.452, basis: 'default' },
+          status: 'waiting',
+        },
+      ],
     }),
   );
   return out;

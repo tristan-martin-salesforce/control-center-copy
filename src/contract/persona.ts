@@ -46,6 +46,7 @@ export const PersonaSettings = z.object({
   level: PersonaLevel.nullable().default(null),
   /** Edits to the preset's rules, by rule id. */
   rules: z.record(z.string(), PersonaRuleOverride).default({}),
+  /** Kept at 50 (a prompt budget): every enabled rule rides in each scan prompt (src/personas/prompt.ts). */
   customRules: z.array(PersonaCustomRule).max(50).default([]),
   /** Threshold values that differ from the preset ("staleNotesMinAmountUsd": 250000). */
   thresholds: z.record(z.string(), ThresholdValue).default({}),

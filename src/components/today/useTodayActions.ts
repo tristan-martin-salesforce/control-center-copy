@@ -9,9 +9,10 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NbaCard as NbaCardVm, NotNowReason, Proposal, RailEntry, ReauthResult, TodayPayload, WorkItem, WorkState } from '@/contract';
 import { api, ApiError, queryKey } from '@/client/api';
 import { useOptimisticMutation, type OptimisticCache } from '@/client/optimistic';
-import { toast } from '@/client/toast';
+import { toast, toastStore } from '@/client/toast';
 import type { ResolveValue } from '@/components/domain';
 import { resolutionLabel } from '@/components/domain';
+import { needsReview, useLaunchReview } from '@/components/agents/LaunchReview';
 import { failFromUrl, openExternal } from './external';
 
 const TODAY_KEY = queryKey('getToday');
@@ -296,6 +297,8 @@ export function useTodayActions(opts: TodayActionsOptions = {}) {
   );
 
   // ---- Claude Code ------------------------------------------------------------
+  // SEC-10: a prepared session (claude://code/new, with its prompt) opens only from Review prompt's Open in Claude
+  const { review: reviewLaunch, dialog: launchDialog } = useLaunchReview(openExternal);
   const launch = useOptimisticMutation({
     route: 'launchAgent',
     topics: TOPICS.concat('agents'),
@@ -307,7 +310,9 @@ export function useTodayActions(opts: TodayActionsOptions = {}) {
     },
     onSuccess: (res, input) => {
       if (input.body?.workItemId) setError(input.body.workItemId, null);
-      openExternal(res.url);
+      // the review is on screen now: "Preparing the Claude Code session…" would sit over it, saying the wrong thing
+      if (input.body?.workItemId) toastStore.dismissKey(`claude:${input.body.workItemId}`);
+      reviewLaunch(res.url, res.run.title);
     },
     onError: (err, input) => {
       const id = input.body?.workItemId ?? 'today:launch';
@@ -317,16 +322,20 @@ export function useTodayActions(opts: TodayActionsOptions = {}) {
   /** Explicit click only: the server builds the context-packed claude://code/new link and records the run. */
   const launchClaude = useCallback(
     (w: WorkItem, title?: string) => {
-      toast({ key: `claude:${w.id}`, title: 'Opening Claude Code…', body: shortTitle(title ?? w.title, 80), durationMs: 4000 });
+      toast({ key: `claude:${w.id}`, title: 'Preparing the Claude Code session…', body: shortTitle(title ?? w.title, 80), durationMs: 4000 });
       launch.mutate({ body: { workItemId: w.id, title: title ?? w.title } });
     },
     [launch],
   );
-  /** Explicit click only: an existing session's continue / needs-input link. */
-  const openClaude = useCallback((url: string, label?: string) => {
-    toast({ key: `claude:${url}`, title: 'Opening Claude Code…', body: label ? shortTitle(label, 80) : undefined, durationMs: 4000 });
-    openExternal(url);
-  }, []);
+  /** Explicit click only: an existing session's continue / needs-input link (a claude://code/new link is reviewed first). */
+  const openClaude = useCallback(
+    (url: string, label?: string) => {
+      if (needsReview(url)) return reviewLaunch(url, label);
+      toast({ key: `claude:${url}`, title: 'Opening Claude Code…', body: label ? shortTitle(label, 80) : undefined, durationMs: 4000 });
+      openExternal(url);
+    },
+    [reviewLaunch],
+  );
 
   // ---- tools ----------------------------------------------------------------
   const toolNames = useRef(new Map<string, string>());
@@ -450,6 +459,7 @@ export function useTodayActions(opts: TodayActionsOptions = {}) {
       shorter,
       launchClaude,
       openClaude,
+      launchDialog,
       runTool,
       answer,
       reauth,
@@ -457,7 +467,7 @@ export function useTodayActions(opts: TodayActionsOptions = {}) {
       errors,
       clearError,
     }),
-    [done, confirmDone, accept, resolve, letGo, snooze, notNow, applyProposal, applyProposalAsync, keepMine, undoReopen, undoClosed, undoAudit, rerank, rerankAsync, rerankM.isPending, setStartBy, shorter, launchClaude, openClaude, runTool, answer, reauth, markSeen, errors, clearError],
+    [done, confirmDone, accept, resolve, letGo, snooze, notNow, applyProposal, applyProposalAsync, keepMine, undoReopen, undoClosed, undoAudit, rerank, rerankAsync, rerankM.isPending, setStartBy, shorter, launchClaude, openClaude, launchDialog, runTool, answer, reauth, markSeen, errors, clearError],
   );
 }
 

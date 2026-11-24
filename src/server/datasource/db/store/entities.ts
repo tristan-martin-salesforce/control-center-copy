@@ -49,10 +49,19 @@ import { onsiteDaysIn } from './onsite';
 // ---------------------------------------------------------------------------
 
 /** All people of the user, as Person records (includes the me row only if it is in `people`). */
-export async function loadPeople(rc: Pick<ReadCtx, 'db' | 'userId' | 'kv'>): Promise<{ people: Person[]; meId: string | null; managerId: string | null }> {
+export type PeopleRow = typeof people.$inferSelect;
+
+/**
+ * `user`: the caller's own read of the users row (the read model reads it once for its base, so this does not read it
+ * again). `rows` in the result: the people rows read, for `loadPersonRefs` (one read of `people` per model).
+ */
+export async function loadPeople(
+  rc: Pick<ReadCtx, 'db' | 'userId' | 'kv'>,
+  user?: () => Promise<{ managerPersonId: string | null; personId: string | null } | undefined>,
+): Promise<{ people: Person[]; meId: string | null; managerId: string | null; rows: PeopleRow[] }> {
   const rows = await rc.db.select().from(people).where(eq(people.ownerUserId, rc.userId)).orderBy(asc(people.createdAt), asc(people.id));
   const ids = await rc.db.select().from(personIdentities).where(eq(personIdentities.ownerUserId, rc.userId)).orderBy(asc(personIdentities.createdAt), asc(personIdentities.id));
-  const [u] = await rc.db.select({ managerPersonId: users.managerPersonId, personId: users.personId }).from(users).where(eq(users.id, rc.userId));
+  const u = user ? await user() : (await rc.db.select({ managerPersonId: users.managerPersonId, personId: users.personId }).from(users).where(eq(users.id, rc.userId)))[0];
   const slack = new Map(ids.filter((i) => i.system === 'slack').map((i) => [i.personId, i.handle ?? i.externalId]));
   const out: Person[] = [];
   for (const r of rows) {
@@ -62,7 +71,7 @@ export async function loadPeople(rc: Pick<ReadCtx, 'db' | 'userId' | 'kv'>): Pro
     out.push(personFromRow(r, x.role, slack.get(r.id), u?.managerPersonId === r.id));
   }
   // synthetic rows (refs to people not in the directory) are still resolvable for PersonRefs
-  return { people: out, meId: u?.personId ?? null, managerId: u?.managerPersonId ?? null };
+  return { people: out, meId: u?.personId ?? null, managerId: u?.managerPersonId ?? null, rows };
 }
 
 function personFromRow(r: typeof people.$inferSelect, role: string | undefined, slackHandle: string | undefined, isManager: boolean): Person {
@@ -76,12 +85,14 @@ function personFromRow(r: typeof people.$inferSelect, role: string | undefined, 
     ...(slackHandle ? { slackHandle } : {}),
     accountId: r.accountId,
     ...(r.title ? { title: r.title } : {}),
+    // lane 07 R2: the stakeholder tier reaches the priority engine (absent = the default, normal)
+    ...(r.tier !== 'normal' ? { tier: r.tier } : {}),
   };
 }
 
-/** Every people row (directory + synthetic refs) as PersonRefs, for resolving embedded refs. */
-export async function loadPersonRefs(rc: Pick<ReadCtx, 'db' | 'userId' | 'kv'>, managerId: string | null): Promise<Map<string, PersonRef & { accountId: string | null }>> {
-  const rows = await rc.db.select().from(people).where(eq(people.ownerUserId, rc.userId)).orderBy(asc(people.createdAt), asc(people.id));
+/** Every people row (directory + synthetic refs) as PersonRefs, for resolving embedded refs (`read`: `loadPeople`'s rows). */
+export async function loadPersonRefs(rc: Pick<ReadCtx, 'db' | 'userId' | 'kv'>, managerId: string | null, read?: readonly PeopleRow[]): Promise<Map<string, PersonRef & { accountId: string | null }>> {
+  const rows = read ?? (await rc.db.select().from(people).where(eq(people.ownerUserId, rc.userId)).orderBy(asc(people.createdAt), asc(people.id)));
   const m = new Map<string, PersonRef & { accountId: string | null }>();
   for (const r of rows) {
     const x = ext<{ role: string }>(rc, 'people', r.id);
@@ -156,11 +167,12 @@ export async function loadAccounts(rc: ReadCtx): Promise<Account[]> {
         id: r.id,
         name: r.name,
         industry: r.industry,
-        dcStatus: x.dcStatus ?? 'none',
+        // D-98: the columns first (dc_status, org62_url), the ext object as the kv fallback
+        dcStatus: (r.dcStatus as Account['dcStatus'] | null) ?? x.dcStatus ?? 'none',
         vdpStatus: x.vdpStatus ?? 'none',
         hoursQtd: x.hoursQtd ?? 0,
         team: (x.teamIds ?? []).map((id) => personRef(rc, id)!),
-        org62Url: x.org62Url ?? (r.org62AccountId ? org62RecordLink('Account', r.org62AccountId) : null),
+        org62Url: r.org62Url ?? x.org62Url ?? (r.org62AccountId ? org62RecordLink('Account', r.org62AccountId) : null),
         notes: r.notes ?? '',
       };
     });
@@ -188,6 +200,8 @@ interface OppExt {
   ownerId: string;
   org62Url: string;
   findingOnly: boolean;
+  /** A seeded opp team (DC1: a covered AE matches as a member); a read opp's team is opportunity_team_members. */
+  team: Array<{ id: string; org62UserId: string | null }>;
 }
 
 export async function loadOpportunities(rc: ReadCtx): Promise<{ opps: Opportunity[]; findingOnly: Map<string, typeof opportunities.$inferSelect> }> {
@@ -225,19 +239,21 @@ export async function loadOpportunities(rc: ReadCtx): Promise<{ opps: Opportunit
       closeDate: r.closeDate,
       isOpen: !r.isClosed,
       isMine: r.onMyTeam,
-      dcAssigned: !!x.dcAssigned || !!dcOf(r),
+      // D-98: the columns first (dc_assigned, next_step, products, owner_person_id), the ext object as the kv fallback
+      dcAssigned: r.dcAssigned || !!x.dcAssigned || !!dcOf(r),
       vdpLinked: !!x.vdpLinked,
       hoursQtd: x.hoursQtd ?? 0,
-      nextStep: x.nextStep ?? null,
+      nextStep: r.nextStep ?? x.nextStep ?? null,
       // seeded rows say so (insertOpportunity); a projected row once a read that selects NextStep saw it
-      nextStepRead: x.nextStepRead === true || !!x.nextStep,
-      products: x.products ?? [],
-      owner: x.ownerId ? personRef(rc, x.ownerId) : null,
+      nextStepRead: x.nextStepRead === true || !!(r.nextStep ?? x.nextStep),
+      products: r.products ?? x.products ?? [],
+      owner: (r.ownerPersonId ?? x.ownerId) ? personRef(rc, r.ownerPersonId ?? x.ownerId) : null,
       org62Url: x.org62Url ?? (r.org62OpportunityId ? org62RecordLink('Opportunity', r.org62OpportunityId) : null),
       myDc: dcOf(r),
       forecastCategory: r.forecastCategory,
       isWon: r.isWon,
       updatedAt: isoReq(r.updatedAt),
+      ...(x.team ? { team: x.team.map((m) => ({ ...personRef(rc, m.id)!, org62UserId: m.org62UserId })) } : {}),
     });
   }
   return { opps, findingOnly };
@@ -276,6 +292,7 @@ export async function insertOpportunity(w: WriteCtx, o: OppInsert | (Omit<OppIns
     ownerId: o.owner ? uuidFor(o.owner.id) : undefined,
     org62Url: o.org62Url ?? undefined,
     findingOnly: 'findingOnly' in o ? true : undefined,
+    team: o.team ? o.team.map((m) => ({ id: uuidFor(m.id), org62UserId: m.org62UserId ?? null })) : undefined,
   });
   // a seeded DC of mine (the Org62 scans write the rest: projections → syncMyDcs)
   const dc = o.myDc;
@@ -453,8 +470,10 @@ function responseFields(r: Pick<typeof calendarEvents.$inferSelect, 'myResponse'
   };
 }
 
-export async function loadCalendarEvents(rc: ReadCtx): Promise<CalendarEvent[]> {
-  const rows = await rc.db.select().from(calendarEvents).where(eq(calendarEvents.ownerUserId, rc.userId)).orderBy(asc(calendarEvents.createdAt), asc(calendarEvents.id));
+/** `ids`: only those events (a page scope's window, reads/rows.ts); omitted = every event. */
+export async function loadCalendarEvents(rc: ReadCtx, ids?: readonly string[]): Promise<CalendarEvent[]> {
+  if (ids && !ids.length) return [];
+  const rows = await rc.db.select().from(calendarEvents).where(ids ? and(eq(calendarEvents.ownerUserId, rc.userId), inArray(calendarEvents.id, [...ids])) : eq(calendarEvents.ownerUserId, rc.userId)).orderBy(asc(calendarEvents.createdAt), asc(calendarEvents.id));
   if (!rows.length) return [];
   const att = await rc.db.select().from(calendarEventAttendees).where(inArray(calendarEventAttendees.calendarEventId, rows.map((r) => r.id))).orderBy(asc(calendarEventAttendees.id));
   const sources = await loadEventSources(rc, [...new Set(rows.map((r) => r.sourceItemId).filter((x): x is string => !!x))]);

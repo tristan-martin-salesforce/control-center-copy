@@ -5,7 +5,7 @@
  * account; a `create` needs a name. The decision is cached per unit with the hash of its inputs, so it runs again only
  * when they change (src/engines/vdp/identity.ts `resolveCompanyIdentity` applies it). Writes nothing.
  */
-import { ledgerHash } from '@/db/ledger';
+import { ledgerHash } from '@/lib/ledger-hash';
 import type { VdpIdentityPick } from '@/contract';
 import { loadSkill } from '@/engines/nba/prompt/skills';
 import type { CompletionModel } from '@/scanner/completion/types';

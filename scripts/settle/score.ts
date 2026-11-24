@@ -10,8 +10,8 @@
  * when the key says settled; closing a gone_quiet item is a soft error; closing a still_yours item is a wrong close.
  */
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { inStateDir } from '../../src/lib/state-folder';
 
 import { ClosingSettings, DEFAULT_CLOSING_SETTINGS } from '../../src/contract';
 import { decideSettle, SETTLE_THRESHOLDS } from '../../src/engines/settle/policy';
@@ -24,8 +24,8 @@ const opt = (n: string) => {
   const i = args.indexOf(`--${n}`);
   return i >= 0 ? args[i + 1] : undefined;
 };
-const KEY_DIR = opt('key') ?? path.join(os.homedir(), 'Library/Application Support/control-center/stress/settle-key/key');
-const ITEMS = path.join(os.homedir(), 'Library/Application Support/control-center/stress/settle-key/items.jsonl');
+const KEY_DIR = opt('key') ?? inStateDir('stress', 'settle-key', 'key');
+const ITEMS = inStateDir('stress', 'settle-key', 'items.jsonl');
 
 interface KeyRow {
   item_id: string;

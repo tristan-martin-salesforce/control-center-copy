@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { routes, Seed, type ActivityEntry, type Draft, type LogCanvas, type RouteKey, type RouteOutput } from '@/contract';
 import { outboxStatus } from '@/components/lists/outbox';
 import { q4Steps } from '@/components/time/derive';
+import { sendingOf } from '@/components/time/sending-derive';
 import { adminOnTime } from '@/personas';
 import { canvasHolds, canvasUrlFor } from '@/lib/canvas/payload';
 import { canvasPromptFor, logCanvasPrompt } from '@/lib/canvas/prompt';
@@ -26,7 +27,7 @@ import { createChatHost } from '@/server/chat/host';
 import { compactOutbox } from '@/server/chat/compact';
 import { logCanvasesOf } from '@/server/datasource/log-canvases';
 import { MockDataSource } from '@/server/datasource/mock';
-import { FakeMcp } from '../beoutbox/fake';
+import { FakeMcp } from '../outbox/fake';
 
 const seed = Seed.parse(JSON.parse(readFileSync(path.resolve(__dirname, '../../src/mock/seed.example.json'), 'utf8')));
 const fast = { enrichMs: 5, stepMs: 5, chatTokenMs: 0, verifyMs: 5, reevalMs: 5 };
@@ -109,6 +110,15 @@ describe('an applied logging canvas has a home and a link (mock)', () => {
     expect(receipt).toMatchObject({ state: 'verified', url: CANVAS_URL, rows: staged.entity.events });
     expect(receipt.appliedAt).toBeTruthy();
     expect(receipt.org62).toMatchObject({ logged: 0, missing: 0, waiting: staged.entity.events });
+    // C6 lane 3: before Apply the batch's one action is Review & apply; after it, Send to Org62 via Slackbot
+    // (R2-11) the filled step is the one the batch is at: Staged before Apply, Applied while it waits for the send
+    const before = sendingOf({ canvases: [pending] }).batches[0]!;
+    expect(before).toMatchObject({ next: 'apply', rows: staged.entity.events });
+    expect(before.steps.map((x) => x.state)).toEqual(['current', 'todo', 'todo', 'todo']);
+    const lane = sendingOf({ canvases: [receipt] });
+    expect(lane.batches[0]!.steps.map((x) => x.state)).toEqual(['done', 'current', 'todo', 'todo']);
+    expect(lane.batches[0]!.next).toBe('send');
+    expect(lane.header).toMatchObject({ batches: 1, failed: 0 });
     for (const rid of receipt.rowIds) expect(t.entries.find((e) => e.id === rid)?.status ?? 'synced_to_canvas').toBe('synced_to_canvas');
 
     // the Assistant sees it: created, with its link

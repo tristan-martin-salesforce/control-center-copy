@@ -1,19 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildTimeBlocks,
-  classifyMeeting,
-  humanHours,
-  isCF,
-  isCR,
-  isNeither,
-  leverageHours,
-  proposeActivity,
-  roundQuarter,
-  zonedToMs,
-  localDay,
-  weekStart,
-  type EvidenceBundle,
-} from '@/engines/activity';
+import { buildTimeBlocks, humanHours, leverageHours } from '@/engines/activity/blocks';
+import { classifyMeeting } from '@/engines/activity/classify';
+import { isCF, isCR, isNeither, roundQuarter } from '@/engines/activity/taxonomy';
+import { proposeActivity } from '@/engines/activity/propose';
+import { zonedToMs, localDay, weekStart } from '@/engines/activity/time';
+import type { EvidenceBundle } from '@/engines/activity/types';
 import { CFG, MAPPINGS, NOW, cal, OPP_ACME } from '../fixtures/org62/activity';
 
 const EMPTY: EvidenceBundle = { calendar: [], claude: [], drive: [], slack: [], git: [] };

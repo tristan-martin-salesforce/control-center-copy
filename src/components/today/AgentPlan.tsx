@@ -50,8 +50,48 @@ const SINCE_GROUPS: Array<{ kinds: SinceEntry['kind'][]; label: string }> = [
   { kinds: ['brief'], label: 'Briefs' },
 ];
 
-function SinceDigest() {
+/** Entries per digest group before "Show all N" (caps audit F-13: every entry is one click away). */
+const SINCE_FIRST = 8;
+
+export function SinceGroup({ label, entries }: { label: string; entries: SinceEntry[] }) {
   const ctx = useToday();
+  const [all, setAll] = useState(false);
+  const shown = all ? entries : entries.slice(0, SINCE_FIRST);
+  return (
+    <section aria-label={label}>
+      <h4 className="text-caption font-bold text-muted">
+        {label} · {entries.length}
+      </h4>
+      <ul className="mt-1">
+        {shown.map((e, i) => (
+          <li key={`${e.at}${i}`} className="flex items-start gap-2 py-1">
+            <span className="w-11 shrink-0 text-caption text-faint tabular-nums">{hhmm(minuteOfDay(e.at, ctx.tz))}</span>
+            <button
+              type="button"
+              className="min-w-0 flex-1 truncate text-left text-caption text-fg hover:text-link hover:underline"
+              title={e.title}
+              onClick={() => ctx.openDetails({ kind: e.ref.type, id: e.ref.id, label: e.title })}
+            >
+              {e.title}
+            </button>
+            {e.auditId ? (
+              <button type="button" className="shrink-0 text-caption font-bold text-link hover:underline" onClick={() => ctx.actions.undoAudit(e.auditId!, e.title)}>
+                Undo
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {entries.length > SINCE_FIRST ? (
+        <button type="button" className="mt-0.5 text-caption font-bold text-link hover:underline" onClick={() => setAll((v) => !v)} data-since-all>
+          {all ? 'Show fewer' : `Show all ${entries.length}`}
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function SinceDigest() {
   const q = useSheetQuery('getSince');
   if (q.isLoading) return <Skeleton count={5} className="mt-3" />;
   if (q.error || !q.data) return <PanelError title="The digest didn’t load" error={q.error} onRetry={() => void q.refetch()} />;
@@ -62,33 +102,7 @@ function SinceDigest() {
       {SINCE_GROUPS.map((g) => {
         const entries = d.entries.filter((e) => g.kinds.includes(e.kind));
         if (!entries.length) return null;
-        return (
-          <section key={g.label} aria-label={g.label}>
-            <h4 className="text-caption font-bold text-muted">
-              {g.label} · {entries.length}
-            </h4>
-            <ul className="mt-1">
-              {entries.slice(0, 8).map((e, i) => (
-                <li key={`${e.at}${i}`} className="flex items-start gap-2 py-1">
-                  <span className="w-11 shrink-0 text-caption text-faint tabular-nums">{hhmm(minuteOfDay(e.at, ctx.tz))}</span>
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 truncate text-left text-caption text-fg hover:text-link hover:underline"
-                    title={e.title}
-                    onClick={() => ctx.openDetails({ kind: e.ref.type, id: e.ref.id, label: e.title })}
-                  >
-                    {e.title}
-                  </button>
-                  {e.auditId ? (
-                    <button type="button" className="shrink-0 text-caption font-bold text-link hover:underline" onClick={() => ctx.actions.undoAudit(e.auditId!, e.title)}>
-                      Undo
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
+        return <SinceGroup key={g.label} label={g.label} entries={entries} />;
       })}
     </div>
   );
@@ -151,7 +165,7 @@ export const AgentPlan = forwardRef<HTMLDivElement, AgentPlanProps>(function Age
         ) : p.state === 'loading' ? (
           <Skeleton count={5} className="mt-2" />
         ) : !p.changes.length || p.state === 'empty' ? (
-          <p className="border-t border-line py-3 text-caption text-muted">No changes proposed. The day already fits as it is.</p>
+          <p className="border-t border-line py-3 text-caption text-muted">No changes proposed. The day already fits as it is; the agent proposes a new plan when a meeting moves or new work lands.</p>
         ) : (
           <ol className="td-diff" aria-label="Proposed changes">
             {p.changes.map((c) => {

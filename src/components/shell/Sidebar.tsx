@@ -35,25 +35,30 @@ import { SpendPopover, StatusPopover } from './StatusPanels';
 import { FooterVersion } from './FooterVersion';
 import { GuideRoot } from '@/guide/GuideRoot';
 import { timeBadges } from '@/components/time/badges';
+import { useNeeds } from '@/components/needs/useNeeds';
+import { needsCount } from '@/engines/needs/count';
 
 export function LogoTile({ className }: { className?: string }) {
   return (
     <AppLink
       href="/"
-      aria-label="Command Center: Home"
       className={cn(
         'grid size-7 shrink-0 place-items-center rounded-lg bg-gradient-brand text-caption leading-none font-bold text-white no-underline hover:text-white hover:no-underline focus-visible:outline-none focus-visible:shadow-focus',
         className,
       )}
     >
-      cc
+      {/* named by the sr-only text, not an aria-label: the visible "cc" mark is not a word of the name (WCAG 2.5.3) */}
+      <span aria-hidden>cc</span>
+      <span className="sr-only">Command Center: Home</span>
     </AppLink>
   );
 }
 
 // ── Counts ──────────────────────────────────────────────────────────────────────────────────
 
-export function navCount(today: TodayPayload | undefined, key: NavCountKey | undefined): number | undefined {
+/** `needs`: the Needs-you queue's total (needsCount over GET /needs), the one count every surface shows. */
+export function navCount(today: TodayPayload | undefined, key: NavCountKey | undefined, needs?: number): number | undefined {
+  if (key === 'needs') return needs;
   if (!today || !key) return undefined;
   if (key === 'today') return today.nowStack.cards.length + today.moreToday.count;
   // Time: the admin items waiting for Apply (loud), else the VDPs that need you (quiet, D-59); the sum of Time's tab
@@ -110,8 +115,10 @@ export function SidebarLink({ item, active, count, attn: attnProp, collapsed, hr
         <>
           <span className="min-w-0 flex-1 truncate">{item.label}</span>
           {count ? (
-            <span className={cn('text-caption tabular-nums', attn ? 'font-bold text-danger-700' : 'text-muted')} aria-label={attn ? `${count} waiting for approval` : `${count}${quietWhat}`}>
+            <span className={cn('text-caption tabular-nums', attn ? 'font-bold text-danger-700' : 'text-muted')}>
               <LiveCount value={count} />
+              {/* what the count counts, read after the number (an aria-label on a plain span is dropped) */}
+              <span className="sr-only">{attn ? ' waiting for approval' : quietWhat}</span>
             </span>
           ) : null}
         </>
@@ -248,7 +255,7 @@ export function SidebarFooter({ health, pathname, collapsed, static: isStatic }:
   );
 
   const spendTrigger = spend ? (
-    <FootButton aria-label={`LLM spend: ${spend.text}`} className={cn('-mx-2 min-h-8 px-2 py-1.5', spend.tone === 'quiet' ? 'text-faint' : spend.tone === 'warn' ? 'font-bold text-warning-700' : 'font-bold text-danger-700')}>
+    <FootButton aria-label={`AI spend: ${spend.text}`} className={cn('-mx-2 min-h-8 px-2 py-1.5', spend.tone === 'quiet' ? 'text-faint' : spend.tone === 'warn' ? 'font-bold text-warning-700' : 'font-bold text-danger-700')}>
       <span className="min-w-0">{spend.text}</span>
     </FootButton>
   ) : null;
@@ -293,13 +300,15 @@ export interface SidebarProps {
   /** Override the data (kit specimens); otherwise the live chrome queries. */
   today?: TodayPayload;
   health?: HealthPayload;
+  /** Override the Needs-you count (kit specimens); otherwise GET /needs. */
+  needs?: number;
   /** Override the active route (kit specimens). */
   pathname?: string;
   static?: boolean;
   className?: string;
 }
 
-export function Sidebar({ collapsed: collapsedProp, today: todayProp, health: healthProp, pathname: pathnameProp, static: isStatic, className }: SidebarProps) {
+export function Sidebar({ collapsed: collapsedProp, today: todayProp, health: healthProp, needs: needsProp, pathname: pathnameProp, static: isStatic, className }: SidebarProps) {
   const shell = useShellOptional();
   const routePath = usePathname() ?? '/';
   // A pending navigation lights its destination at once (the route may still be compiling or loading).
@@ -308,6 +317,8 @@ export function Sidebar({ collapsed: collapsedProp, today: todayProp, health: he
   const chrome = useChromeData();
   const today = todayProp ?? chrome.today.data;
   const health = healthProp ?? chrome.health.data;
+  const needsQ = useNeeds({ enabled: needsProp === undefined });
+  const needs = needsProp ?? (needsQ.data ? needsCount(needsQ.data) : undefined);
   const collapsed = collapsedProp ?? shell?.sidebarCollapsed ?? false;
   const toggle = shell?.toggleSidebar;
   const persona = usePersona();
@@ -346,7 +357,7 @@ export function Sidebar({ collapsed: collapsedProp, today: todayProp, health: he
           <div key={g.id} role="group" aria-label={g.label ?? 'Main'} className={cn('flex flex-col', collapsed ? 'items-center gap-1' : 'gap-0.5', g.label && (collapsed ? 'mt-2 border-t border-line pt-3' : 'mt-3'))}>
             {g.label && !collapsed ? <span className="px-2.5 pt-1 pb-1 text-caption text-faint">{g.label}</span> : null}
             {g.items.map((it) => (
-              <SidebarLink key={it.href} item={it} active={isNavActive(it, pathname)} count={navCount(today, it.count)} attn={navAttn(today, it.count)} href={navHref(today, it)} collapsed={collapsed} />
+              <SidebarLink key={it.href} item={it} active={isNavActive(it, pathname)} count={navCount(today, it.count, needs)} attn={navAttn(today, it.count)} href={navHref(today, it)} collapsed={collapsed} />
             ))}
           </div>
         ))}

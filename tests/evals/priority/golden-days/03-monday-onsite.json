@@ -1,0 +1,26 @@
+{
+  "name": "monday-onsite",
+  "description": "Mon 2026-11-23 07:00 MT, day 1 of the Cascadia onsite (08:00-17:00, CAST storyline 6). Friday's blueprint, agenda, dry run, log and training are done. The onsite fills the working day, so almost nothing fits: the day is overbooked and only what can't wait (the vendor security questionnaire due Tue 12:00) belongs at the top; admin and gone-quiet items stay out of the way.",
+  "now": "2026-11-23T14:00:00.000Z",
+  "timezone": "America/Denver",
+  "workingHours": { "start": "07:30", "end": "17:30", "days": [1, 2, 3, 4, 5] },
+  "overrides": {
+    "wi-093": { "state": "done" }, "wi-015": { "state": "done" }, "wi-103": { "state": "done" }, "wi-061": { "state": "done" },
+    "wi-060": { "state": "done" }, "wi-031": { "state": "done" }, "wi-032": { "state": "done" }, "wi-105": { "state": "done" },
+    "wi-030": { "state": "done" }, "wi-006": { "state": "done" }, "wi-014": { "state": "done" }, "wi-066": { "state": "done" },
+    "wi-099": { "state": "done" }, "wi-039": { "state": "done" }, "wi-058": { "state": "done" },
+    "wi-003": { "state": "done" }, "wi-053": { "state": "done" }, "wi-029": { "state": "done" }, "wi-090": { "state": "done" },
+    "wi-096": { "state": "done" }, "wi-021": { "state": "done" }
+  },
+  "firstScreen": 5,
+  "goldenTop3": [["wi-018"]],
+  "expectations": [
+    { "kind": "inTop3", "anyOf": ["wi-018"], "note": "the Saltmere security questionnaire is due Tue 12:00 and the onsite takes both days" },
+    { "kind": "notFirstScreen", "ids": ["wi-027", "wi-037", "wi-072", "wi-097", "wi-098"], "note": "admin stays quiet on an onsite day (R6 admin batch)" },
+    { "kind": "order", "above": "wi-018", "below": "wi-044", "note": "the questionnaire above a 10-day-late follow-up: needs start-by planned back through the onsite (PRIO-2, R5) and value x urgency" },
+    { "kind": "order", "above": "wi-018", "below": "wi-092", "note": "above an undated promise" },
+    { "kind": "capacity", "is": "overbooked", "note": "the onsite holds 08:00-17:00 both days, so the 90-minute questionnaire must start today and does not fit; priority@1.1 puts its start-by on Tuesday because start-by ignores meetings (PRIO-2)" },
+    { "kind": "whyContains", "id": "wi-018", "phrases": ["due Tue 12:00", "Priyanka"] },
+    { "kind": "whyContains", "id": "wi-044", "phrases": ["d late", "re-date or drop"] }
+  ]
+}

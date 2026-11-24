@@ -6,7 +6,7 @@
  * you reopened or kept is never closed for you again (tenet: Suggest, then learn). One explicit Save, like Budgets;
  * it writes PATCH /settings/closing.
  */
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { ClosingReason, type ClosingAction, type ClosingStrictness } from '@/contract';
 import { Button, cn, SegmentedToggle, Skeleton } from '@/ui';
 import { fmtUsd } from '@/ui/format';
@@ -48,29 +48,44 @@ const STRICTNESS_HELP: Record<ClosingStrictness, string> = {
 };
 
 const RULES_MAX = 1000;
-const LIST_MAX = 50;
 
 const Loading = () => <Skeleton variant="block" className="mt-6 h-48 w-full" />;
 
 /** Chips with remove buttons, plus an add line (Enter or Add). New entries are marked until saved. */
-function ListEditor({ label, values, saved, placeholder, empty, normalise, onChange }: { label: string; values: string[]; saved: string[]; placeholder: string; empty: string; normalise: (v: string) => string | null; onChange: (v: string[]) => void }) {
+export function ListEditor({ label, values, saved, placeholder, empty, normalise, onChange }: { label: string; values: string[]; saved: string[]; placeholder: string; empty: string; normalise: (v: string) => string | null; onChange: (v: string[]) => void }) {
   const [v, setV] = useState('');
   const id = useId();
+  const box = useRef<HTMLDivElement | null>(null);
+  // A removed chip takes its button with it: focus moves to the chip that took its place (else the one before, else
+  // the add field) instead of falling to the page.
+  const [refocus, setRefocus] = useState<number | null>(null);
+  useEffect(() => {
+    if (refocus === null) return;
+    const buttons = box.current?.querySelectorAll<HTMLElement>('[data-chips] button') ?? [];
+    const target = buttons[Math.min(refocus, buttons.length - 1)] ?? box.current?.querySelector<HTMLElement>('input');
+    target?.focus();
+    setRefocus(null);
+  }, [refocus, values]);
   const was = new Set(saved);
   const next = normalise(v);
-  const full = values.length >= LIST_MAX;
   const commit = () => {
-    if (!next || full) return;
+    if (!next) return;
     if (!values.some((x) => x.toLowerCase() === next.toLowerCase())) onChange([...values, next]);
     setV('');
   };
   return (
-    <div className={`${s.ctrl} ${s.stack}`}>
-      <div className={s.chips} aria-label={label} id={id}>
-        {values.map((x) => (
+    <div className={`${s.ctrl} ${s.stack}`} ref={box}>
+      <div className={s.chips} aria-label={label} id={id} data-chips>
+        {values.map((x, i) => (
           <span key={x} className={cn(s.chip, !was.has(x) && s.chipNew)}>
             {x}
-            <MiniButton label={`Remove ${x}`} onClick={() => onChange(values.filter((y) => y !== x))}>
+            <MiniButton
+              label={`Remove ${x}`}
+              onClick={() => {
+                onChange(values.filter((y) => y !== x));
+                setRefocus(i);
+              }}
+            >
               <Glyph name="close" />
             </MiniButton>
           </span>
@@ -86,15 +101,13 @@ function ListEditor({ label, values, saved, placeholder, empty, normalise, onCha
           placeholder={placeholder}
           maxLength={120}
           value={v}
-          disabled={full}
           onChange={(e) => setV(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), commit())}
         />
-        <Button variant="secondary" onClick={commit} disabled={!next || full}>
+        <Button variant="secondary" onClick={commit} disabled={!next}>
           Add
         </Button>
       </div>
-      {full ? <p className={s.help}>{LIST_MAX} is the most this list holds.</p> : null}
     </div>
   );
 }
@@ -106,7 +119,7 @@ export function ClosingSection() {
   const usd = d.strongerModelUsdPerDay ?? 0;
   const usdErr = !Number.isFinite(usd) || usd < 0 || usd > 20 ? 'Between $0 and $20 a day.' : null;
   const days = d.oldAskDays ?? 30;
-  const daysErr = !Number.isFinite(days) || days < 3 || days > 365 || !Number.isInteger(days) ? 'Whole days, from 3 to 365.' : null;
+  const daysErr = !Number.isFinite(days) || days < 3 || !Number.isInteger(days) ? 'Whole days, 3 or more.' : null;
   const rules = d.rules ?? '';
   const err = usdErr ?? daysErr;
   return (
@@ -177,7 +190,7 @@ export function ClosingSection() {
               </Check>
             </Row>
             <Row label="Old asks" htmlFor="c-days" help="An ask older than this when first found waits in Triage ▸ Still needed?, unless the check settles it." error={daysErr} edited={f.changed('oldAskDays')}>
-              <NumberInput id="c-days" min={3} max={365} value={days} onValue={(n) => f.set('oldAskDays', n)} aria-invalid={!!daysErr} />
+              <NumberInput id="c-days" min={3} value={days} onValue={(n) => f.set('oldAskDays', n)} aria-invalid={!!daysErr} />
               <span className={s.unit}>days</span>
             </Row>
             <Row label="Stronger model for unclear cases" help="A second, stronger read when the first is unsure, up to this much a day." error={usdErr} edited={f.changed('strongerModelForUnclear') || f.changed('strongerModelUsdPerDay')}>
@@ -186,7 +199,7 @@ export function ClosingSection() {
               <NumberInput id="c-usd" min={0} max={20} step={0.5} width={88} value={usd} onValue={(n) => f.set('strongerModelUsdPerDay', n)} aria-label="Stronger model: dollars per day" aria-invalid={!!usdErr} disabled={!d.strongerModelForUnclear} />
               <span className={s.unit}>per day{Number.isFinite(usd) && d.strongerModelForUnclear ? ` · ${fmtUsd(usd * 30)} a month at most` : ''}</span>
             </Row>
-            <Row label="Tell me what closed" help="One quiet line on Home: “Closed 12 for you since you left · Review”." edited={f.changed('tellMeWhatClosed')}>
+            <Row label="Tell me what closed" help="One quiet line on Home beside Do now: “Closed 12 for you · Review”." edited={f.changed('tellMeWhatClosed')}>
               <Check checked={d.tellMeWhatClosed ?? true} onChange={(v) => f.set('tellMeWhatClosed', v)} testId="closing-tell-me">
                 Show it on Home
               </Check>

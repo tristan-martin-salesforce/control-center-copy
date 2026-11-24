@@ -1,5 +1,5 @@
 /*
- * Home (design v2, "Morning paper"): docs/ui/DESIGN-V2.md + public/mockups/home-1-briefing.html.
+ * Home (design v2, "Morning paper"): docs/archive/2026-build/DESIGN-V2.md + public/mockups/home-1-briefing.html.
  * Tokens from src/styles/brand.css only (no raw hex). v2-only names fall back to v1 ones until V2-TOKENS lands.
  * Layout reacts to #cc-main (the `main` container) and its data-panel attribute, never to the viewport.
  */
@@ -17,7 +17,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   padding: 24px 32px 12px;
   color: var(--color-fg);
   font-size: var(--text-body);
@@ -96,7 +96,7 @@
 .cc-home .hm-mast-date .hm-since-btn:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; border-radius: 2px; }
 /* planning ahead: the Today / next-day toggle, the late-day nudge (neutral: a suggestion, not a state) */
 .cc-home .hm-mast-date { align-items: center; flex-wrap: wrap; row-gap: 4px; }
-.cc-home .hm-day-toggle { flex: none; display: inline-flex; }
+.cc-home .hm-day-toggle, .cc-home .hm-view-toggle { flex: none; display: inline-flex; }
 .cc-home .hm-plan-nudge { color: var(--color-muted); }
 .cc-home[aria-busy="true"] .hm-mast ~ * { opacity: .55; transition: opacity .15s; }
 .cc-home .hm-headline { grid-area: head; font-size: var(--text-heading); line-height: var(--text-heading--line-height); font-weight: 400; color: var(--color-fg); max-width: 68ch; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -205,6 +205,7 @@
 .cc-home .hm-prep { display: flex; flex-wrap: nowrap; gap: 4px 16px; font-size: var(--text-caption); line-height: var(--text-caption--line-height); color: var(--color-faint); min-width: 0; overflow: hidden; }
 .cc-home .hm-prep > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cc-home .hm-prep > span:first-child { flex: none; }
+.cc-home .hm-prep > .hm-prep-n { flex: none; }
 .cc-home .hm-prep .is-done { color: var(--color-muted); }
 .cc-home .hm-prep .is-todo { color: var(--color-fg-heading); font-weight: 700; }
 .cc-home .hm-carried { font-size: var(--text-caption); line-height: var(--text-caption--line-height); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -229,7 +230,7 @@
 .cc-home .hm-card-empty { display: flex; align-items: center; justify-content: center; color: var(--color-faint); font-size: var(--text-caption); border-style: dashed; cursor: default; }
 
 /* ── sections: one surface, verb columns ── */
-.cc-home .hm-sections { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); flex: 0 1 auto; min-height: 300px; overflow: hidden; }
+.cc-home .hm-sections { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); flex: 0 1 auto; min-height: 300px; overflow: hidden; }
 .cc-home .hm-sec { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 16px 16px 12px; container-type: inline-size; overflow: hidden; }
 .cc-home .hm-sec + .hm-sec { border-left: var(--h-hairline); }
 .cc-home .hm-sec-head { display: flex; align-items: baseline; gap: 8px; padding-bottom: 4px; min-width: 0; }
@@ -349,7 +350,7 @@
 }
 @container main (min-width: 2000px) {
   .cc-home .hm-headline { font-size: var(--text-heading-lg); line-height: var(--text-heading-lg--line-height); }
-  .cc-home .hm-sections { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .cc-home .hm-sections { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .cc-home .hm-sec.is-initiatives { display: flex; }
 }
 
@@ -361,7 +362,7 @@
   #cc-main[data-panel="open"] .cc-home { gap: 16px; }
   #cc-main[data-panel="open"] .cc-home .hm-lead-wrap { gap: 8px; }
   #cc-main[data-panel="open"] .cc-home .hm-mast { row-gap: 4px; }
-  #cc-main[data-panel="open"] .cc-home .hm-sections { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  #cc-main[data-panel="open"] .cc-home .hm-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
   #cc-main[data-panel="open"] .cc-home .hm-rows, #cc-main[data-panel="open"] .cc-home .hm-inits, #cc-main[data-panel="open"] .cc-home .hm-sec > [role="grid"] { flex-wrap: wrap; overflow: hidden; }
   #cc-main[data-panel="open"] .cc-home .hm-sec:nth-child(3) { border-left: var(--h-hairline); }
   #cc-main[data-panel="open"] .cc-home .hm-sec:nth-child(n + 3) { border-top: 0; }
@@ -379,6 +380,34 @@
   #cc-main[data-panel="open"] .cc-home { height: 100%; }
 }
 @container main (min-width: 2000px) {
-  #cc-main[data-panel="open"] .cc-home .hm-sections { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #cc-main[data-panel="open"] .cc-home .hm-sections { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #cc-main[data-panel="open"] .cc-home .hm-sec.is-initiatives { display: none; }
+}
+
+/*
+ * R11 (01-ui-audit): the narrow layout. Under ~900 px of content (the Details panel open at 1440, or a small window)
+ * Home is one reading column: the Do now head wraps (capacity on its own line), the first card takes the row and the
+ * other two share the next, and the verb columns stack (every section shown, Chase too). The page scrolls instead of
+ * clipping. Width-only: a background refresh never changes which layout applies, so nothing moves under the reader.
+ * `.cc-home.cc-home` outranks the panel-open rules above without !important.
+ */
+@container main (max-width: 899px) {
+  #cc-main .cc-home.cc-home { height: auto; min-height: 100%; padding: 20px 20px 12px; gap: 16px; }
+  #cc-main .cc-home.cc-home .hm-lead-head { flex-wrap: wrap; row-gap: 4px; }
+  #cc-main .cc-home.cc-home .hm-lead-head .hm-note { display: inline; flex: 0 1 auto; }
+  #cc-main .cc-home.cc-home .hm-cap { margin-left: 0; flex: 1 1 100%; flex-wrap: wrap; row-gap: 2px; white-space: normal; }
+  #cc-main .cc-home.cc-home .hm-lead { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  #cc-main .cc-home.cc-home .hm-lead > :first-child { grid-column: 1 / -1; }
+  #cc-main .cc-home.cc-home .hm-card-top { flex-wrap: wrap; row-gap: 4px; }
+  #cc-main .cc-home.cc-home .hm-sections { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; overflow: visible; min-height: 0; }
+  #cc-main .cc-home.cc-home .hm-rows, #cc-main .cc-home.cc-home .hm-inits, #cc-main .cc-home.cc-home .hm-sec > [role="grid"] { flex-wrap: nowrap; overflow: visible; }
+  #cc-main .cc-home.cc-home .hm-sec { border-left: 0; overflow: visible; }
+  #cc-main .cc-home.cc-home .hm-sec + .hm-sec { border-top: var(--h-hairline); }
+  #cc-main .cc-home.cc-home .hm-sec.is-chase { display: flex; }
+  #cc-main .cc-home.cc-home .hm-end-status .hm-part.hm-chase-link { display: none; }
+  /* a meeting block too narrow for a word shows its colour only (the axis and the tooltip carry it) */
+  #cc-main .cc-home.cc-home .hm-ev:not(.is-spill):not(.is-stacked) { container: hm-ev-n / inline-size; }
+}
+@container hm-ev-n (max-width: 40px) {
+  .cc-home .hm-ev .t, .cc-home .hm-ev .n { display: none; }
 }

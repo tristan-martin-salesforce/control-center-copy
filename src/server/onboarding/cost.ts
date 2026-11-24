@@ -16,7 +16,7 @@ export interface FirstScanCostFigures {
 }
 
 export const FIRST_SCAN_COST: FirstScanCostFigures = {
-  /** docs/ui/STRESS.md §4.4: daily catch-up, every scanner, after the fixes ($0.34 quiet to $0.86 busy weekday). */
+  /** docs/archive/2026-build/STRESS.md §4.4: daily catch-up, every scanner, after the fixes ($0.34 quiet to $0.86 busy weekday). */
   allScannersPerDayUsd: { lowUsd: 0.34, highUsd: 0.86 },
   /**
    * Slack's share of that day: cold-slack $0.22 of the $0.78 all-scanner cold start (STRESS.md §4.1, §4.4). The
@@ -26,7 +26,7 @@ export const FIRST_SCAN_COST: FirstScanCostFigures = {
   slackTriageExtra: { low: 0.3, high: 0.6 },
   /**
    * Measured one-time cost per lookback (empty = days × per-day). From the first-scan ramp on one SE's real data
-   * (docs/ui/FIRST-SCAN-RAMP.md), every scanner, fresh database:
+   * (docs/archive/2026-build/FIRST-SCAN-RAMP.md), every scanner, fresh database:
    *  - 7 days, 2026-11-06: $4.42 in 54 min = scan $2.54 (Slack $1.61, Org62 $0.45, Gmail $0.16, Gemini notes $0.14,
    *    Claude sessions $0.13, Calendar $0.05) + read-ins $1.88 (Sonnet, asks from the last 48 h only, capped at $2/day).
    *  - 14 days, 2026-11-06: $7.18 in 114 min = scan $5.15 (Slack $3.66, Org62 $0.50, Gemini notes $0.46, Gmail $0.27,

@@ -16,21 +16,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { routes, Seed, type ActivityEntry, type LogCanvas, type RouteKey, type RouteOutput, type TimeWeek } from '@/contract';
-import {
-  autoApprove,
-  DEFAULT_EVIDENCE_CONFIG,
-  DECLINED_HELD_FLAG,
-  DECLINED_LOGGED_FLAG,
-  dismissRuleFlag,
-  dismissSourceOf,
-  INTERNAL_TASK_TYPES,
-  internalMeetingType,
-  personalBlockOf,
-  internalWorkType,
-  newEntry,
-  SE_TASK_TYPES,
-  type ActivityConfig,
-} from '@/engines/activity';
+import { autoApprove } from '@/engines/activity/propose';
+import { DEFAULT_EVIDENCE_CONFIG, type ActivityConfig } from '@/engines/activity/types';
+import { DECLINED_HELD_FLAG, DECLINED_LOGGED_FLAG, dismissRuleFlag, dismissSourceOf, INTERNAL_TASK_TYPES, internalMeetingType, personalBlockOf, internalWorkType } from '@/engines/activity/internal';
+import { newEntry } from '@/engines/activity/entry';
+import { SE_TASK_TYPES } from '@/engines/activity/taxonomy';
 import { eventRow, renderWorkOrder } from '@/engines/activity/slackbot';
 import { loggingProfile } from '@/engines/activity/persona';
 import { internalPatch, isInternalEntry, restoredStatus } from '@/lib/time-internal';
@@ -38,8 +28,17 @@ import { personaOf } from '@/personas';
 import { planWeek, type FixedEntry, type WeekEvent, type WeekInput, type WeekSession } from '@/projections/activity';
 import { Matcher, type MatchOpp } from '@/projections/matching';
 import { MockDataSource } from '@/server/datasource/mock';
+import { toLogCount } from '@/engines/activity/to-log-count';
+import { TO_LOG_NEED_STATUSES, toLogRange } from '@/engines/activity/to-log-rows';
+import { NOT_IN_ORG62_FLAG } from '@/engines/activity/org62-check';
+import { fixLane } from '@/components/time/fix-derive';
+import { timeBadges } from '@/components/time/badges';
+import { lanesOf } from '@/components/time/lanes-derive';
+import { unsettledIds } from '@/components/time/history-derive';
+import { scaleSeed } from '@/mock/scale';
+import { timeReadyProvider } from '@/engines/needs/providers/time';
 import { patchedEntry } from '@/server/time/dismiss';
-import { isLoggable, q4Steps } from '@/components/time/derive';
+import { isLoggable, q4Range, q4Steps, quarterRowsOf } from '@/components/time/derive';
 import { fixPatch, internalGroup, logPath, missingOf, needsYou, weekSuggested } from '@/components/time/path-derive';
 
 import { ME, RULES, TZ } from '../projections/fixtures';
@@ -398,14 +397,13 @@ describe('Time: internal rows never ask for an opp; the picker\'s Internal compl
 
   it('the work order: an internal row has an empty WhatId, its task type, and a rule that says to leave Related To empty', () => {
     const row = eventRow({ id: 'act-1', subject: 'demo-kit: internal asset build', start: '2026-11-03T22:00:00.000Z', end: '2026-11-03T23:30:00.000Z', durationH: 1.5, taskType: 'Asset Creation', whatOrg62Id: '', origin: 'evidence' });
-    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events: [row], updates: [], sourceLabel: 'Control Center' });
+    const md = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events: [row], updates: [], sourceLabel: 'Command Center' });
     expect(md).toContain('|Asset Creation|1.5||');
-    expect(md).toContain('**Internal rows:** a row whose WhatId cell is empty is internal work with no opportunity');
-    expect(md).toContain('5. Work through everything');
+    expect(md).toContain('A row whose WhatId is empty is internal work with no opportunity: create it with WhatId (Related To) left empty');
     // a work order with no internal row is exactly the one Slackbot has always run
-    const plain = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events: [{ ...row, whatId: OPP }], updates: [], sourceLabel: 'Control Center' });
-    expect(plain).not.toContain('Internal rows');
-    expect(plain).toContain('4. Work through everything');
+    const plain = renderWorkOrder({ ownerName: 'PERSON_ME', ownerOrg62Id: '005XX0000000OWNAAA', recordTypeId: '012XX0000000RTYAAA', generatedAt: NOW, events: [{ ...row, whatId: OPP }], updates: [], sourceLabel: 'Command Center' });
+    expect(plain).not.toContain('internal work');
+    expect(plain).toContain('2. Work through everything');
   });
 });
 
@@ -446,7 +444,7 @@ describe('the mock DataSource', () => {
     expect(tw.entries.some((e) => e.sources.some((s) => s.externalId === 'ev_tue_declined'))).toBe(false);
   });
 
-  it('the picker\'s Internal on a held row: internal, no opp or account, approved; it logs with an empty WhatId; the sidebar counts do not change', async () => {
+  it('the picker\'s Internal on a held row: internal, no opp or account, approved; it logs with an empty WhatId; the other sidebar counts do not change, the To log count drops by the fixed row', async () => {
     const ds = fresh();
     const counts = (await call(ds, 'getToday', {})).navCounts;
     const held = ds.store.get('activity', 'ac_wed_hooli')!;
@@ -455,8 +453,8 @@ describe('the mock DataSource', () => {
     expect(r.entity).toMatchObject({ internal: true, oppId: null, accountName: null, meetingType: null, status: 'approved' });
     expect(INTERNAL_TASK_TYPES as readonly string[]).toContain(r.entity.taskType);
     expect(r.entity.userLockedFields).toEqual(expect.arrayContaining(['oppId', 'taskType']));
-    // the sidebar never counted rows; making one internal changes none of its numbers
-    expect((await call(ds, 'getToday', {})).navCounts).toEqual(counts);
+    // making one internal changes none of the other numbers; To log's one count (C10) loses the row it fixed
+    expect((await call(ds, 'getToday', {})).navCounts).toEqual({ ...counts, toLog: counts.toLog - 1 });
     // a proposed internal row waits for its Log; the approved one goes on the canvas, Related To empty
     const b = await call(ds, 'stageLogBatch', { body: {} });
     const md = ds.store.get('drafts', b.entity.draftIds[0]!)!.destination as unknown as { input: { markdown: string; eventIds: string[] } };
@@ -464,7 +462,7 @@ describe('the mock DataSource', () => {
     expect(md.input.eventIds).not.toContain('ac_tue_repo');
     const line = md.input.markdown.split('\n').find((l) => l.includes('Hooli onsite'))!;
     expect(line).toContain(`|${r.entity.taskType}|4||`);
-    expect(md.input.markdown).toContain('**Internal rows:**');
+    expect(md.input.markdown).toContain('A row whose WhatId is empty is internal work');
   });
 
   it('an internal row switched to an opportunity is customer work again (its type follows)', async () => {
@@ -505,5 +503,140 @@ describe('the mock DataSource', () => {
     expect(r.entity).toMatchObject({ status: 'dismissed', excludedReason: 'dismissed' });
     const log = await call(ds, 'getActivityLog', { query: {} });
     expect(internalGroup(log.entries).ids).not.toContain('ac_wed_docs');
+  });
+});
+
+// C10: the sidebar's Activity badge is To log's one count: the server's `navCounts.toLog` (src/server/views/today.ts,
+// src/engines/activity/to-log-count.ts) equals `lanesOf(...).badge` (the To log tab) over the same rows and batches.
+// (Here, not in a file of its own: a new test file importing path-derive would widen overlap-flags' fan-out, ENG-5.)
+const c10Seed = Seed.parse(JSON.parse(readFileSync(path.resolve(__dirname, '../../src/mock/seed.example.json'), 'utf8')));
+const c10Fast = { enrichMs: 1e8, stepMs: 5, chatTokenMs: 0, verifyMs: 1e8, reevalMs: 1e8 };
+const c10Made: MockDataSource[] = [];
+afterEach(() => {
+  for (const d of c10Made.splice(0)) d.dispose();
+});
+
+describe('To log count (C10): the sidebar says what the tab says', () => {
+  it('navCounts.toLog equals lanesOf(...).badge over the rows To log reads, and the sidebar shows it', async () => {
+    const ds = new MockDataSource({ seed: structuredClone(c10Seed), delays: c10Fast, autoplay: false, clockMode: 'seed' });
+    c10Made.push(ds);
+    const week = await ds.getTime({ query: {} } as never);
+    const log = await ds.getActivityLog({ query: q4Range(week) } as never);
+    const rows = log.entries;
+    const canvases = week.logCanvases;
+    const taskTypeRequired = loggingProfile(personaOf(ds.store.settings())).taskTypeRequired;
+    const lanes = lanesOf({ path: { needs: needsYou(rows, { canvases, taskTypeRequired }), readyIds: [], internal: internalGroup(rows, canvases) }, rows, canvases });
+    const today = await ds.getToday({} as never);
+    expect(lanes.badge).toBeGreaterThan(0);
+    expect(today.navCounts.toLog).toBe(lanes.badge);
+    expect(toLogCount({ rows, canvases, taskTypeRequired }).badge).toBe(lanes.badge);
+    // nothing else waits in this seed's other tabs → the sidebar's number is the tab's
+    const b = timeBadges(today.navCounts);
+    expect(b.log).toBe(lanes.badge);
+  });
+
+  it('an older payload without toLog keeps the approvals count', () => {
+    expect(timeBadges({ adminWaiting: 2, vdpOpen: 0, adminBySurface: { log: 2, forecast: 0, vdp: 0 } }).log).toBe(2);
+    expect(timeBadges({ adminWaiting: 1, vdpOpen: 0, adminBySurface: { log: 1, forecast: 0, vdp: 0 }, toLog: 38 }).log).toBe(38);
+  });
+});
+
+// F1 (2026-11-23 lanes review, R2-1): one row set, one rule. Home's queue row, the sidebar's navCounts.toLog, the To
+// log tab badge (`lanesOf(...).badge`, over the rows useQuarterRows reads) and lane 1 + Sending failures are one
+// number, on rows across two quarters (last quarter's before the 3-week lookback), internal rows, a row Org62 lacks
+// after its batch ran and a batch in flight. (Here, not in a file of its own: ENG-5.)
+describe('To log row set (F1): the queue row, the sidebar and the tab count the same rows', () => {
+  it('provider title = navCounts.toLog = lanesOf(...).badge = lane 1 + Sending failures, Q3 rows included', async () => {
+    const seed = structuredClone(c10Seed);
+    const moveTo = (e: (typeof seed.activity)[number], day: string) => {
+      const hm = (iso: string) => iso.slice(10);
+      Object.assign(e, { date: day, start: `${day}${hm(e.start)}`, end: `${day}${hm(e.end)}` });
+    };
+    // two fix rows of last quarter (Q3 FY27), before the quarter-so-far and 3-week lookback base range
+    moveTo(seed.activity.find((e) => e.id === 'ac_wed_roadmap')!, '2026-09-15');
+    moveTo(seed.activity.find((e) => e.id === 'ac_mon_claude_model')!, '2026-09-16');
+    // an internal row held for a fix in Q3 (never a need, D-64) and a row Org62 lacks after its batch ran (D-65)
+    const internal = { ...structuredClone(seed.activity.find((e) => e.id === 'ac_tue_repo')!), id: 'ac_f1_internal', status: 'needs_input' as const, durationH: 0 };
+    moveTo(internal, '2026-09-01');
+    const notFound = { ...structuredClone(seed.activity.find((e) => e.id === 'ac_tue_sow')!), id: 'ac_f1_nf', status: 'synced_to_canvas' as const, issues: [NOT_IN_ORG62_FLAG], canvasDraftId: 'dr_f1_gone' };
+    moveTo(notFound, '2026-09-10');
+    seed.activity.push(internal, notFound);
+    const ds = new MockDataSource({ seed, delays: c10Fast, autoplay: false, clockMode: 'seed' });
+    c10Made.push(ds);
+    await ds.stageLogBatch({ body: routes.stageLogBatch.body.parse({}) } as never); // a batch in flight (waiting for your Apply)
+
+    // the client: useQuarterRows' two reads (the rows that can need you, then the one range)
+    const week = await ds.getTime({ query: {} } as never);
+    const taskTypeRequired = loggingProfile(personaOf(ds.store.settings())).taskTypeRequired;
+    const base = q4Range(week);
+    const needy = await ds.getActivityLog({ query: { to: base.to, status: TO_LOG_NEED_STATUSES } } as never);
+    const range = toLogRange({ rows: needy.entries, canvases: week.logCanvases, taskTypeRequired, base });
+    expect(range.from).toBe('2026-08-01');
+    expect(range.from < base.from).toBe(true);
+    const { rows } = quarterRowsOf({ log: await ds.getActivityLog({ query: range } as never), week });
+    const canvases = week.logCanvases;
+    expect(canvases?.some((c) => c.state === 'pending')).toBe(true);
+    const lanes = lanesOf({ path: { needs: needsYou(rows, { canvases, taskTypeRequired }), readyIds: [], internal: internalGroup(rows, canvases) }, rows, canvases });
+
+    const today = await ds.getToday({} as never);
+    const queue = (await ds.listNeeds({} as never)).rows.find((r) => r.kind === 'time_ready_to_log')!;
+    const queueN = Number(/^(\d+) to fix in Activity/.exec(queue.title)?.[1]);
+    expect(lanes.badge).toBe(lanes.fix.rows + lanes.sending.failed);
+    expect(rows.some((e) => e.id === 'ac_f1_nf')).toBe(true);
+    expect(lanes.fix.ids).toEqual(expect.arrayContaining(['ac_wed_roadmap', 'ac_mon_claude_model']));
+    expect(lanes.fix.ids).not.toContain('ac_f1_internal');
+    expect(today.navCounts.toLog).toBe(lanes.badge);
+    expect(queueN).toBe(lanes.badge);
+    expect(queue.why).toContain(`${lanes.fix.rows} rows need a fix`);
+    expect(queue.why).toContain(`${lanes.sending.notFound} not found in Org62`);
+    // the base range alone would have left the Q3 rows on no page
+    const old = await ds.getActivityLog({ query: base } as never);
+    expect(toLogCount({ rows: old.entries, canvases, taskTypeRequired }).badge).toBeLessThan(lanes.badge);
+    // lane 1 names their quarter, due first within its band (C11: the Accept band, then Review)
+    const groups = fixLane({ needs: needsYou(rows, { canvases, taskTypeRequired }), internal: internalGroup(rows, canvases), taskTypeRequired, today: '2026-11-05' }).groups;
+    const q3 = groups.find((g) => /^Q3 FY27 · /.test(g.label))!;
+    expect(groups.find((g) => g.band === q3.band && g.kind !== 'internal')).toBe(q3);
+    const byDay = fixLane({ needs: needsYou(rows, { canvases, taskTypeRequired }), internal: internalGroup(rows, canvases), by: 'day', taskTypeRequired, today: '2026-11-05' }).groups;
+    expect(byDay.find((g) => g.ids.includes('ac_wed_roadmap'))!.label).toMatch(/^Q3 · /);
+  });
+});
+
+// R3-8 (2026-11-23 wave-2 review): the queue row's parts below its number are lane 2 and lane 3 as Activity counts them
+// (lanesOf over logPath's readyIds and the open batches), at scale 7 where the old formula said "1 ready · 1 batch".
+describe('Home queue row (R3-8): its parts are the To log lanes at scale 7', () => {
+  it('fix, not found, ready and in Sending equal lanesOf(...) over the same rows and batches', async () => {
+    const ds = new MockDataSource({ seed: scaleSeed(structuredClone(c10Seed), 7), delays: c10Fast, autoplay: false, clockMode: 'seed' });
+    c10Made.push(ds);
+    const week = await ds.getTime({ query: {} } as never);
+    const taskTypeRequired = loggingProfile(personaOf(ds.store.settings())).taskTypeRequired;
+    const base = q4Range(week);
+    const needy = await ds.getActivityLog({ query: { to: base.to, status: TO_LOG_NEED_STATUSES } } as never);
+    const range = toLogRange({ rows: needy.entries, canvases: week.logCanvases, taskTypeRequired, base });
+    const { rows } = quarterRowsOf({ log: await ds.getActivityLog({ query: range } as never), week });
+    const canvases = week.logCanvases;
+    const path = logPath({ rows, week, nowIso: ds.clock.now().toISOString(), taskTypeRequired, approveComplete: true });
+    const lanes = lanesOf({ path, rows, canvases, unsettled: unsettledIds(rows) });
+    expect(lanes.ready.rows).toBeGreaterThan(1);
+    expect(lanes.sending.batches).toBeGreaterThan(1);
+    const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : w === 'batch' ? 'es' : 's'}`;
+    const want = [
+      lanes.fix.rows ? `${plural(lanes.fix.rows, 'row')} need a fix` : null,
+      lanes.sending.notFound ? `${lanes.sending.notFound} not found in Org62` : null,
+      lanes.ready.rows ? `${lanes.ready.rows} ready` : null,
+      lanes.sending.batches ? `${plural(lanes.sending.batches, 'batch')} in Sending` : null,
+      lanes.sending.failedBatches ? `${plural(lanes.sending.failedBatches, 'batch')} failed` : null,
+    ].filter(Boolean);
+    // GET /needs: the number and lanes 1 and 2 as Activity says them
+    const queue = (await ds.listNeeds({} as never)).rows.find((r) => r.kind === 'time_ready_to_log')!;
+    expect(Number(/^(\d+) to fix in Activity/.exec(queue.title)?.[1])).toBe(lanes.badge);
+    expect(queue.why.startsWith(want.slice(0, 3).join(' · '))).toBe(true);
+    // the provider over lane 3's batches (GET /time `logCanvases`): every part, lane 3 included. (The gather in
+    // src/server/datasource/db/needs.ts builds `canvases` from the Outbox's open admin items only, so an applied
+    // batch not finished yet is missing there until it also reads `outbox.admin.applied`: a follow-up, R3-8.)
+    const { gatherNeeds } = await import('@/server/datasource/mock/needs');
+    const { ctx } = await gatherNeeds(ds, ds.clock.now());
+    const [row] = timeReadyProvider.run({ ...ctx, canvases: canvases ?? [] });
+    expect(row!.title).toBe(queue.title);
+    expect(row!.why).toBe(want.join(' · '));
   });
 });

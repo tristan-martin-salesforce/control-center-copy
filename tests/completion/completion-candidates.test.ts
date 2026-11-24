@@ -91,7 +91,7 @@ describe('relations', () => {
   it('a Drive revision of the item file, and a calendar event I scheduled with the asker', () => {
     const f = itemFacts(item([dmAsk], { fileRefs: ['FILE_ACME_POV_000001'] }));
     const rev = src({ connector: 'drive', kind: 'file_revision', externalId: `FILE_ACME_POV_000001@${at(40)}`, occurredAt: at(40), author: ME, fromMe: true, fileRefs: ['FILE_ACME_POV_000001'] });
-    expect(relationsOf(f, rev)).toEqual(['same_file']);
+    expect(relationsOf(f, rev)).toEqual(['same_file', 'file_revision']); // R7: a revision has its own relation
     const meeting = src({ connector: 'calendar', kind: 'calendar_event', externalId: 'evt-001', threadRef: 'calendar:evt-001', occurredAt: at(60 * 48), seenAt: at(50), author: ME, fromMe: true, participants: [ME, { name: 'PERSON_A', email: 'person.a@example.com', externalId: 'U0PERSONA' }] });
     expect(relationsOf(f, meeting)).toEqual(['same_event']);
   });
@@ -178,5 +178,36 @@ describe('RES-1: the asker settling it ranks first; pleasantries are not candida
     expect(isPleasantry('<@U0PERSONA> thanks!')).toBe(true);
     expect(isPleasantry("Thanks for the notes - I'll go ahead and cancel the prep")).toBe(false);
     expect(isPleasantry('great, sent it')).toBe(false);
+  });
+});
+
+describe('R7: acknowledgements, notes, sessions and revisions are candidates', () => {
+  const window = { seenAfter: 0, seenUntil: T0 + 3_600_000 * 48 };
+  const dmLine = (min: number, o: Partial<CompletionSource>) => src({ externalId: `D0DM00001:${ts(min)}`, threadRef: `slack:D0DM00001:${ts(min)}`, occurredAt: at(min), participants: [ASKER, ME], ...o });
+
+  it("keeps the asker's 'got it, thanks' after my line, tagged ack; drops it with no line of mine before it", () => {
+    const it0 = item([dmAsk]);
+    const mine = dmLine(20, { author: ME, fromMe: true, text: 'Here it is: https://docs.google.com/presentation/d/FILE_ACME_POV_000001/edit' });
+    const ack = dmLine(25, { author: ASKER, text: 'got it, thanks!' });
+    const cands = collectCandidates(it0, [mine, ack], window);
+    expect(cands.find((c) => c.source.sourceItemId === ack.sourceItemId)?.relations).toEqual(expect.arrayContaining(['same_dm', 'from_asker', 'ack']));
+    // Without my line first, the same words are chatter.
+    expect(collectCandidates(it0, [dmLine(25, { author: ASKER, text: 'got it, thanks!' })], window)).toEqual([]);
+    // My line linked as evidence earlier (not in this pass's sources) counts too.
+    const linked = item([dmAsk, ev({ ...mine, role: 'progress', fromMe: true })]);
+    expect(collectCandidates(linked, [ack], window)[0]?.relations).toContain('ack');
+  });
+
+  it("meeting notes of the item's meeting and a session naming the item get their own relation", () => {
+    const meetingAsk = ev({ connector: 'calendar', kind: 'calendar_event', externalId: 'evt-002', threadRef: 'calendar:evt-002', occurredAt: at(-60), author: ASKER, role: 'context' });
+    const it0 = item([dmAsk, meetingAsk]);
+    const notes = src({ connector: 'gemini_notes', kind: 'meeting_notes', externalId: 'DOC_NOTES_0000001', threadRef: 'calendar:evt-002', occurredAt: at(120), title: 'ACME sync', text: 'Pat to send the pilot deck' });
+    const session = src({ connector: 'claude_sessions', kind: 'claude_session', externalId: 'sess-1', occurredAt: at(90), fromMe: true, author: ME, title: 'ACME pilot deck', text: 'Built the ACME pilot deck, ready to send' });
+    const unrelated = src({ connector: 'claude_sessions', kind: 'claude_session', externalId: 'sess-2', occurredAt: at(95), fromMe: true, author: ME, title: 'Refactor', text: 'renamed a function' });
+    expect(relationsOf(itemFacts(it0), notes)).toEqual(['meeting_notes']);
+    expect(relationsOf(itemFacts(it0), session)).toEqual(['session']);
+    const cands = collectCandidates(it0, [notes, session, unrelated], window);
+    expect(cands.map((c) => c.source.sourceItemId).sort()).toEqual([notes.sourceItemId, session.sourceItemId].sort());
+    expect(cands.every((c) => !c.strong)).toBe(true); // at most "Likely done · Confirm"
   });
 });

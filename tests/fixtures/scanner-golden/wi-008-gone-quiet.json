@@ -1,0 +1,89 @@
+{
+  "id": "wi-008-gone-quiet",
+  "title": "A follow-up I keep chasing with no answer: never closed as done",
+  "storyline": "sample-data/CAST-work.md wi-008 (Follow up with Anjali on the route exceptions proposal), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-10-19T18:00:00.000Z",
+      "seen_at": "2026-10-19T18:10:00.000Z",
+      "from_me": false,
+      "body": "The route exceptions agent proposal is in PERSON_AR's hands. She said she would review with ops leadership this week. Can you follow up with PERSON_AR on the route exceptions proposal if we hear nothing?",
+      "meta": { "channelId": "D0NADIA003", "channelType": "im", "author": { "name": "PERSON_N", "email": "person_n@example.com", "externalId": "U0PERSONN" }, "participants": [{ "name": "PERSON_N", "externalId": "U0PERSONN" }] },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "gmail",
+      "kind": "email_message",
+      "occurred_at": "2026-10-23T23:25:00.000Z",
+      "seen_at": "2026-10-23T23:30:00.000Z",
+      "from_me": true,
+      "title": "Route exceptions agent proposal",
+      "body": "Hi PERSON_AR, following up on the route exceptions agent proposal with the integration diagram: https://slides.example.com/presentation/d/FILE_RE_PROPOSAL_01/edit. Happy to walk your ops leadership through it. Pat",
+      "meta": { "to": [{ "name": "PERSON_AR", "email": "person_ar@example.com" }], "threadId": "thr-route-exceptions" },
+      "agent": [{ "link": "i1", "role": "progress", "confidence": "likely", "reason": "sent the follow-up with the diagram" }]
+    },
+    {
+      "id": "s3",
+      "source": "gmail",
+      "kind": "email_message",
+      "occurred_at": "2026-10-25T16:40:00.000Z",
+      "seen_at": "2026-10-25T16:50:00.000Z",
+      "from_me": false,
+      "thread_of": "s2",
+      "title": "Re: Route exceptions agent proposal",
+      "body": "Pat, thank you for the integration diagram. We have our ops summit this week and will come back to you afterwards. PERSON_AR",
+      "meta": { "author": { "name": "PERSON_AR", "email": "person_ar@example.com" } },
+      "agent": [{ "link": "i1", "role": "context", "confidence": "likely", "reason": "they will come back after their summit" }]
+    },
+    {
+      "id": "s4",
+      "source": "gmail",
+      "kind": "email_message",
+      "occurred_at": "2026-11-02T16:00:00.000Z",
+      "seen_at": "2026-11-02T16:10:00.000Z",
+      "from_me": true,
+      "title": "Checking in on route exceptions",
+      "body": "Hi PERSON_AR, I hope the ops summit went well. Whenever you have a moment, I would love to hear whether the route exceptions proposal landed with your leadership and whether a 30-minute call would help. Pat",
+      "meta": { "to": [{ "name": "PERSON_AR", "email": "person_ar@example.com" }], "threadId": "thr-route-checkin" },
+      "agent": [{ "link": "i1", "role": "progress", "confidence": "likely", "reason": "second nudge" }]
+    },
+    {
+      "id": "s5",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-05T22:00:00.000Z",
+      "seen_at": "2026-11-05T22:20:00.000Z",
+      "from_me": false,
+      "body": "Halvergate: PERSON_AR still isn't replying to me either. Any luck on your side?",
+      "meta": { "channelId": "D0NADIA003", "channelType": "im", "author": { "name": "PERSON_N", "email": "person_n@example.com", "externalId": "U0PERSONN" }, "participants": [{ "name": "PERSON_N", "externalId": "U0PERSONN" }] }
+    },
+    {
+      "id": "s6",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-11-05T22:12:00.000Z",
+      "seen_at": "2026-11-05T22:20:00.000Z",
+      "from_me": true,
+      "body": "Nothing since her Oct 25 note. I sent two nudges, no replies.",
+      "meta": { "channelId": "D0NADIA003", "channelType": "im", "participants": [{ "name": "PERSON_N", "externalId": "U0PERSONN" }] }
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "commitment",
+      "title": "Follow up with PERSON_AR on the route exceptions proposal",
+      "keywords": ["route exceptions"],
+      "origin": "s1",
+      "ask_quote": "can you follow up with person_ar"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "open", "class": "still_owed", "rule": "none", "why": "the follow-ups went out but the customer went quiet: the deal still needs me; closing it would hide it (Settle's gone_quiet asks first for an external commitment)" }
+  ]
+}

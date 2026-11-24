@@ -31,7 +31,7 @@ export function TriageEditor({ item, onSave, onCancel }: { item: WorkItem; onSav
     }
   };
   return (
-    <div role="group" aria-label="Edit before accepting" data-testid="triage-editor" onKeyDown={onKeyDown} className="cc-row-more grid max-w-[60rem] gap-3">
+    <div role="group" aria-label="Edit before accepting" data-testid="triage-editor" onKeyDown={onKeyDown} className="grid max-w-[60rem] gap-3">
       <p className="text-body font-bold text-fg-heading">Edit, then accept</p>
       <label className="block text-caption text-muted">
         Title (verb first)

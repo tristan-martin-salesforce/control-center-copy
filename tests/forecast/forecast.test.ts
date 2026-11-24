@@ -7,8 +7,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { EMPTY_FORECAST_PENDING, type Draft, type ForecastSyncState, type Opportunity, type SpecialistForecast } from '../../src/contract';
-import { buildForecastView, forecastCanvasActionFor, forecastThresholds, LAND_GRACE_MS, missingForecasts, needsRoleFix, notesDue, notesVerdict, nextSfrQuarter, packForecastRows, quarterPair, renderForecastWorkOrder, sfrQuarterBounds, sfrQuarterOfDay } from '../../src/engines/forecast';
+import { buildForecastView, LAND_GRACE_MS } from '../../src/engines/forecast/view';
+import { forecastCanvasActionFor, packForecastRows, renderForecastWorkOrder } from '../../src/engines/forecast/canvas';
+import { forecastThresholds, missingForecasts, needsRoleFix, notesVerdict } from '../../src/engines/forecast/queue';
+import { notesDue, nextSfrQuarter, quarterPair, sfrQuarterBounds, sfrQuarterOfDay } from '../../src/engines/forecast/time';
 import { canvasHolds } from '../../src/lib/canvas/payload';
+import { canvasRowsOf } from '../../src/lib/canvas/preflight';
 import { actionPayloadFor } from '../../src/lib/actions';
 import { ORG62_SCAN_TOOLS } from '../../src/llm/mcp-config';
 import { AE_PERSONA, personaOf, SE_PERSONA } from '../../src/personas';
@@ -269,7 +273,7 @@ const ROWS = [
   { recordId: 'r1', org62Id: 'aDdXX0000000TEST01', notes: 'Compelling event: go-live | Q4\nNext step: order form', dealRole: null },
   { recordId: 'r2', org62Id: 'aDdXX0000000TEST02', notes: null, dealRole: 'Aware' },
 ];
-const BASE = { ownerName: 'Placeholder Me', ownerOrg62Id: OWNER, generatedAt: '2026-11-05T16:00:00.000Z', sourceLabel: 'Control Center · forecast notes' };
+const BASE = { ownerName: 'Placeholder Me', ownerOrg62Id: OWNER, generatedAt: '2026-11-05T16:00:00.000Z', sourceLabel: 'Command Center · forecast notes' };
 
 function canvasDraft(id: string, status: Draft['status'], rows = ROWS, at = '2026-11-05T16:00:00.000Z'): Draft {
   const dest = forecastCanvasActionFor({ title: 'Specialist Forecast · test', markdown: renderForecastWorkOrder({ ...BASE, rows }), rows });
@@ -280,10 +284,13 @@ function canvasDraft(id: string, status: Draft['status'], rows = ROWS, at = '202
 describe('one Slackbot canvas of UPDATE rows on SpecialistForecast__c', () => {
   it('renders only an UPDATE table (Id, ForecastNotes__c, Deal_Role__c), no ADD rows', () => {
     const md = renderForecastWorkOrder({ ...BASE, rows: ROWS });
-    expect(md).toContain('|#|Object|Id|ForecastNotes__c|Deal_Role__c|');
-    expect(md).not.toMatch(/# ADD|\|Event\|/);
+    // WO-1: its own table, no Object column
+    expect(md).toContain('## SPECIALIST FORECASTS TO UPDATE (2 rows · 1 forecast note · 1 deal role)');
+    expect(md).toContain('|#|Record Id|ForecastNotes__c|Deal_Role__c|');
+    expect(md).not.toMatch(/# ADD|TO CREATE|\|Event\|/);
     const rows = md.split('\n').filter((l) => /^\|\d+\|/.test(l));
-    expect(rows).toEqual(['|1|SpecialistForecast__c|aDdXX0000000TEST01|Compelling event: go-live / Q4 ⏎ Next step: order form|—|', '|2|SpecialistForecast__c|aDdXX0000000TEST02|—|Aware|']);
+    expect(rows).toEqual(['|1|aDdXX0000000TEST01|Compelling event: go-live / Q4 ⏎ Next step: order form|—|', '|2|aDdXX0000000TEST02|—|Aware|']);
+    expect(canvasRowsOf(md).map((r) => [r.kind, r.ref])).toEqual([['update:SpecialistForecast__c', 'aDdXX0000000TEST01'], ['update:SpecialistForecast__c', 'aDdXX0000000TEST02']]);
     expect(md).toContain('Execute it in Org62 for Placeholder Me (User Id 005XX0000000OWNAAA)');
     expect(md).toContain('never create or delete a record');
   });
@@ -390,6 +397,13 @@ describe('staging, holds and the read-back', () => {
     expect(patchedPending(r, row, { discardNotes: true }, new Date(NOW).toISOString()).notes).toBeNull();
     const own = patchedPending(rec(), view([rec()]).rows[0]!, { notes: 'written' }, new Date(NOW).toISOString());
     expect(own.notes).toMatchObject({ origin: 'manual', state: 'drafted' });
+  });
+
+  it('caps audit: the draft reads every meeting since the notes changed (was the newest 12)', async () => {
+    const { draftContext } = await import('../../src/server/forecast/draft');
+    const meetingsSince = Array.from({ length: 15 }, (_, i) => ({ title: `ACME sync ${i}`, start: new Date(NOW - i * 3600_000).toISOString() }));
+    const c = draftContext({ record: rec(), template: t.template, personaBlock: '', meetingsSince, names: ['ACME'], now: new Date(NOW), timezone: 'UTC' });
+    expect(c.meetingsSince).toHaveLength(15);
   });
 
   it('the placeholder drafter writes the template from the record’s own fields', () => {

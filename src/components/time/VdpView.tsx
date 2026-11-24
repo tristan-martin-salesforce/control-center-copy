@@ -21,14 +21,15 @@ import { api, queryKey, type ApiError } from '@/client/api';
 import { useApi } from '@/client/hooks';
 import { useLiveFollow } from '@/client/live';
 import { toast } from '@/client/toast';
-import { ContextHead, ContextPage } from '@/components/deals/context-frame';
+import { ContextPage } from '@/components/deals/context-frame';
+import { ActivityHead } from './ActivityHead';
 import { StatusBadge } from '@/components/domain';
 import { clock, dayLabel } from '@/components/domain/lib/time';
 import { useConnectorActions } from '@/components/health/actions';
 import { BROKEN_STATES } from '@/components/health/derive';
 import { Button, EmptyState, PanelBoundary, PanelError, Skeleton, useNow, useTimeZone } from '@/ui';
 import { AppLink } from '@/components/shell/AppLink';
-import { findAllPlan, nextReadText, vdpSentence } from './vdp-derive';
+import { findAllPlan, nextReadText, vdpReauthLabel, vdpSentence } from './vdp-derive';
 import { useVdpLiveSync } from './VdpItem';
 import { VdpChanges } from './VdpChanges';
 import { VdpMine } from './VdpMine';
@@ -54,8 +55,7 @@ export function VdpView({ tabs, sub = 'changes' }: { tabs: ReactNode; sub?: VdpS
   const ap = cov.data?.autopilot;
 
   const head = (
-    <ContextHead
-      title="VDP"
+    <ActivityHead
       tabs={tabs}
       sentence={vdpSentence(cov.data)}
       actions={
@@ -64,7 +64,7 @@ export function VdpView({ tabs, sub = 'changes' }: { tabs: ReactNode; sub?: VdpS
           {cov.data?.lastReadAt ? <span className="tabular-nums">{`Read ${dayLabel(cov.data.lastReadAt, tz)} ${clock(cov.data.lastReadAt, tz)}${next ? ` · ${next}` : ''}`}</span> : null}
           {vdpConn && broken ? (
             <Button size="sm" variant="primary" loading={actions.reauth.isPending} onClick={() => actions.reauth.mutate(vdpConn)} data-testid="vdp-reauth">
-              Run refresh
+              {vdpReauthLabel()}
             </Button>
           ) : vdpConn ? (
             <Button size="sm" variant="quiet" loading={actions.scan.isPending} onClick={() => actions.scan.mutate(vdpConn)}>
@@ -77,7 +77,7 @@ export function VdpView({ tabs, sub = 'changes' }: { tabs: ReactNode; sub?: VdpS
   );
 
   return (
-    <ContextPage label="VDP" className="cc-scroll overflow-y-auto [scrollbar-gutter:stable]">
+    <ContextPage label="Activity" className="cc-scroll overflow-y-auto [scrollbar-gutter:stable]">
       {head}
       <div className="flex shrink-0 flex-col gap-5" data-testid="vdp-view" data-sub={sub}>
         {broken || ap?.paused === 'reauth' ? (
@@ -85,7 +85,7 @@ export function VdpView({ tabs, sub = 'changes' }: { tabs: ReactNode; sub?: VdpS
             <StatusBadge tone="danger" icon="warning">
               {ap?.on ? 'VDP autopilot is paused: re-auth VDP' : 'VDP needs re-auth'}
             </StatusBadge>{' '}
-            <span className="text-muted">Showing the last read. Run refresh signs you in again (a browser opens if Okta asks for MFA); what is staged, and what autopilot would apply, waits meanwhile.</span>
+            <span className="text-muted">{`Showing the last read. ${vdpReauthLabel()} signs you in again (a browser opens if Okta asks for MFA); what is staged, and what autopilot would apply, waits meanwhile.`}</span>
           </p>
         ) : null}
         <PanelBoundary name="time-vdp">
@@ -94,7 +94,7 @@ export function VdpView({ tabs, sub = 'changes' }: { tabs: ReactNode; sub?: VdpS
           ) : !cov.data ? (
             <Skeleton variant="block" className="h-96 w-full" />
           ) : !cov.data.lastReadAt ? (
-            <EmptyState icon="opportunity" title="VDP has not been read yet" body="Once VDP is connected, your VDPs and what goes to each show here." />
+            <EmptyState icon="opportunity" title="VDP has not been read yet" body={`Your VDPs and what goes to each show here after the first VDP read${next ? ` (${next})` : ' once VDP is connected (Settings ▸ Sources)'}.`} />
           ) : sub === 'mine' ? (
             <VdpMine cov={cov.data} />
           ) : (

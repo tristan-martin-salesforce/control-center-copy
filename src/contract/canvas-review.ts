@@ -138,7 +138,8 @@ export const EditCanvasRowRequest = z
       .object({
         name: z.string().trim().min(1).max(255).optional(),
         product: z.string().max(40).optional(),
-        agentTypes: z.array(z.string().max(80)).min(1).max(30).optional(),
+        /** Use_Case_Agent_Type__c values: no count bound here; the server takes only Org62's picklist values (checkedUseCaseFields). */
+        agentTypes: z.array(z.string().max(80)).min(1).optional(),
         entitlement: z.string().max(80).optional(),
         stage: z.string().max(80).optional(),
         goLive: z.union([z.literal(''), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)]).optional(),

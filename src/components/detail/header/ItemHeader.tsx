@@ -282,6 +282,9 @@ export function ItemHeader(props: ItemHeaderProps) {
               {props.breadcrumb !== false ? <Breadcrumb item={item} className="min-w-0" /> : null}
               {badge ? <StateBadge badge={badge} /> : null}
             </div>
+            {/* the page's outline: the title is an editable field, so its heading is for screen readers (the
+                sections below are h3s) */}
+            <h2 className="sr-only">{item.title}</h2>
             {title}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
               <div className="flex min-w-[20rem] flex-1">{purpose}</div>

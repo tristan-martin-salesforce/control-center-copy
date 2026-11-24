@@ -76,10 +76,15 @@ export function JobsTab() {
       <div role="table" aria-label="Jobs">
         {groups.map((g) => (
           <div key={g.status} role="rowgroup" className="mb-2">
-            <h3 className="flex items-baseline gap-2 px-2 pt-2 pb-1 text-body font-bold text-fg-heading">
-              {JOB_LABEL[g.status]}
-              <span className="font-normal text-muted tabular-nums">{fmtNum(Math.max(g.jobs.length, q.data?.counts[g.status] ?? 0))}</span>
-            </h3>
+            {/* the group's heading is a header row of the table (a rowgroup holds rows only) */}
+            <div role="row">
+              <div role="rowheader">
+                <h3 className="flex items-baseline gap-2 px-2 pt-2 pb-1 text-body font-bold text-fg-heading">
+                  {JOB_LABEL[g.status]}
+                  <span className="font-normal text-muted tabular-nums">{fmtNum(Math.max(g.jobs.length, q.data?.counts[g.status] ?? 0))}</span>
+                </h3>
+              </div>
+            </div>
             {g.jobs.map((j) => (
               <JobRow key={j.id} job={j} now={now} />
             ))}

@@ -16,7 +16,7 @@
  *                projections own (never the user's: approved, edited, on a canvas, in Org62). Never against a database
  *                you have not backed up.
  *
- * Uses DATABASE_URL (default postgres://localhost:5432/control_center) and prints the database name, never the URL.
+ * Uses DATABASE_URL (default postgres://localhost:5432/command_center) and prints the database name, never the URL.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -29,6 +29,7 @@ import type { EngagedParams } from '../src/engines/activity/engaged';
 import { createDb, databaseName, resolveDatabaseUrl } from '../src/db/client';
 import { recomputeWeeks, rederiveWeeks, type RederiveReport } from '../src/projections/run';
 import { DbDataSource } from '../src/server/datasource/db';
+import { projectionStore } from '../src/server/datasource/db/store/projections.run';
 
 const arg = (name: string): string | undefined => {
   const argv = process.argv.slice(2);
@@ -107,7 +108,7 @@ async function run(): Promise<number> {
     return 2;
   }
   const url = resolveDatabaseUrl();
-  const handle = createDb({ url, max: 2, applicationName: 'control-center-time-rederive' });
+  const handle = createDb({ url, max: 2, applicationName: 'command-center-time-rederive' });
   try {
     const u = await handle.db.execute<{ id: string; tz: string }>(sql`select id, timezone as tz from users where is_active order by created_at limit 1`);
     const user = u.rows[0];
@@ -118,14 +119,14 @@ async function run(): Promise<number> {
     const turnsOf = has('--transcripts') ? transcriptTurns() : undefined;
     const engaged = arg('--engaged') ? (JSON.parse(arg('--engaged')!) as Partial<EngagedParams>) : undefined;
     if (engaged && has('--apply')) throw new Error('--engaged is for dry runs only: --apply uses the calibrated defaults');
-    const dry = await rederiveWeeks({ db: handle.db, userId: user.id, from, to, ...(turnsOf ? { turnsOf } : {}), ...(engaged ? { engaged } : {}) });
+    const dry = await rederiveWeeks({ store: projectionStore(handle.db), userId: user.id, from, to, ...(turnsOf ? { turnsOf } : {}), ...(engaged ? { engaged } : {}) });
     if (has('--json')) console.log(JSON.stringify(dry, null, 2));
     else print(dry, `Re-derive ${from} → ${to} (${databaseName(url)}): dry run, nothing written`);
     if (!has('--apply')) return dry.errors.length ? 1 : 0;
     const days: string[] = dry.days.map((d) => d.day);
-    const r = await recomputeWeeks({ db: handle.db, userId: user.id, days, ...(turnsOf ? { turnsOf } : {}) });
+    const r = await recomputeWeeks({ store: projectionStore(handle.db), userId: user.id, days, ...(turnsOf ? { turnsOf } : {}) });
     console.log(`applied: weeks ${r.weeks.join(', ')}${r.errors.length ? ` · errors ${r.errors.join(', ')}` : ''}`);
-    const post = await rederiveWeeks({ db: handle.db, userId: user.id, from, to, ...(turnsOf ? { turnsOf } : {}) });
+    const post = await rederiveWeeks({ store: projectionStore(handle.db), userId: user.id, from, to, ...(turnsOf ? { turnsOf } : {}) });
     if (!has('--json')) print(post, 'After --apply (what is left: the user\'s rows and the update candidates)');
     // D-70: rows already in Org62 are never edited here; their new hours wait in Log it as updates for your approval
     if (post.candidates.length) {

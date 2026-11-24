@@ -378,11 +378,14 @@ export function matchAssetItems(items: readonly AssetItem[], targets: readonly A
   return screenDrafts([...out.values()]);
 }
 
-/** Two sightings of one asset: the stronger one's title, kind and reason; both sources. */
+/**
+ * Two sightings of one asset: the stronger one's title, kind and reason; both sources, every one (tenet *Provenance on
+ * everything*; caps audit 2026-11-21: the merge kept 8 sources and 20 source items and dropped the rest).
+ */
 export function mergeDraft(a: CandidateDraft, b: CandidateDraft): CandidateDraft {
   const [hi, lo] = b.confidence > a.confidence ? [b, a] : [a, b];
-  const sources = [...hi.sources, ...lo.sources.filter((s) => !hi.sources.some((x) => x.url === s.url && x.label === s.label))].slice(0, 8);
-  const sourceItemIds = [...new Set([...hi.sourceItemIds, ...lo.sourceItemIds])].slice(0, 20);
+  const sources = [...hi.sources, ...lo.sources.filter((s) => !hi.sources.some((x) => x.url === s.url && x.label === s.label))];
+  const sourceItemIds = [...new Set([...hi.sourceItemIds, ...lo.sourceItemIds])];
   // a real title wins over the stronger sighting's placeholder ("Document · drive.google.com"), or the screen drops it
   const title = UNTITLED.test(hi.title.trim()) && !UNTITLED.test(lo.title.trim()) ? lo.title : hi.title;
   return { ...hi, title, sources, sourceItemIds };
@@ -405,7 +408,7 @@ export function linksFromRefs(refs: readonly string[], titles: ReadonlyMap<strin
   return out;
 }
 
-/** http(s) links in a text (mail bodies, descriptions), without trailing punctuation. */
-export function linksInText(text: string, max = 20): string[] {
+/** http(s) links in a text (mail bodies, descriptions), without trailing punctuation; every distinct one unless `max`. */
+export function linksInText(text: string, max = Number.POSITIVE_INFINITY): string[] {
   return [...new Set((text.match(/https?:\/\/[^\s<>|)"'\]]+/g) ?? []).map((u) => u.replace(/[.,;:!?]+$/, '')))].slice(0, max);
 }

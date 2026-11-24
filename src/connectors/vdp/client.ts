@@ -8,12 +8,15 @@
  */
 import type { ConnectorHealthProbe } from '@/scanner/types';
 
+import { httpJsonRpcRuntime } from '../runtime/http-jsonrpc';
+import type { ConnectorRuntime } from '../runtime/types';
+
 import { sleep } from '../util';
 import { callVdpTool, listVdpTools, vdpCookieIssuedAtMs, vdpCookieSecondsLeft, type VdpHttpOptions, type VdpToolResult } from './http';
 import { parseAssetTypes, parseCompanyLookup, parseCompanyVdps, parseDeliverableTypes, parseGetUseCase, parseGetVdp, parseIndustries, parseSalesSegments, parseSearchResult, parseToolList } from './parse';
 import type { VdpCompanyLookup, VdpListRow, VdpServerTool, VdpSnapshot, VdpUseCase } from './types';
 import type { VdpLimiter } from './limiter';
-import { assertVdpTool, type VdpReadTool } from './tools';
+import { assertVdpTool, VDP_READ_TOOLS, type VdpReadTool } from './tools';
 
 export { VdpAuthError, VdpError, vdpCookieSecondsLeft, type VdpErrorCode, type VdpToolResult } from './http';
 
@@ -22,6 +25,13 @@ export interface VdpClientOptions extends VdpHttpOptions {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** D-69 (VD-27): a limiter shared with the Outbox's VDP transport (the worker passes `vdpCallLimiter`). */
   limiter?: VdpLimiter;
+  /** The read transport (an `http_jsonrpc` ConnectorRuntime). Default: `vdpReadRuntime` over these HTTP options. */
+  runtime?: ConnectorRuntime;
+}
+
+/** VDP's read runtime: `tools/call` over JSON-RPC (src/connectors/vdp/http.ts), the read allowlist only. */
+export function vdpReadRuntime(o: VdpHttpOptions = {}): ConnectorRuntime {
+  return httpJsonRpcRuntime({ connector: 'vdp', readTools: VDP_READ_TOOLS, rpc: (tool, args, c) => callVdpTool(tool, args, 'read', { ...o, ...(c.signal ? { signal: c.signal } : {}) }) });
 }
 
 /** Refresh when 10 minutes or less remain (same threshold as the refresh script and Health). */
@@ -31,9 +41,11 @@ export const VDP_REFRESH_COMMAND = 'python3 ~/.claude/scripts/refresh_vdp_fir_co
 export class VdpClient {
   private readonly calls: number[] = [];
   private readonly max: number;
+  private readonly rt: ConnectorRuntime;
 
   constructor(private readonly o: VdpClientOptions = {}) {
     this.max = Math.max(1, o.maxPerMinute ?? 50);
+    this.rt = o.runtime ?? vdpReadRuntime(o);
   }
 
   private now(): number {
@@ -58,7 +70,8 @@ export class VdpClient {
   async call(tool: VdpReadTool, args: Record<string, unknown> = {}, opts: { signal?: AbortSignal } = {}): Promise<VdpToolResult> {
     assertVdpTool(tool, 'read');
     await this.slot(opts.signal);
-    return callVdpTool(tool, args, 'read', { ...this.o, signal: opts.signal });
+    const r = await this.rt.call(tool, args, opts.signal ? { signal: opts.signal } : {});
+    return { text: r.text, json: r.json };
   }
 
   /** Every VDP the PAT's user can see (VDP scopes a per-user PAT to VDPs they are related to), paged 50 at a time. */

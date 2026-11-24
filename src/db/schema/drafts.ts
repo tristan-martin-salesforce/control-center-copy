@@ -109,6 +109,9 @@ export const drafts = pgTable(
     index('drafts_awaiting_verify_idx')
       .on(t.ownerUserId, t.updatedAt)
       .where(sql`${t.status} IN ('sent', 'staged', 'handed_off', 'unconfirmed')`),
+    // 0037 (post-2.0 Home SQL): the logging canvases (Home's, Today's and Log it's DC and use-case holds) without
+    // reading every draft's payload
+    index('drafts_owner_canvas_idx').on(t.ownerUserId).where(sql`${t.payload} ->> 'action' = 'slack_canvas.create'`),
     check('drafts_content_chk', sql`num_nonnulls(${t.docJson}, ${t.payload}) >= 1`),
     check(
       'drafts_approval_chk',

@@ -79,6 +79,24 @@
   gap: 28px;
   min-width: 0;
 }
+/* Today's PageHeader (kit) in one row, as the skeleton: date · verdict · meter. The crumb row's pieces join the grid. */
+.td-head-kit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 28px;
+  row-gap: 0;
+}
+.td-head-kit > div:first-child {
+  display: contents;
+}
+.td-head-kit [data-testid='page-sentence'] {
+  grid-column: 2;
+  grid-row: 1;
+  max-width: none;
+  font-size: inherit;
+}
+.td-head-kit [data-testid='page-crumb'],
 .td-date {
   font-size: var(--text-heading-lg);
   line-height: var(--text-heading-lg--line-height);
@@ -633,6 +651,9 @@ button.td-ev {
   grid-column: 3;
   grid-row: 3;
   justify-self: start;
+  /* justify-self: start sizes the line to its nowrap text: without the cap it ran under the verbs in a narrow pane
+     (Today with the panel open at 1440: "ACME Open in Claude", "~15nSend") */
+  max-width: 100%;
   min-height: 32px;
   display: flex;
   align-items: center;
@@ -986,6 +1007,10 @@ button.td-ev {
   .td-head {
     gap: 20px;
   }
+  .td-head-kit {
+    column-gap: 20px;
+  }
+  .td-head-kit [data-testid='page-crumb'],
   .td-date {
     font-size: var(--text-heading);
     line-height: var(--text-heading--line-height);

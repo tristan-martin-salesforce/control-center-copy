@@ -34,6 +34,7 @@ import { AppError, invalid } from '@/server/errors';
 
 import { BootstrapError, bootstrapUser, profileFromSetupFile, type BootstrapProfileInput } from './bootstrap';
 import { putKv } from './ext';
+import { recordFirstScanHold } from './spend';
 import { META_KEY, settingsKey, type Section } from './store/settings';
 
 /** `user_settings` key of the onboarding record (the worker reads `firstScan` from it: src/worker/first-scan-config.ts). */
@@ -295,6 +296,8 @@ export class DbOnboarding {
       // the id lookups' spend, into the ledger like every other LLM call (there was no user to own it before)
       await recordDetectionSpend(tx as unknown as Db, boot.userId, you.timezone, cur.draft.spend);
     });
+    // COST-9: the first scan's estimate, recorded as its hold (the one-time first-scan budget, never the day's)
+    await recordFirstScanHold(this.db, boot.userId, history.lookbackDays, now).catch(() => undefined);
     if (cur.draft.spend.length) wrote.push(`llm_calls×${cur.draft.spend.length}`);
     wrote.push(ONBOARDING_KEY);
     store.clear();

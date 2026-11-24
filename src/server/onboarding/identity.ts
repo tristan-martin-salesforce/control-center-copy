@@ -14,6 +14,7 @@
  * Spend comes from the result message (or the per-message estimate) and is returned for the ledger.
  */
 import type { DetectionSpend, IdentityDetection, IdentityKind } from '@/contract';
+import { connectorLabel } from '@/connectors/registry';
 import { parseSlackSearchResults, unwrapSearchOutput } from '@/engines/voice/slack-search-parse';
 import type { GatewayConfig } from '@/llm/claude-env';
 import { mcpToolName, ORG62_SCAN_TOOLS, restrictedTools, SLACK_SCAN_TOOLS, traversalMcpServers } from '@/llm/mcp-config';
@@ -152,7 +153,7 @@ export async function runOneReadLookup(look: { connector: 'slack' | 'org62'; too
     gate = restrictedTools(look.connector, [look.tool]);
     servers = (o.mcpServersFor ?? traversalMcpServers)(look.connector);
   } catch {
-    return { text: null, costUsd: 0, inputTokens: 0, outputTokens: 0, model, started: false, code: 'config', message: `${look.connector === 'slack' ? 'Slack' : 'Org62'} is not set up in Claude Code.` };
+    return { text: null, costUsd: 0, inputTokens: 0, outputTokens: 0, model, started: false, code: 'config', message: `${connectorLabel(look.connector)} is not set up in Claude Code.` };
   }
   return runOneToolCall({ servers, fullTool: mcpToolName(gate.serverName, look.tool), args: look.args, allowedTools: gate.allowedTools, disallowedTools: gate.disallowedTools, skill, ...(o.queryFn ? { queryFn: o.queryFn } : {}), ...(o.gateway ? { gateway: o.gateway } : {}), ...(o.timeoutMs ? { timeoutMs: o.timeoutMs } : {}) });
 }

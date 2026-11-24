@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Command Center web (production `next start`). Rendered by scripts/ops/install-agents.mjs.
+  No secrets here: the service wrapper loads the chmod-600 env file at start.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{LABEL}}</string>
+
+  <key>ProgramArguments</key>
+  <array>
+{{PROGRAM_ARGS}}
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>{{REPO}}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{{PATH}}</string>
+    <key>HOME</key>
+    <string>{{HOME}}</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PORT</key>
+    <string>{{PORT}}</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ExitTimeOut</key>
+  <integer>20</integer>
+
+  <!-- The wrapper writes the rotated app log (web.log); these only catch the wrapper's own output. -->
+  <key>StandardOutPath</key>
+  <string>{{LOG_DIR}}/web.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>{{LOG_DIR}}/web.launchd.log</string>
+</dict>
+</plist>

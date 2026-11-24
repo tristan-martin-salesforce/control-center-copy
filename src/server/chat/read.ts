@@ -5,7 +5,7 @@
  * with `total` and `nextOffset`, and the model reads on with `offset` until `nextOffset` is null (2026-11-13: no row
  * cap below the cost cap; the old 40 → 3 row levels are gone).
  *
- * The page names are aliases `chat_app_read` takes as its `route`. Left out on purpose: chat, onboarding, the SSE
+ * The page names are aliases `read` takes as its `route`. Left out on purpose: chat, onboarding, the SSE
  * stream and dev routes.
  */
 import { z } from 'zod';
@@ -50,7 +50,7 @@ export const CHAT_READ_PAGES = {
   history_day: { route: 'getHistoryDay', area: 'history', args: 'day (YYYY-MM-DD)', what: 'what was done on one day: transitions, activity, calendar, outbox, runs' },
   deals: { route: 'getDeals', area: 'deals', what: 'the accounts list with opportunities, what needs me (needs: DC gaps naming each opp and why, think ahead, chase, each with how to set it aside), and my pipeline: open, this quarter by forecast category, won, closing in 30 days, needs attention, and per fiscal quarter (pipeline.rows are my deals)' },
   account: { route: 'getAccount', area: 'deals', args: 'accountId', what: 'one account: opportunities, people, open work, recent activity' },
-  vdp: { route: 'getVdpCoverage', area: 'vdp', what: 'every VDP with its status and open items (who: app = an itemKey for chat_vdp_update, you = a link and the text to paste), and the accounts and opps not in VDP yet' },
+  vdp: { route: 'getVdpCoverage', area: 'vdp', what: 'every VDP with its status and open items (who: app = an itemKey for propose kind vdp, you = a link and the text to paste), and the accounts and opps not in VDP yet' },
   vdp_detail: { route: 'getVdpDetail', area: 'vdp', args: 'key (a VDP slug, or account:<accountId>; the "Looking at" vdp id as is)', what: 'one VDP in full: ordered steps, use cases and their fields, assets, owners, stakeholders, assets to add, the last Find assets run' },
   missed_opps: { route: 'getMissed', area: 'deals', what: 'missed-opportunity findings' },
   briefs: { route: 'getBriefs', area: 'briefs', what: 'watched and my-opportunity brief lists (titles, unread)' },
@@ -86,7 +86,7 @@ export function chatReadPagesFor(persona?: ResolvedPersona | null): [ChatReadPag
 const VIEW_PAGES: ReadonlySet<ChatReadPage> = new Set(['today', 'find_items', 'item', 'calendar', 'outbox', 'health', 'home', 'work', 'time', 'vdp', 'vdp_detail', 'triage']);
 
 /**
- * The pages for chat_app_read's description (a persona's own pages only: one stable description per persona). A page
+ * The pages for read's description (a persona's own pages only: one stable description per persona). A page
  * with its own view gets a line; the plain aliases are one line of `name=route` (the route's line says what it holds).
  */
 export function chatPageCatalog(persona?: ResolvedPersona | null): string {
@@ -129,46 +129,85 @@ export const READ_PAGE_CHARS = 40_000;
 /** UI-only or bulky keys no answer needs. `version` stays: a PATCH's ifVersion comes from it (A4). */
 const DROP = new Set(['userLockedFields', 'etag', 'html', 'bodyHtml', 'raw', 'avatar', 'avatarUrl', 'initials', 'icon', 'color', 'timeline', 'spine']);
 
-/** A string longer than this is a body, not a field (the redactor's own cap). */
+/**
+ * A string longer than this is a body, not a field: a list row shows its first MAX_STRING characters and the path to
+ * read the whole of it with `field` (ASSIST-5, 2026-11-20: never a silent clip; the rest is a paged field read).
+ */
 const MAX_STRING = 2_000;
 const MAX_DEPTH = 14;
 
 /** A full WorkItem embedded in a payload (Home rows, Triage rows, Since, accounts) reads as the compact item hit. */
 const isWorkItem = (v: object): v is WorkItem => 'id' in v && 'title' in v && 'state' in v && 'kind' in v && 'rankReasons' in v;
 
+/** The note a long string ends with: how long it is and the `field` that reads the rest. */
+export const fieldPointer = (len: number, path: string) => ` … [${len} characters; read the rest with field="${path}"]`;
+
 /**
  * A payload as the model reads it: credential-redacted, whitespace collapsed, empty values and UI-only keys gone, an
- * embedded work item as its hit. Every row of every list stays (paging, not this, sizes a read).
+ * embedded work item as its hit. Every row of every list stays (paging, not this, sizes a read). A string over
+ * `clipAt` shows its start and the `field` path that reads all of it (`path` null: a display preview, no pointer).
  */
-export function cleanForModel(v: unknown, d = 0, clipAt = MAX_STRING): unknown {
+export function cleanForModel(v: unknown, d = 0, clipAt = MAX_STRING, path: string | null = ''): unknown {
   if (v === null || v === undefined) return undefined;
   if (typeof v === 'object' && !Array.isArray(v) && isWorkItem(v)) v = itemHit(v);
   if (typeof v === 'string') {
     const t = redactText(v.replace(/\s+/g, ' ').trim());
     if (!t) return undefined;
     if (/^https?:\/\/\S+$/.test(t)) return t.length > 2_000 ? undefined : t;
-    return t.length > clipAt ? `${t.slice(0, clipAt - 1)}…` : t;
+    if (t.length <= clipAt) return t;
+    return path === null || !path ? `${t.slice(0, clipAt - 1)}…` : `${t.slice(0, clipAt)}${fieldPointer(t.length, path)}`;
   }
   if (typeof v !== 'object') return v;
   if (d >= MAX_DEPTH) return Array.isArray(v) ? `[${v.length} items]` : '{…}';
-  if (Array.isArray(v)) return v.map((x) => cleanForModel(x, d + 1, clipAt)).filter((x) => x !== undefined);
+  const at = (k: string | number) => (path === null ? null : path ? `${path}.${k}` : String(k));
+  if (Array.isArray(v)) {
+    // the index is the row's place in the cleaned list (what `offset` and `field` count)
+    const out: unknown[] = [];
+    for (const x of v) {
+      const y = cleanForModel(x, d + 1, clipAt, at(out.length));
+      if (y !== undefined) out.push(y);
+    }
+    return out;
+  }
   const out: Record<string, unknown> = {};
   for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
     if (DROP.has(k)) continue;
-    const y = cleanForModel(x, d + 1, clipAt);
+    const y = cleanForModel(x, d + 1, clipAt, at(k));
     if (y !== undefined) out[k] = y;
   }
   return Object.keys(out).length ? out : undefined;
 }
 
-/** Paging args every read takes (chat_app_read `offset`, `limit`, `list`). */
+/**
+ * ASSIST-5: one long string of a payload, whole, a page at a time: `field` is the path a clipped value named
+ * (`item.notes`, `hits.3.body`), `offset`/`limit` count characters. Returns the text with `total` and `nextOffset`.
+ */
+export function fieldPage(raw: unknown, field: string, o: { offset?: number; limit?: number } = {}, budget = READ_PAGE_CHARS): { field: string; text: string; offset: number; total: number; nextOffset: number | null } {
+  let v = cleanForModel(raw, 0, Number.POSITIVE_INFINITY);
+  for (const k of field.split('.')) {
+    if (Array.isArray(v) && /^\d+$/.test(k)) v = v[Number(k)];
+    else if (isObj(v)) v = v[k];
+    else v = undefined;
+    if (v === undefined) throw new ChatReadArgsError(`no field "${field}" here (use the path a long value named)`);
+  }
+  if (typeof v !== 'string') throw new ChatReadArgsError(`"${field}" is not a text field: read it without field`);
+  const offset = Math.max(0, Math.trunc(o.offset ?? 0));
+  const size = Math.max(1, Math.min(budget - 400, Math.trunc(o.limit ?? budget - 400)));
+  const text = v.slice(offset, offset + size);
+  const end = offset + text.length;
+  return { field, text, offset, total: v.length, nextOffset: end < v.length ? end : null };
+}
+
+/** Paging args every read takes (read `offset`, `limit`, `list`, `field`). */
 export interface ReadPageArgs {
-  /** The first row of the list to return (the last page's `nextOffset`). */
+  /** The first row of the list to return (the last page's `nextOffset`); with `field`, the first character. */
   offset?: number;
-  /** At most this many rows on the page (default: as many as fit). */
+  /** At most this many rows on the page (default: as many as fit); with `field`, characters. */
   limit?: number;
   /** Which list to page when the data has several (a top-level key, or `a.b` one level down). */
   list?: string;
+  /** One long text whole, a page at a time: the path a clipped value named (ASSIST-5). */
+  field?: string;
 }
 
 export interface ReadPageInfo {
@@ -223,6 +262,10 @@ const KEEP_LAST = new Set(['needs', 'missingOpp.rows']);
  * `list`). A later page carries only its rows. Every row is reachable; nothing is cut mid-JSON.
  */
 export function pageForModel(raw: unknown, a: ReadPageArgs = {}, budget = READ_PAGE_CHARS): { value: unknown; paging: ReadPageInfo | null; more?: Record<string, { shown: number; total: number; nextOffset: number }> } {
+  if (a.field) {
+    const f = fieldPage(raw, a.field, a, budget);
+    return { value: f, paging: { list: `field:${f.field}`, offset: f.offset, count: f.text.length, total: f.total, nextOffset: f.nextOffset } };
+  }
   const offset = Math.max(0, Math.trunc(a.offset ?? 0));
   const limit = a.limit !== undefined ? Math.max(1, Math.trunc(a.limit)) : undefined;
   let v = cleanForModel(raw) ?? null;
@@ -275,6 +318,11 @@ export function pageForModel(raw: unknown, a: ReadPageArgs = {}, budget = READ_P
 /** What the model is told about a paged read (the tool result's `page` and its note). */
 export function pageNote(p: ReadPageInfo | null, more?: Record<string, { shown: number; total: number; nextOffset: number }>): { page?: ReadPageInfo; more?: typeof more; note?: string } {
   const notes: string[] = [];
+  if (p?.list?.startsWith('field:')) {
+    const f = p.list.slice(6);
+    if (p.nextOffset !== null) notes.push(`Characters ${p.offset + 1}–${p.offset + p.count} of ${p.total} of ${f}: read again with field="${f}" and offset=${p.nextOffset} until nextOffset is null.`);
+    return { page: p, ...(notes.length ? { note: notes.join(' ') } : {}) };
+  }
   if (p && p.nextOffset !== null) notes.push(`Rows ${p.offset + 1}–${p.offset + p.count} of ${p.total}${p.list ? ` (${p.list})` : ''}: read again with offset=${p.nextOffset}${p.list ? ` and list="${p.list}"` : ''} until nextOffset is null, and count or answer only from every page.`);
   if (more) for (const [k, m] of Object.entries(more)) notes.push(`${k}: ${m.shown} of ${m.total} on this page; read it with list="${k}" and offset=${m.nextOffset}.`);
   return { ...(p ? { page: p } : {}), ...(more ? { more } : {}), ...(notes.length ? { note: notes.join(' ') } : {}) };

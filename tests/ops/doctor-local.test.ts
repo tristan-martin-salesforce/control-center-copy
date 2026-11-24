@@ -25,7 +25,7 @@ function ctx(over: Partial<DoctorContext> = {}): DoctorContext {
   };
 }
 const projects = () => join(home, 'Projects');
-const PORTS_MD = ['| Port | App | Path |', '|------|-----|------|', '| 4320 | talk-track | `~/Projects/talk-track` |', '| 4327 | control-center | `~/Projects/control-center` |'].join('\n');
+const PORTS_MD = ['| Port | App | Path |', '|------|-----|------|', '| 4320 | talk-track | `~/Projects/talk-track` |', '| 4327 | command-center | `~/Projects/command-center` |'].join('\n');
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'cc-doctor-local-'));
@@ -45,7 +45,7 @@ describe('doctor: port registry (PORTS.md)', () => {
     expect(await checkPortRegistry(ctx())).toMatchObject({ status: 'ok', detail: ':4327 registered in ~/Projects/PORTS.md' });
 
     const injected = await checkPortRegistry(ctx(), { projects: '/elsewhere', exists: (p) => p === '/elsewhere/PORTS.md', read: () => '| 4320 | talk-track | x |' });
-    expect(injected).toMatchObject({ status: 'warn', fix: 'add a control-center row for :4327 to /elsewhere/PORTS.md' });
+    expect(injected).toMatchObject({ status: 'warn', fix: 'add a command-center row for :4327 to /elsewhere/PORTS.md' });
   });
 
   it('unreadable file: warn, not a crash', async () => {

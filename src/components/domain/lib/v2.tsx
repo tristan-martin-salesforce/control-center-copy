@@ -1,6 +1,6 @@
 'use client';
 /**
- * Design v2 building blocks shared by every domain component (docs/ui/DESIGN-V2.md):
+ * Design v2 building blocks shared by every domain component (docs/archive/2026-build/DESIGN-V2.md):
  *  - Indicator: color is an indicator, never identity. now/selected = accent · overdue, blocked, expired =
  *    danger · at risk = warning · ready = success · AI = violet. One signal per row (edge + its badge).
  *  - StatusBadge: icon + word, only for things that need action.
@@ -166,7 +166,10 @@ export interface AccountTagProps {
 /** Neutral tag for accounts, initiatives and categories: identity is never a color. */
 export function AccountTag({ label, onOpen, plain, title, className }: AccountTagProps) {
   const cls = cn(
-    'inline-flex min-w-0 max-w-[16rem] shrink items-center whitespace-nowrap text-caption',
+    // a short tag ("ACME", "Outbox") never shrinks: in a squeezed card (Home with the panel open) it collapsed to an
+    // empty box (01-ui-audit UI-12); a long one still truncates
+    'inline-flex min-w-0 max-w-[16rem] items-center whitespace-nowrap text-caption',
+    label.length <= 14 ? 'shrink-0' : 'shrink',
     plain ? 'text-muted' : 'h-6 rounded-sm border border-line-strong bg-surface-sunken px-2 font-bold text-fg',
     onOpen && 'hover:underline hover:underline-offset-2 focus-visible:outline-none focus-visible:shadow-focus',
     className,

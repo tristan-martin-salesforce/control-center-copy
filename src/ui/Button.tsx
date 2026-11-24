@@ -12,7 +12,8 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { cn } from './cn';
 import { Icon, type IconSet } from './Icon';
-import { KbdHint } from './Kbd';
+import { useIsMac } from '@/client/keyboard/KeyboardProvider';
+import { ariaKeyShortcuts, KbdHint } from './Kbd';
 import { Spinner } from './Spinner';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'ghost' | 'danger' | 'ai';
@@ -69,12 +70,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   const iconSize = size === 'md' ? 'md' : 'sm';
   const filled = variant === 'primary' || variant === 'danger';
   const quiet = variant === 'quiet' || variant === 'ghost';
+  const isMac = useIsMac();
   return (
     <button
       ref={ref}
       type={type}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
+      // the key caps are seen, the shortcut is announced from here (the name stays the visible label, WCAG 2.5.3)
+      aria-keyshortcuts={kbd ? ariaKeyShortcuts(kbd, isMac) : undefined}
       data-variant={variant === 'ghost' ? 'quiet' : variant}
       className={cn(BASE, VARIANT[variant], SIZE[size], PAD[quiet ? 'quiet' : 'filled'][size], className)}
       {...rest}
@@ -86,7 +90,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ) : null}
       {children}
       {iconRight ? <Icon name={iconRight} size={iconSize} /> : null}
-      {kbd ? <KbdHint combo={kbd} tone={filled ? 'inverse' : 'quiet'} className="-mr-1 ml-0.5 font-normal" /> : null}
+      {kbd ? <KbdHint combo={kbd} decorative tone={filled ? 'inverse' : 'quiet'} className="-mr-1 ml-0.5 font-normal" /> : null}
     </button>
   );
 });

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "note": "Hand-written plausible verdicts (origin \"hand\"), keyed by the completion pass ledger hash. Re-key offline after a prompt or skill change: npm run eval:record. Replace with live replies: npm run eval:record -- --live --yes-spend (costs money).",
+  "entries": [
+    {
+      "hash": "720ddd14cb5caeb4c6fbc724a97d8225",
+      "label": "2026-10-23 23:32Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"partial\", \"source\": \"s1\", \"basis\": \"partial\", \"confidence\": 0.6, \"reason\": \"I sent the follow-up with the diagram; no answer from them yet\"}]}"
+    },
+    {
+      "hash": "b818515b49d865daafde1d5327bd72a9",
+      "label": "2026-10-25 16:52Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"confidence\": 0.2, \"reason\": \"they will come back after their summit; nothing settled\"}]}"
+    },
+    {
+      "hash": "68b96d3289fbab18c211844f61fe2de1",
+      "label": "2026-11-02 16:12Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"partial\", \"source\": \"s1\", \"basis\": \"partial\", \"confidence\": 0.6, \"reason\": \"a second nudge; still no answer\"}]}"
+    },
+    {
+      "hash": "aca788cb42d1a8c6d38eb354e918b999",
+      "label": "2026-11-05 22:22Z | Follow up with PERSON_AR on the route exceptions proposal",
+      "origin": "hand",
+      "text": "{\"verdicts\": [{\"item\": \"w1\", \"verdict\": \"not_done\", \"basis\": \"none\", \"confidence\": 0.2, \"reason\": \"no reply from them; the asker is asking whether there is news\"}]}"
+    }
+  ]
+}

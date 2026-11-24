@@ -49,7 +49,7 @@ describe('Health ▸ Needs you', () => {
 
   it('the dead worker and the hard cap are loud', async () => {
     const worker = await mount(health({ worker: { alive: false, lastHeartbeatAt: null, queueDepth: 0 } }));
-    expect($('[data-health-system]', worker.container)?.textContent).toContain('background worker isn’t running');
+    expect($('[data-health-system]', worker.container)?.textContent).toContain('The background worker stopped');
     await cleanup();
     const capped = await mount(health({ connectors: [conn('slack', 'ok')], spend: { ...health().spend, state: 'capped' } }));
     expect($('[data-health-system]', capped.container)?.textContent).toContain('hard spend cap is reached');
@@ -58,5 +58,16 @@ describe('Health ▸ Needs you', () => {
   it('a catching-up source and a calm budget draw nothing', async () => {
     const { container } = await mount(health({ connectors: [conn('slack', 'catching_up')], spend: { ...health().spend, state: 'ok' } }));
     expect($('[data-health-loud]', container)).toBeNull();
+  });
+  it('a broken connector says the Setup row\'s words and links to it, never its raw error', async () => {
+    const setup = { dependencies: [{ id: 'slack-mcp', label: 'Slack', why: 'w', state: 'signed_out', code: 'AUTH.SLACK.SIGNED_OUT', nextStep: 'n', lastChecked: null }] };
+    const { container } = await mount(
+      health({ setup, connectors: [conn('slack', 'auth_needed', { source: 'slack', lastError: { class: 'auth', message: 'invalid_auth: xoxp-secret', at: '2026-11-05T09:40:00Z', count: 1 } })] }),
+    );
+    const block = $('[data-broken="slack"]', container)!;
+    expect($('[data-problem-code]', block)!.getAttribute('data-problem-code')).toBe('AUTH.SLACK.SIGNED_OUT');
+    expect(block.textContent).toContain('Slack needs you to sign in');
+    expect(block.textContent).not.toContain('xoxp');
+    expect(($('[data-setup-link="slack-mcp"]', block) as HTMLAnchorElement).getAttribute('href')).toBe('/health?tab=setup#setup-slack-mcp');
   });
 });

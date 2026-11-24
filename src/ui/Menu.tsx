@@ -8,7 +8,8 @@ import { useRef, type KeyboardEvent, type ReactElement, type ReactNode } from 'r
 import { cn } from './cn';
 import type { Placement } from './floating';
 import { Icon } from './Icon';
-import { KbdHint } from './Kbd';
+import { useIsMac } from '@/client/keyboard/KeyboardProvider';
+import { ariaKeyShortcuts, KbdHint } from './Kbd';
 import { Popover } from './Popover';
 
 export type MenuEntry =
@@ -42,10 +43,17 @@ export interface MenuProps {
 
 export function Menu({ trigger, items, placement = 'bottom-end', width = 240, label, open, onOpenChange, header, footer }: MenuProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
+  const isMac = useIsMac();
 
   const focusables = () => Array.from(listRef.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([aria-disabled="true"])') ?? []);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>, close: () => void) => {
+    // WAI-ARIA menu: Tab on an item leaves the menu and closes it (focus goes back to the trigger, then on with the
+    // Tab); a custom entry's own fields (Later ▾'s date) keep Tab
+    if (e.key === 'Tab' && (e.target as HTMLElement).matches?.('[role^="menuitem"]')) {
+      close();
+      return;
+    }
     const els = focusables();
     if (!els.length) return;
     const i = els.indexOf(document.activeElement as HTMLElement);
@@ -74,7 +82,7 @@ export function Menu({ trigger, items, placement = 'bottom-end', width = 240, la
   return (
     <Popover trigger={trigger} placement={placement} width={width} role="menu" label={label} open={open} onOpenChange={onOpenChange} className="overflow-hidden p-1">
       {({ close }) => (
-        <div ref={listRef} onKeyDown={onKeyDown}>
+        <div ref={listRef} onKeyDown={(e) => onKeyDown(e, close)}>
           {header}
           {items.map((it, idx) => {
             if (it.type === 'separator') return <div key={it.id ?? `sep${idx}`} role="separator" className="-mx-1 my-1 h-px bg-line" />;
@@ -93,6 +101,7 @@ export function Menu({ trigger, items, placement = 'bottom-end', width = 240, la
                 role={isRadio ? 'menuitemradio' : 'menuitem'}
                 aria-checked={isRadio ? it.checked : undefined}
                 aria-disabled={it.disabled || undefined}
+                aria-keyshortcuts={!isRadio && it.kbd ? ariaKeyShortcuts(it.kbd, isMac) : undefined}
                 tabIndex={-1}
                 onClick={() => {
                   if (it.disabled) return;
@@ -119,7 +128,7 @@ export function Menu({ trigger, items, placement = 'bottom-end', width = 240, la
                   <span className="block truncate">{it.label}</span>
                   {it.description ? <span className="block truncate text-caption text-muted">{it.description}</span> : null}
                 </span>
-                {!isRadio && it.kbd ? <KbdHint combo={it.kbd} /> : null}
+                {!isRadio && it.kbd ? <KbdHint combo={it.kbd} decorative /> : null}
               </button>
             );
           })}

@@ -7,8 +7,9 @@
  * row carries it (`logNoteBasis: summary`). A note you edited is yours: its row is never asked about again.
  *
  * Picked: notes of the last 21 days on a meeting whose row waits to be logged (needs input, proposed, approved; not
- * on a canvas, note not edited) and whose cached answer is missing or was made from other notes or facts. At most
- * 12 calls a pass, each capped at $0.01 (Haiku), the pass at $0.10. Cost (COST-1): the daily hard cap is checked
+ * on a canvas, note not edited) and whose cached answer is missing or was made from other notes or facts. In pages of
+ * 12 calls, each capped at $0.01 (Haiku), the page at $0.10; a page that stops with notes still due queues the next
+ * page (src/jobs/pass-pages.ts, caps audit 2026-11-21). Cost (COST-1): the daily hard cap is checked
  * before every call; at the cap nothing is called (`deferred_budget`) and the template stays. Each call is one
  * llm_calls row (purpose `summarize`, skill `activity-note`, the daily budget). An unusable answer (SKIP, a refusal)
  * is cached as none, so the same notes never cost twice; a failed call is not cached (the next pass tries again).
@@ -35,8 +36,10 @@ import type { CompletionModel } from '@/scanner/completion/types';
 import { DbScannerStore } from '@/scanner/store-db';
 import { putKv } from '@/server/datasource/db/ext';
 
+import { nextPageDue, queueNextPage } from '../pass-pages';
 import { QUEUES } from '../registry';
 import type { JobContext, JobHandlerDef } from '../types';
+import { projectionStore } from '@/server/datasource/db/store/projections.run';
 
 export const ACTIVITY_NOTES_JOB = 'activity.notes';
 export const ACTIVITY_NOTES_SKILL = 'activity-note';
@@ -44,8 +47,10 @@ const ACTIVITY_NOTES_ENGINE = 'activity-notes@1';
 export const activityNotesDedupeKey = (userId: string) => `activity.notes:${userId}`;
 
 const LOOKBACK_DAYS = 21;
+/** A page (not a cap): the next page is queued while notes are due. */
 const MAX_CALLS = 12;
 const PER_CALL_USD = 0.01;
+/** The page's $ line (a page boundary too); the daily hard cap is the budget. */
 const PER_PASS_USD = 0.1;
 
 export interface ActivityNotesDeps {
@@ -176,11 +181,11 @@ export async function runActivityNotes(ctx: JobContext, d: ActivityNotesDeps = d
   let skipped = 0;
   let failed = 0;
   let deferred: string | null = null;
+  let atPage = false;
   const days = new Set<string>();
   for (const { c, facts, key } of due) {
-    if (calls >= maxCalls) break;
-    if (spent + PER_CALL_USD > PER_PASS_USD) {
-      deferred = 'pass_cap';
+    if (calls >= maxCalls || spent + PER_CALL_USD > PER_PASS_USD) {
+      atPage = true;
       break;
     }
     // COST-1: the daily hard cap first; at the cap nothing is called and the template stays
@@ -212,12 +217,14 @@ export async function runActivityNotes(ctx: JobContext, d: ActivityNotesDeps = d
     days.add(localDay(new Date(c.starts_at).getTime(), tz));
   }
   // the rows of those meetings take the new note now (their weeks are projected again)
-  const re = days.size ? await recomputeWeeks({ db: ctx.db, userId: ctx.userId, days: [...days], now }) : { weeks: [], errors: [] };
-  return { status: deferred ? 'deferred_budget' : 'done', candidates: all.length, due: due.length, calls, summarized, skipped, failed, costUsd: Math.round(spent * 10_000) / 10_000, weeks: re.weeks.length, ...(deferred ? { deferred } : {}), ...(re.errors.length ? { errors: re.errors } : {}) };
+  const re = days.size ? await recomputeWeeks({ store: projectionStore(ctx.db), userId: ctx.userId, days: [...days], now }) : { weeks: [], errors: [] };
+  const more = nextPageDue({ stoppedAtPage: atPage, left: due.length - calls, progressed: summarized + skipped, aborted: ctx.signal.aborted });
+  const nextPage = more ? await queueNextPage(ctx, { kind: ACTIVITY_NOTES_JOB, queue: QUEUES.engine, dedupeKey: activityNotesDedupeKey(ctx.userId), maxAttempts: 2, timeoutSeconds: 900 }) : false;
+  return { status: deferred ? 'deferred_budget' : 'done', candidates: all.length, due: due.length, calls, summarized, skipped, failed, costUsd: Math.round(spent * 10_000) / 10_000, weeks: re.weeks.length, ...(deferred ? { deferred } : {}), ...(more ? { more, nextPage } : {}), ...(re.errors.length ? { errors: re.errors } : {}) };
 }
 
 export function activityNotesJobDef(): JobHandlerDef {
-  return { kind: ACTIVITY_NOTES_JOB, queue: QUEUES.engine, wired: true, description: 'D-66: the cheap model’s Org62 Description note for Time rows whose meetings have notes (under the daily hard cap)', handler: (ctx) => runActivityNotes(ctx) };
+  return { kind: ACTIVITY_NOTES_JOB, queue: QUEUES.engine, wired: true, spends: true, description: 'D-66: the cheap model’s Org62 Description note for Time rows whose meetings have notes (under the daily hard cap)', handler: (ctx) => runActivityNotes(ctx) };
 }
 
 /**

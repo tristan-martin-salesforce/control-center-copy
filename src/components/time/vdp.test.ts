@@ -23,7 +23,7 @@ describe('admin items', () => {
     expect(isAdminDraft({ destination: { kind: 'slack', target: 'channel', channelId: 'C0', channelName: '#x', threadTs: null } } as never)).toBe(false);
     expect(adminDraftHref(vdp)).toBe('/activity?view=vdp&draft=d1');
     expect(adminDraftHref(canvas)).toBe('/activity?view=week&draft=d2');
-    expect(adminTitle(canvas)).toBe('Slack canvas · Acme FY27 Q4 · Deflection');
+    expect(adminTitle(canvas)).toBe('Logging batch · Acme FY27 Q4 · Deflection');
     // a feedback report waiting to be sent is named as one (not a canvas)
     expect(adminTitle(draft('d3', 'feedback.post', {}))).toBe('Feedback · Acme FY27 Q4 · Deflection');
     // the feedback post (D-56) is a message, the Outbox's own: never an item that waits on Activity

@@ -100,6 +100,8 @@ export class DriveFetcher implements DeterministicFetcher {
       maxFeedPages: opts.maxFeedPages ?? 4,
       maxFirstFeedPages: opts.maxFirstFeedPages ?? 20,
       feedPageSize: opts.feedPageSize ?? 50,
+      // tabs read per sample, one Sheets read call each (A1:Z300): bounded by the Sheets API's per-user read quota
+      // (60 a minute) across a run's samples; a sheet with more tabs records how many were not read (sheetsNotRead)
       maxSheetTabs: opts.maxSheetTabs ?? 8,
     };
   }
@@ -153,14 +155,15 @@ export class DriveFetcher implements DeterministicFetcher {
       if (k === 'sheet') {
         const info = await this.g.call('get_spreadsheet_info', { spreadsheet_id: id }, { signal });
         const title = info.match(/^Spreadsheet:\s*"([^"]*)"/m)?.[1] ?? row?.name ?? '';
-        const tabs = parseSpreadsheetSheets(info).slice(0, this.o.maxSheetTabs);
+        const all = parseSpreadsheetSheets(info);
+        const tabs = all.slice(0, this.o.maxSheetTabs);
         const out: Array<{ name: string; size?: string; values: string }> = [];
         for (const t of tabs) {
           throwIfAborted(signal);
           const values = await this.g.call('read_sheet_values', { spreadsheet_id: id, range_name: `'${t.name.replace(/'/g, "''")}'!A1:Z300` }, { signal });
           out.push({ name: t.name, size: t.size, values });
         }
-        return digestSheet(id, title, out);
+        return digestSheet(id, title, out, all.length - tabs.length);
       }
       return digestOpaque(id, row?.name ?? '', row?.size, row?.mimeType);
     };

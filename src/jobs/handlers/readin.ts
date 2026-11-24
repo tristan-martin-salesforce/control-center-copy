@@ -1,7 +1,7 @@
 /**
  * `readin.generate` (queue `readin`, concurrency 1): research one work item or meeting with read-only tools and
  * write its read-in plus a suggested-reply draft in the Outbox (never sent). See src/llm/readin/ and
- * docs/ui/WORKER.md "Jobs".
+ * docs/reference/WORKER.md "Jobs".
  *
  * Flow: budget check → context pack (ledger, deterministic) → Sonnet agent with Slack (search + read thread), Org62
  * (SOQL), Gmail and Drive (devbar read tools) and the ledger search → validated `readin_finish` → one engine change
@@ -12,8 +12,17 @@
  * superseded run never writes. Soft failures (budget, cost cap, turns, unusable output) return `{skipped: code}`
  * so the job succeeds quietly and older content stays visible; a tool outside the allowlist or an auth failure
  * throws so the job is dead-lettered and Health shows it.
+ *
+ * Spend (caps audit 26 F-4): a read-in runs under one hold on the governor (it replaces D6's reservation): the one the
+ * worker's start gate took before it started (LLM_JOB_KINDS prices it as this handler would: skill by entity type,
+ * model by trigger), which `startJobSpend` finds by `readin.generate:<id>`; its own only when no gate ran (a direct
+ * call) or a continuation's hold lapsed. The gate's is kept because it holds before the job starts (a full day defers
+ * the read-in instead of skipping it) and settles with everything the job booked, even when it throws. Its
+ * user budgets stay lines: the read-in day line and the hard cap. The $0.35 and 14 turns are no longer where it
+ * stops: past the hold it raises a hand (Health ▸ Spend) and its continuation, carrying the hold, runs it again on
+ * Allow; turns and the SDK budget are the runaway guard.
  */
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@/llm/provider';
 
 import type { ReadIn, ReadInEntity, ReadInProgress, ReadInTrigger } from '@/contract';
 import { READIN_DEFAULTS, readInModelFor } from '@/contract';
@@ -32,7 +41,10 @@ import { errorFor, PLAN_STEPS, READIN_KIND, READIN_QUEUE } from '@/llm/readin/st
 import { createReadInTools, createToolState } from '@/llm/readin/tools';
 import { commitReadIn, dbLedgerSearch, freshnessOf, loadStored, notifyReadIn, readInBudget, recordReadInSpend, setJobProgress } from '@/server/datasource/db/readin';
 import { loadReadInRecords } from '@/server/datasource/db/readin-records';
+import { finishJobSpend, gateOf, PAUSED_FOR_SPEND, startJobSpend, type JobSpendStart, type SpendGovernor } from '@/llm/spend';
+import { dbSpendGovernor } from '@/server/datasource/db/spend';
 
+import { spendPauseResult, spendStartResult } from '../spend-pause';
 import { JobError, type JobContext, type JobHandler, type JobHandlerDef } from '../types';
 
 /** The Slack and Org62 read tools a read-in may call: subsets of the scanner allowlists in mcp-config (never widened). */
@@ -52,6 +64,8 @@ export interface ReadInHandlerDeps {
   /** Per-read-in caps (defaults READIN_DEFAULTS.maxTurns / costCapUsd); the budget can only lower them. */
   maxTurns?: number;
   costCapUsd?: number;
+  /** The spend governor (default: the database one; null: no hold, the caps above and D6's reservation apply). */
+  spend?: SpendGovernor | null;
 }
 
 let deps: ReadInHandlerDeps = {};
@@ -139,6 +153,23 @@ export async function runReadInJob(ctx: JobContext, d: ReadInHandlerDeps = deps)
       return { skipped: 'evidence_unchanged' };
     }
   }
+  // F-4: the governor holds the read-in's estimate against today (asks past it); without one, D6's reservation of the cap
+  const gov = d.spend === undefined ? dbSpendGovernor({ db, userId, clock: ctx.clock }) : d.spend;
+  const envelope = await startJobSpend(gov, ctx.job, { scope: 'research', skill: context.skill, model: (d.model ? { model: d.model } : readInModelFor(trigger)).model });
+  const early = await spendStartResult(ctx, envelope);
+  if (early) return early;
+  if (envelope.kind === 'day_budget') {
+    await decide('block', 'hard_cap_reserve', { spentUsd: b.totalUsd, capUsd: b.hardUsd });
+    return { skipped: 'hard_cap' };
+  }
+  if (envelope.kind === 'run') {
+    const userLineUsd = Math.max(0.01, trigger === 'on_demand' ? hardLeft : Math.min(hardLeft, readinLeft));
+    try {
+      return await research(ctx, d, { entity, trigger, generation, context, costCap, maxTurns, startedAt, evidenceHash, envelope, userLineUsd });
+    } finally {
+      await finishJobSpend(gov, envelope);
+    }
+  }
   // D6: hold this read-in's cost cap against the daily hard cap while it runs, so parallel jobs can't overshoot it.
   const hold = await reserveBudget(db, userId, { day: b.day, usd: costCap, hardCapUsd: b.hardUsd });
   if (!hold.ok) {
@@ -155,10 +186,11 @@ export async function runReadInJob(ctx: JobContext, d: ReadInHandlerDeps = deps)
 async function research(
   ctx: JobContext,
   d: ReadInHandlerDeps,
-  a: { entity: ReadInEntity; trigger: ReadInTrigger; generation: number; context: NonNullable<ReturnType<typeof buildReadInContext>>; costCap: number; maxTurns: number; startedAt: Date; evidenceHash: string },
+  a: { entity: ReadInEntity; trigger: ReadInTrigger; generation: number; context: NonNullable<ReturnType<typeof buildReadInContext>>; costCap: number; maxTurns: number; startedAt: Date; evidenceHash: string; envelope?: JobSpendStart; userLineUsd?: number },
 ): Promise<Record<string, unknown>> {
   const { db, userId } = ctx;
   const { entity, trigger, generation, context, costCap, maxTurns, startedAt, evidenceHash } = a;
+  const gate = a.envelope ? gateOf(a.envelope) : null;
   const progress = async (p: ReadInProgress) => setJobProgress(db, ctx.job.id, p).catch(() => undefined);
   await progress({ step: 'ledger', label: 'Checking what you said before', done: 0, total: PLAN_STEPS });
   await notifyReadIn(db, entity, 'readin.researching').catch(() => undefined);
@@ -206,6 +238,7 @@ async function research(
       state,
       maxTurns,
       costCapUsd: costCap,
+      ...(gate ? { spend: gate, ...(a.userLineUsd != null ? { userLineUsd: a.userLineUsd } : {}) } : {}),
       signal: ac.signal,
       onTool: (name) => {
         const s = stepForTool(name);
@@ -246,6 +279,11 @@ async function research(
 
   if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error('aborted'); // cancel / shutdown / timeout: the runtime settles it
   if (superseded) return { superseded: true, ...counts };
+  if (gate) gate.observe(run.costUsd);
+  if (run.error?.code === PAUSED_FOR_SPEND && a.envelope) {
+    // asked: older content stays; the continuation carries the hold and runs the read-in again on Allow
+    return { skipped: PAUSED_FOR_SPEND, ...counts, ...(await spendPauseResult(ctx, a.envelope)) };
+  }
   if (!run.ok || !run.output) {
     const code = run.error?.code ?? 'invalid_output';
     if (code === 'disallowed_tool') {
@@ -302,5 +340,5 @@ export const readInHandler: JobHandler = (ctx) => runReadInJob(ctx);
 
 /** The registry entry (src/jobs/index.ts registers it; queue `readin` gets its own pool, concurrency 1). */
 export function readInJobDef(): JobHandlerDef {
-  return { kind: READIN_KIND, queue: READIN_QUEUE, wired: true, description: 'read-ins: background research + suggested reply draft (read-only tools)', handler: readInHandler };
+  return { kind: READIN_KIND, queue: READIN_QUEUE, wired: true, spends: true, description: 'read-ins: background research + suggested reply draft (read-only tools)', handler: readInHandler };
 }

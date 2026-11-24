@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { inStateDir } from '@/lib/state-folder';
 import { addDays, differenceInCalendarDays, format, parseISO } from 'date-fns';
 import { Seed } from '@/contract';
+import { scaleSeed, seedScale } from '@/mock/scale';
 
-export const PRIVATE_SEED_PATH = path.join(os.homedir(), 'Library/Application Support/control-center/fixtures/seed.json');
+export const PRIVATE_SEED_PATH = inStateDir('fixtures', 'seed.json');
 export const EXAMPLE_SEED_PATH = path.join(process.cwd(), 'src/mock/seed.example.json');
 
 export interface LoadedSeed {
@@ -76,7 +77,8 @@ export function loadSeed(opts: { path?: string; rebase?: boolean; today?: Date }
     throw new SeedError(`[mock] seed file is not valid JSON: ${file} (${(err as Error).message})`);
   }
   const label = file === PRIVATE_SEED_PATH ? 'private fixture seed.json' : path.basename(file);
-  const seed = parseSeed(raw, label);
+  // C9: CC_SEED_SCALE=n multiplies the seed (src/mock/scale.ts); 1, the default, leaves it untouched
+  const seed = scaleSeed(parseSeed(raw, label), seedScale());
   const rebase = opts.rebase ?? process.env.CC_SEED_REBASE !== '0';
   const shiftedDays = rebase ? differenceInCalendarDays(opts.today ?? new Date(), new Date(seed.meta.asOf)) : 0;
   return { seed: shiftedDays ? parseSeed(shiftDates(seed, shiftedDays), label) : seed, path: file, shiftedDays };

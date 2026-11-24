@@ -18,7 +18,7 @@ import { queryKey } from '@/client/api';
 import { useApi } from '@/client/hooks';
 import { useOptimisticMutation, type OptimisticCache } from '@/client/optimistic';
 import { toast } from '@/client/toast';
-import { StatusBadge } from '@/components/domain';
+import { StatusBadge } from '@/components/domain/lib/v2';
 import { useRightPanel } from '@/components/shell/panel';
 import { Button, EmptyState, PanelError, Popover, Skeleton, SourceChip } from '@/ui';
 import { daysUntil, fmtAmount, fmtDate, fmtHours } from './format';
@@ -124,6 +124,12 @@ export function AccountPanel({ id }: { id: string }) {
               </li>
             ))}
           </ul>
+          {/* caps audit F-13: six here; the rest are one click away, on Work filtered by this account */}
+          {tasks.length > 6 ? (
+            <button type="button" onClick={() => navigate(`/work?account=${encodeURIComponent(d.account.id)}`)} className="mt-1 rounded-sm text-caption font-bold text-link hover:underline focus-visible:outline-none focus-visible:shadow-focus" data-testid="account-tasks-all">
+              See all {tasks.length} in Work
+            </button>
+          ) : null}
         </PanelSection>
       ) : null}
     </PanelShell>
@@ -190,7 +196,7 @@ export function OpportunityPanel({ id, label }: { id: string; label?: string }) 
           ['Owner', o.owner?.name ?? 'Not recorded'],
         ]}
       />
-      <p className="text-caption text-muted">Read only. Command Center never writes to Org62: a DC request goes on your next logging canvas.</p>
+      <p className="text-caption text-muted">Read only. Command Center never writes to Org62: a DC request goes in your next batch.</p>
       {claimDialog}
     </PanelShell>
   );

@@ -1,6 +1,6 @@
 /** Which downstream steps re-run for what changed (status, priority, NBA, draft, brief). */
 import { describe, expect, it } from 'vitest';
-import { planReeval, pruneAfterStatus, REEVAL_STEPS, type PlannerItem } from '@/engines/reeval';
+import { planReeval, pruneAfterStatus, REEVAL_STEPS, type PlannerItem } from '@/engines/reeval/planner';
 import { CHANGE_KINDS, WORK_ITEM_STATUSES } from '@/engines/types';
 import { int, pick, rng } from '../priority/fixtures';
 

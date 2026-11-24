@@ -3,7 +3,8 @@
  * just before it, everything after it in the same conversation oldest first, my later messages elsewhere, calendar
  * events around the topic, and sibling items. Each line gets a short alias the model cites.
  */
-import { redactText } from '@/llm/redact';
+import { cutHead } from '@/engines/prompt-cut';
+import { redactText } from '@/lib/redact';
 
 import type { SettleContext, SettleHints, SettleLine } from './types';
 
@@ -176,12 +177,12 @@ export function buildSettleContext(raw: SettleRaw, o: BuildOptions): SettleConte
     // A long DM: keep the start and the end, and from the middle the lines that mention the topic (mine and the
     // asker's first), in time order. The deciding line of a busy DM is usually there.
     const askerKey = asker?.trim().toLowerCase();
-    const middle = afterAll
+    const ranked = afterAll
       .slice(head, afterAll.length - tail)
       .map((r, i) => ({ r, i, s: mentions(r) * 2 + (r.fromMe ? 1 : 0) + (askerKey && r.author?.trim().toLowerCase() === askerKey ? 1 : 0) }))
       .filter((m) => m.s >= 2)
-      .sort((a, b) => b.s - a.s || a.i - b.i)
-      .slice(0, middleMax)
+      .sort((a, b) => b.s - a.s || a.i - b.i);
+    const middle = cutHead('settle.dm_middle', ranked, middleMax)
       .sort((a, b) => a.i - b.i)
       .map((m) => m.r);
     afterRows = [...afterAll.slice(0, head), ...middle, ...afterAll.slice(-tail)];
@@ -191,13 +192,13 @@ export function buildSettleContext(raw: SettleRaw, o: BuildOptions): SettleConte
   const before = beforeRows.map((r, i) => line(`b${i + 1}`, 'before', r, 300));
   const after = afterRows.map((r, i) => line(`c${i + 1}`, 'after', r));
   const elseSeen = new Set<string>([...convIds, ...(askRow ? [askRow.id] : [])]);
-  const elseRows = [...evElsewhere, ...raw.elsewhere].filter((r) => !elseSeen.has(r.id) && (elseSeen.add(r.id), true)).sort((a, b) => ms(a.at) - ms(b.at)).slice(0, 14);
-  const elsewhere = elseRows.map((r, i) => ({ ...line(`x${i + 1}`, 'elsewhere', r, 300), ...(r.role ? { where: `${whereOf(r)} · linked as ${r.role}` } : {}) }));
-  const events = raw.events
-    .slice()
-    .sort((a, b) => ms(a.startsAt) - ms(b.startsAt))
-    .slice(0, 8)
-    .map(
+  const elseRows = [...evElsewhere, ...raw.elsewhere].filter((r) => !elseSeen.has(r.id) && (elseSeen.add(r.id), true)).sort((a, b) => ms(a.at) - ms(b.at));
+  const elsewhere = cutHead('settle.elsewhere', elseRows, 14).map((r, i) => ({ ...line(`x${i + 1}`, 'elsewhere', r, 300), ...(r.role ? { where: `${whereOf(r)} · linked as ${r.role}` } : {}) }));
+  const events = cutHead(
+    'settle.events',
+    raw.events.slice().sort((a, b) => ms(a.startsAt) - ms(b.startsAt)),
+    8,
+  ).map(
       (e, i): SettleLine => ({
         id: `e${i + 1}`,
         kind: 'event',
@@ -209,7 +210,7 @@ export function buildSettleContext(raw: SettleRaw, o: BuildOptions): SettleConte
         passed: ms(e.endsAt) <= nowMs,
       }),
     );
-  const siblings = raw.siblings.slice(0, 8).map(
+  const siblings = cutHead('settle.siblings', raw.siblings, 8).map(
     (s, i): SettleLine => ({
       id: `k${i + 1}`,
       kind: 'sibling',

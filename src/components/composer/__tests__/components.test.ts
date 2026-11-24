@@ -140,11 +140,16 @@ describe('ConfirmSendDialog', () => {
 describe('SendCountdownToast', () => {
   it('counts down and Undo calls back', async () => {
     const onUndo = vi.fn();
-    const now = Date.now();
-    const { container } = await render(h(SendCountdownToast, { deadline: now + 7_000, durationMs: 10_000, label: 'Sending to #acme-ext', onUndo, autoFocusUndo: false }));
-    expect($('[data-testid="send-countdown"]', container)!.textContent).toMatch(/Sending to #acme-ext in 7s/);
-    await click($('[data-testid="send-undo"]', container));
-    expect(onUndo).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers({ toFake: ['Date'] }); // the seconds left are read off Date.now(): a frozen clock, so a slow render still says 7s
+    try {
+      const now = Date.now();
+      const { container } = await render(h(SendCountdownToast, { deadline: now + 7_000, durationMs: 10_000, label: 'Sending to #acme-ext', onUndo, autoFocusUndo: false }));
+      expect($('[data-testid="send-countdown"]', container)!.textContent).toMatch(/Sending to #acme-ext in 7s/);
+      await click($('[data-testid="send-undo"]', container));
+      expect(onUndo).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -13,7 +13,7 @@ import { createMockDataSource } from '@/server/datasource/mock';
 import { resetDataSourceForTests } from '@/server/datasource';
 import { handle } from '@/server/http';
 import { syncServerNow } from '@/ui/clock';
-import { $, $$, cleanup, click, render, waitFor } from '../../composer/__tests__/dom';
+import { $, $$, advance, cleanup, click, render, waitFor } from '../../composer/__tests__/dom';
 
 const opened = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -72,7 +72,6 @@ afterEach(async () => {
 const mount = (el: ReactElement) => render(h(QueryClientProvider, { client: qc }, el));
 const hover = (el: Element) => act(async () => void el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body })));
 const leave = (el: Element) => act(async () => void el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })));
-const pause = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
 const key = (k: string) => act(async () => void window.dispatchEvent(new KeyboardEvent('keydown', { key: k })));
 
 async function ribbon(): Promise<HomeRibbon> {
@@ -81,7 +80,16 @@ async function ribbon(): Promise<HomeRibbon> {
   return home.ribbon;
 }
 
+// The card's open and close delays run on fake timers (only setTimeout / clearTimeout): the test steps the clock to
+// either side of each delay, so a loaded machine can neither open the card early nor close it before the hover lands.
 describe('HoverCard', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('opens after the delay (never at once), fires onIntent at once, stays open over the card, closes on leave, Esc and click', async () => {
     const intent = vi.fn();
     const clicked = vi.fn();
@@ -90,30 +98,39 @@ describe('HoverCard', () => {
     await hover(btn);
     expect(intent).toHaveBeenCalledTimes(1);
     expect($('[data-hovercard]')).toBeNull();
-    const card = await waitFor(() => $('[data-hovercard]'));
+    await advance(119);
+    expect($('[data-hovercard]')).toBeNull(); // not before the delay
+    await advance(1);
+    const card = $('[data-hovercard]')!;
+    expect(card).not.toBeNull();
     expect(btn.contains(card)).toBe(false); // beside the trigger (a portal), never over or inside it
     expect(btn.getAttribute('aria-describedby')).toBe(card.id);
     // crossing into the card keeps it open; leaving the card closes it
     await leave(btn);
     await hover(card);
-    await pause(150);
+    await advance(150);
     expect($('[data-hovercard]')).not.toBeNull();
     await leave(card);
-    await waitFor(() => !$('[data-hovercard]'));
+    await advance(79);
+    expect($('[data-hovercard]')).not.toBeNull(); // the close waits its delay too
+    await advance(1);
+    expect($('[data-hovercard]')).toBeNull();
     // Esc closes
     await hover(btn);
-    await waitFor(() => $('[data-hovercard]'));
+    await advance(120);
+    expect($('[data-hovercard]')).not.toBeNull();
     await key('Escape');
     expect($('[data-hovercard]')).toBeNull();
     // a click is the trigger's: its handler runs and the card closes (a pending open is cancelled too)
     await hover(btn);
-    await waitFor(() => $('[data-hovercard]'));
+    await advance(120);
+    expect($('[data-hovercard]')).not.toBeNull();
     await click(btn);
     expect(clicked).toHaveBeenCalledTimes(1);
     expect($('[data-hovercard]')).toBeNull();
     await hover(btn);
     await click(btn);
-    await pause(200);
+    await advance(200);
     expect($('[data-hovercard]')).toBeNull();
   });
 
@@ -121,7 +138,9 @@ describe('HoverCard', () => {
     const { container } = await mount(h(HoverCard, { content: 'Card', openDelayMs: 50, children: h('button', { type: 'button' }, 'Trigger') }));
     const btn = $('button', container)!;
     await act(async () => btn.focus());
-    await waitFor(() => $('[data-hovercard]'));
+    expect($('[data-hovercard]')).toBeNull();
+    await advance(50);
+    expect($('[data-hovercard]')).not.toBeNull();
     await act(async () => btn.blur());
     expect($('[data-hovercard]')).toBeNull();
   });
@@ -141,7 +160,9 @@ describe('Home ribbon: meeting hover card and click routing', () => {
     const { container } = await mount(h(DayRibbon, { r, tz: 'America/Denver', nowMs: Date.parse(r.now) }));
     const btn = $('button[data-event-id="ev_acme_demo"]', container)!;
     expect(btn.hasAttribute('title')).toBe(false); // the card replaces the native tooltip
-    expect(btn.getAttribute('aria-label')).toBe(demo.fullTitle);
+    // the name starts with what the block shows ("13:00 ▲ prep …", WCAG 2.5.3), then the full line (30-a11y)
+    expect(btn.getAttribute('aria-label')).toMatch(/^13:00 ▲ prep ACME Phase 2 demo: /);
+    expect(btn.getAttribute('aria-label')!.endsWith(demo.fullTitle)).toBe(true);
 
     await hover(btn);
     const card = await waitFor(() => $('[data-meeting-card="ev_acme_demo"]'));

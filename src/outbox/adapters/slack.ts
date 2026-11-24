@@ -103,3 +103,20 @@ async function readback(read: ReadFn, ctx: ReadbackContext): Promise<ReadbackOut
 }
 
 export const slackAdapter: OutboxAdapter = { channel: 'slack', toolCall, parseWrite, readback };
+
+/**
+ * D-98 (09 R5): what an Applied Slack or Gmail item left as, for its landing row (`record_landings` destination `slack`
+ * / `gmail`, one `landing_writes` row per delivered attempt). Ids, targets and the mode only: never the message text,
+ * the subject or a recipient address (*tenet: Local data, privacy-safe logs*). Pure; the DataSource writes it in the
+ * same change set as the delivery record.
+ */
+export interface MessageLanding {
+  destination: 'slack' | 'gmail';
+  externalId: string | null;
+  values: Record<string, string | null>;
+}
+
+/** A delivered Slack post or Slack draft: the channel, the thread it answers, the mode, the tool, the link. */
+export function slackLanding(payload: Record<string, unknown>, mode: DispatchMode, write: WriteOutcome): MessageLanding {
+  return { destination: 'slack', externalId: write.externalId, values: { channel: str(payload.channel), thread_ts: str(payload.thread_ts), mode, tool: OUTBOX_TOOLS.slack.write[mode], link: write.link } };
+}

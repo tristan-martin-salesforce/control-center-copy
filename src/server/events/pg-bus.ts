@@ -92,7 +92,7 @@ export class PgEventBus implements EventBus {
   }
 
   private async connect(): Promise<void> {
-    const c = new Client({ connectionString: resolveDatabaseUrl(this.o.url), application_name: 'control-center-events', options: '-c TimeZone=UTC' });
+    const c = new Client({ connectionString: resolveDatabaseUrl(this.o.url), application_name: 'command-center-events', options: '-c TimeZone=UTC' });
     c.on('notification', (m) => this.onNotification(m.channel, m.payload));
     const drop = () => {
       if (this.client !== c) return;

@@ -84,13 +84,13 @@ export const AUTONOMY_LEVELS: Array<{ level: AutonomyLevel; label: string; hint:
   { level: 'L1', label: 'L1 Draft', hint: 'A draft exists in the app. You send it.' },
   { level: 'L2', label: 'L2 Stage', hint: 'Pushed to the destination as a draft.' },
   { level: 'L3', label: 'L3 One-click', hint: 'Executes when you approve.' },
-  { level: 'L4', label: 'L4 Auto', hint: 'Executes without a click, audited and undoable. Internal, reversible actions and the two approved canvases only.' },
+  { level: 'L4', label: 'L4 Auto', hint: 'Executes without a click, audited and undoable. Internal, reversible actions and the two approved batches (logging and forecast) only.' },
 ];
 
 export const ACTION_LABEL: Record<string, string> = {
   slack_reply: 'Slack replies',
   email_reply: 'Email replies',
-  canvas_rewrite: 'Approved canvas rewrite',
+  canvas_rewrite: 'Updating an approved batch',
   tool_launch: 'Launching tools',
   claude_session: 'Claude sessions',
   activity_log: 'Activity log approval',
@@ -122,7 +122,7 @@ export function parseThresholds(raw: string | null): Thresholds {
     const v = JSON.parse(raw) as Partial<Thresholds>;
     return {
       autoCloseMin: v.autoCloseMin === 'likely' ? 'likely' : 'sure',
-      reopenWindowDays: Number.isFinite(v.reopenWindowDays) ? Math.min(60, Math.max(1, Math.round(v.reopenWindowDays!))) : DEFAULT_THRESHOLDS.reopenWindowDays,
+      reopenWindowDays: Number.isFinite(v.reopenWindowDays) ? Math.max(1, Math.round(v.reopenWindowDays!)) : DEFAULT_THRESHOLDS.reopenWindowDays,
       mergeScore: Number.isFinite(v.mergeScore) ? Math.min(1, Math.max(0.5, v.mergeScore!)) : DEFAULT_THRESHOLDS.mergeScore,
       snoozeWakeOnNewInfo: v.snoozeWakeOnNewInfo === true,
     };
@@ -149,7 +149,10 @@ export function validateBudgets(softUsd: number, hardUsd: number, alertPct: numb
 
 // ── Settings v2: nav, policy diff, re-rank comparison, score breakdown ──────────────────────
 
-export type SectionId = 'profile' | 'role' | 'display' | 'time' | 'policy' | 'thresholds' | 'closing' | 'agent' | 'sending' | 'budgets' | 'connectors' | 'watches' | 'scanning' | 'feedback' | 'about';
+export type SectionId = 'profile' | 'role' | 'display' | 'time' | 'policy' | 'thresholds' | 'closing' | 'agent' | 'sending' | 'budgets' | 'connectors' | 'watches' | 'scanning' | 'feedback' | 'data' | 'about';
+
+/** The five top sections (01-ui-audit R8) plus Advanced, collapsed. */
+export type SectionGroupId = 'me' | 'sources' | 'sending' | 'budgets' | 'data' | 'advanced';
 
 export interface SectionMeta {
   id: SectionId;
@@ -158,58 +161,98 @@ export interface SectionMeta {
   keywords: string;
 }
 
-export const SECTION_GROUPS: Array<{ label: string; items: SectionMeta[] }> = [
+export interface SectionGroup {
+  id: SectionGroupId;
+  label: string;
+  /** One line under the group's name. */
+  blurb: string;
+  /** Advanced: folded until opened, a search matches inside it, or one of its pages is open. */
+  collapsed?: boolean;
+  items: SectionMeta[];
+}
+
+/**
+ * Settings in five sections (01-ui-audit R8, 2026-11-20): Me · Sources · Sending · Budgets · Data, then Advanced.
+ * Each section holds the pages it took over; `?section=` names a page, so every old link still lands (the page ids
+ * did not change), and a section's own id (`?section=me`) opens its first page. Storage keys did not change.
+ */
+export const SECTION_GROUPS: SectionGroup[] = [
   {
-    label: 'Account',
+    id: 'me',
+    label: 'Me',
+    blurb: 'Who you are, your role, your hours',
     items: [
-      { id: 'profile', label: 'Profile & role', keywords: 'name email role pack manager timezone time zone working hours days' },
+      { id: 'profile', label: 'Profile & hours', keywords: 'me identity name email role pack manager timezone time zone working hours days aes i cover coverage' },
       { id: 'role', label: 'Role & rules', keywords: 'role persona solutions engineer se specialist ae account executive level manager duties rules what counts as a task capture thresholds features sources activate deactivate available preconfiguration preset vdp forecast notes deal role contributions missed opportunities' },
       { id: 'display', label: 'Display', keywords: 'theme dark light system text size font density compact comfortable shortcuts keyboard cheat sheet' },
-      { id: 'time', label: 'Time', keywords: 'time onsite on-site trip travel flight airport buffer hotel dinner customer-facing hours frame' },
+      { id: 'time', label: 'Time', keywords: 'time onsite on-site trip travel flight airport buffer hotel dinner customer-facing hours frame dismissed sources' },
     ],
   },
   {
-    label: 'Ranking',
+    id: 'sources',
+    label: 'Sources',
+    blurb: 'What the app reads, and how often',
+    items: [
+      { id: 'connectors', label: 'Connectors', keywords: 'connectors sources slack gmail calendar drive gemini org62 vdp claude auth re-auth sign in scan health' },
+      { id: 'watches', label: 'Watches', keywords: 'watches channels briefs subscriptions cadence digest' },
+      { id: 'scanning', label: 'Scanning', keywords: 'scanning scanner asks channel @channel @here list catch up missed meeting get up to speed opp team where does this belong mapping questions triage' },
+    ],
+  },
+  {
+    id: 'sending',
+    label: 'Sending',
+    blurb: 'What may leave, and how much the agents do',
+    items: [
+      { id: 'sending', label: 'Sending', keywords: 'sending dry run dry-run draft send default read-back verification undo window vdp autopilot daily cap trusted sites asset links hosts closing items for you resolution check old closers watch only' },
+      { id: 'agent', label: 'Autonomy', keywords: 'agent behavior autonomy ladder L0 L1 L2 L3 L4 voice samples style task capture watched sources channels drafting tone length sign-off' },
+      { id: 'feedback', label: 'Feedback', keywords: 'feedback report bug idea team channel slack post live diagnose' },
+    ],
+  },
+  {
+    id: 'budgets',
+    label: 'Budgets',
+    blurb: 'What the AI may spend',
+    items: [{ id: 'budgets', label: 'Budgets', keywords: 'budgets spend cost soft hard cap usd dollars alert warning per message per run day assistant limits receipts holds asks governor model routing auto haiku sonnet opus ranking priority engine v1 v2 preview make this my list memory remember remembers preferences pinned notes forget' }],
+  },
+  {
+    id: 'data',
+    label: 'Data',
+    blurb: 'What is kept, backups, and this build',
+    items: [
+      { id: 'data', label: 'Data & backups', keywords: 'data retention keep delete purge clean up old records trace events llm text orphan sources backups backup restore export database size disk privacy' },
+      { id: 'about', label: 'About', keywords: 'about version sha build modified changelog release update upgrade migration worker persona getting started checklist tips coach marks guide readme' },
+    ],
+  },
+  {
+    id: 'advanced',
+    label: 'Advanced',
+    blurb: 'Ranking and closing rules',
+    collapsed: true,
     items: [
       { id: 'policy', label: 'Priority policy', keywords: 'priority policy weights sliders rules boost rank re-rank preview apply version revert undo customer-facing manager due urgency meeting' },
       { id: 'thresholds', label: 'Thresholds', keywords: 'thresholds auto-close evidence reopen window merge score snooze wake engines' },
       { id: 'closing', label: 'Closing work', keywords: 'closing close for me auto-close closed for you settle done resolved moment passed not yours not an ask duplicate superseded gone quiet strictness cautious balanced eager ask first external people channels rules reopen follow-up old asks stronger model tell me what closed' },
     ],
   },
-  {
-    label: 'Agents',
-    items: [
-      { id: 'agent', label: 'Agent behavior', keywords: 'agent behavior autonomy L0 L1 L2 L3 L4 voice samples style task capture watched sources channels drafting tone length sign-off' },
-      { id: 'sending', label: 'Sending', keywords: 'sending dry run dry-run draft send default read-back verification undo window' },
-      { id: 'budgets', label: 'Budgets', keywords: 'budgets spend cost soft hard cap usd dollars alert warning' },
-    ],
-  },
-  {
-    label: 'Sources',
-    items: [
-      { id: 'connectors', label: 'Connectors', keywords: 'connectors sources slack gmail calendar drive gemini org62 vdp claude auth re-auth scan health' },
-      { id: 'watches', label: 'Watches', keywords: 'watches channels briefs subscriptions cadence digest' },
-      { id: 'scanning', label: 'Scanning', keywords: 'scanning scanner asks channel @channel @here list catch up missed meeting get up to speed opp team where does this belong mapping questions triage' },
-    ],
-  },
-  // D-56 (lane D): Feedback, then About last.
-  {
-    label: 'Team',
-    items: [{ id: 'feedback', label: 'Feedback', keywords: 'feedback report bug idea team channel slack post live diagnose' }],
-  },
-  // About stays last (handoff, D-57): lanes that add sections add them above it.
-  {
-    label: 'App',
-    items: [{ id: 'about', label: 'About', keywords: 'about version sha build changelog release update upgrade migration worker persona getting started checklist tips coach marks guide readme' }],
-  },
 ];
 
 export const SECTIONS: SectionMeta[] = SECTION_GROUPS.flatMap((g) => g.items);
-/** Settings opens on who you are (Profile & role); the ranking policy is one click down. */
+/** Settings opens on who you are (Me ▸ Profile & hours); the ranking policy sits under Advanced. */
 export const DEFAULT_SECTION: SectionId = 'profile';
 
+/** The section a page sits in. */
+export function groupOf(id: SectionId): SectionGroup {
+  return SECTION_GROUPS.find((g) => g.items.some((it) => it.id === id))!;
+}
+
+/**
+ * `?section=` → the page to show: a page id as is (every link from before the five sections), a section id
+ * (`me`, `sources`, `data`, `advanced`) its first page, anything else Me ▸ Profile.
+ */
 export function asSectionId(v: string | null | undefined): SectionId {
-  return SECTIONS.some((s) => s.id === v) ? (v as SectionId) : DEFAULT_SECTION;
+  if (SECTIONS.some((s) => s.id === v)) return v as SectionId;
+  const g = SECTION_GROUPS.find((x) => x.id === v);
+  return g ? g.items[0]!.id : DEFAULT_SECTION;
 }
 
 /** Sections whose label, keywords or current summary contain every word of the query. */
@@ -395,4 +438,9 @@ export function closingSummary(c: { enabled: boolean; strictness: string; reason
   if (!c.enabled) return 'Off · asks only';
   const close = Object.values(c.reasons).filter((a) => a === 'close').length;
   return `On · ${c.strictness.charAt(0).toUpperCase()}${c.strictness.slice(1)} · ${close} reason${close === 1 ? '' : 's'} close`;
+}
+
+/** "Me ▸ Profile & hours"; a page named like its section ("Budgets") says it once. */
+export function sectionCrumb(group: string, page: string): string {
+  return !page || page === group ? group : `${group} ▸ ${page}`;
 }

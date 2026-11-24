@@ -11,6 +11,7 @@ import type { DataSource } from '@/server/datasource/types';
 import type { DiagnoseAgent } from './agent';
 import type { TeamConfig } from './channel';
 import type { ScrubTerms } from './scrub';
+import type { SpendGovernor } from '@/llm/spend';
 
 export interface FeedbackSpend {
   model: string;
@@ -18,6 +19,8 @@ export interface FeedbackSpend {
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   ok: boolean;
   errorCode?: string;
   latencyMs: number;
@@ -40,10 +43,17 @@ export interface FeedbackHost {
   recordSpend(s: FeedbackSpend): Promise<void>;
   /** The real diagnose agent, or null (mock, Assistant LLM off): the deterministic report runs instead. */
   agent: DiagnoseAgent | null;
+  /** F-4: the spend governor (the run holds its estimate and asks past it). Absent: the per-report cap is the line. */
+  spend?: () => Promise<SpendGovernor | null>;
   /** Tests: config/team.json. */
   team?: () => TeamConfig;
   /** The repo folder the agent reads (default: the server's working directory). */
   repoRoot?: string;
+  /**
+   * PKG-8: whether this is a live install, so the Diagnostics block carries the doctor's report and the log tail.
+   * Default: the db DataSource is, the mock is not.
+   */
+  live?: () => Promise<boolean>;
 }
 
 let pkgVersion: string | null = null;

@@ -28,10 +28,10 @@
   "progress": { "protocol": "none" },
   "estimatedDuration": { "minSec": 1, "maxSec": 60 },
   "privacy": {
-    "note": "Deterministic local Python CLI. The export is written to a Control Center run folder via --out, never next to the estimate. No network calls.",
+    "note": "Deterministic local Python CLI. The export is written to a Command Center run folder via --out, never next to the estimate. No network calls.",
     "dataClass": "customer",
     "network": "localhost-only",
-    "writes": ["~/Library/Application Support/control-center/tool-runs"],
+    "writes": ["~/Library/Application Support/command-center/tool-runs"],
     "externalCalls": [],
     "requiresConfirm": false
   }

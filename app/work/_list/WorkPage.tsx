@@ -2,9 +2,9 @@
 /**
  * Work (UI-SPEC §2, §12; design v2): everything I owe, as calm verb sections of two-line rows.
  *
- *   one sentence ("3 to do now of 34 open") ·························· 3 of 34 · j k move · ↵ details
+ *   one sentence ("3 due today of 34 open") ·························· 3 of 34 · j k move · ↵ details
  *   ┌ tabs · search · filters · By when / By initiative ─────────────────────────────────────────────┐
- *   │ Do now 3 · Do this week 9 · Chase 2 · Think ahead 6 · Fit in 14   (3 rows each, See all N →)  │
+ *   │ Due today 3 · Do this week 9 · Chase 2 · Think ahead 6 · Fit in 14   (3 rows each, See all N →)  │
  *   └ That's everything. ────────────────────────────────────────────────────────────────────────────┘
  *
  * Detail lives in the docked right panel: click or Enter calls openDetails({kind: 'work_item'}); an open
@@ -30,12 +30,12 @@ import { FOCUS_SUB, groupByFocus, groupByInitiative, shownCount, type Group } fr
 import { focusItemSoon, neighbourOf, useOpenKeys, usePageClock, useStableList, useUrlFilters } from '@/components/lists/hooks';
 import { ListEnd, ListFrame, SelectionPosition, StaleRefresh } from '@/components/lists/ListFrame';
 import { ListSection, SectionAction } from '@/components/lists/ListSection';
+import { PAGE_SIZE } from '@/components/lists/paging';
 import { useFollowWhenGone, useListPanel, useWide } from '@/components/lists/panel';
 import {
   activeFilterCount,
   clearFilters,
   DEFAULT_FILTERS,
-  itemsQueryOf,
   parseWorkFilters,
   serializeWorkFilters,
   type WorkFilters,
@@ -46,6 +46,7 @@ import { useItemActions } from '@/components/lists/useItemActions';
 import { SourceKind, WorkKind } from '@/contract';
 import { Banner, Button, EmptyState, LivePill, PanelBoundary, PanelError, SegmentedToggle, Tabs, usePanelState } from '@/ui';
 import { BulkBar } from './BulkBar';
+import { MoreRow, usePageCount, useShowMore, windowQuery } from './MoreRow';
 import { InitiativeLink, InitiativeSub, resolutionWhy, RowExpansion, snoozeWhy } from './RowExtras';
 import { WORK_TAB_LABEL, WORK_TABS, WorkListSkeletonBody } from './WorkSkeleton';
 import { navigate } from '@/components/shell/router';
@@ -90,18 +91,22 @@ interface Section extends Group<WorkItem> {
 
 function WorkInner({ now, tz }: { now: string; tz?: string }) {
   const { value: f, committed, update } = useUrlFilters<WorkFilters>({ parse: parseWorkFilters, serialize: serializeWorkFilters });
-  const query = useMemo(() => itemsQueryOf(committed), [committed]);
-  const list = useApi('listItems', { query }, { placeholderData: keepPreviousData });
-  // The unfiltered list for the same tab: "n of m" and the account / initiative options.
-  const base = useApi('listItems', { query: { tab: committed.tab } }, { placeholderData: keepPreviousData });
-
   const resetKey = serializeWorkFilters({ ...committed, group: DEFAULT_FILTERS.group });
+  // Closed pages (GET /items limit + cursor): a window of `pages` × 50 rows; a new tab or filter starts at one page.
+  const paged = committed.tab === 'done';
+  const { pages, setPages } = usePageCount(resetKey, paged);
+  const query = useMemo(() => windowQuery(committed, paged, pages), [committed, paged, pages]);
+  const list = useApi('listItems', { query }, { placeholderData: keepPreviousData });
+  // The unfiltered list for the same tab: "n of m" and the account / initiative options (Closed: its first page).
+  const base = useApi('listItems', { query: paged ? { tab: committed.tab, limit: PAGE_SIZE } : { tab: committed.tab } }, { placeholderData: keepPreviousData });
   const [sel, setSel] = useResumeSelection('work');
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const hold = useArrivalHold(bodyRef);
   const panelEarly = useListPanel();
   // Live (docs/UX.md "Live updates"): arrivals at their place, rows done elsewhere fade, the open one stays.
-  const stable = useStableList(list.data?.items, resetKey, list.isPlaceholderData, { hold, keep: panelEarly.openId ?? sel });
+  // A page of Closed loaded by "Show more" is not an arrival: the window re-takes the server's order then (UX.md: a
+  // re-sort waits until you change tab, filter or page); live refetches between keep the merge rules.
+  const stable = useStableList(list.data?.items, paged ? `${resetKey}|p${pages}` : resetKey, list.isPlaceholderData, { hold, keep: panelEarly.openId ?? sel });
   const wide = useWide();
   const panel = panelEarly;
   const filtering = activeFilterCount(f) > 0;
@@ -150,6 +155,8 @@ function WorkInner({ now, tz }: { now: string; tz?: string }) {
   const [resolveFor, setResolveFor] = useState<WorkItem | null>(null);
   const actions = useItemActions();
   const bulk = useBulkApply();
+
+  const more = useShowMore({ data: list.data, placeholder: list.isPlaceholderData, paged, filters: committed, pages, setPages });
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   useResumeScroll(bodyRef, 'work-list');
@@ -276,7 +283,7 @@ function WorkInner({ now, tz }: { now: string; tz?: string }) {
   // ---- ⌘K -------------------------------------------------------------------------------------
   useCommands([
     ...TABS.map((t) => ({ id: `work.tab.${t}`, title: `Work: ${TAB_LABEL[t]}`, group: 'View', keywords: ['tab', 'filter'], run: () => update({ tab: t }, { immediate: true }) })),
-    { id: 'work.group.due', title: 'Work: group by when (Do now, this week, Chase…)', group: 'View', keywords: ['due', 'focus'], run: () => update({ group: 'due' }, { immediate: true }) },
+    { id: 'work.group.due', title: 'Work: group by when (Due today, this week, Chase…)', group: 'View', keywords: ['due', 'focus'], run: () => update({ group: 'due' }, { immediate: true }) },
     { id: 'work.group.initiative', title: 'Work: group by initiative', group: 'View', run: () => update({ group: 'initiative' }, { immediate: true }) },
     { id: 'work.filters.clear', title: 'Work: clear filters', group: 'View', disabled: !activeFilterCount(f), run: () => update((x) => clearFilters(x), { immediate: true }) },
     { id: 'work.search', title: 'Work: search', group: 'View', shortcut: '/', run: () => searchRef.current?.focus() },
@@ -304,8 +311,10 @@ function WorkInner({ now, tz }: { now: string; tz?: string }) {
 
   // ---- derived UI --------------------------------------------------------------------------------
   const counts = list.data?.counts ?? base.data?.counts;
-  const accounts = useMemo(() => uniqueRefs(base.data?.items, 'account'), [base.data?.items]);
-  const initiatives = useMemo(() => uniqueRefs(base.data?.items, 'initiative'), [base.data?.items]);
+  // Closed reads a page at a time: its options come from every row loaded so far
+  const optionRows = useMemo(() => (paged ? [...(base.data?.items ?? []), ...(list.data?.items ?? [])] : base.data?.items), [paged, base.data?.items, list.data?.items]);
+  const accounts = useMemo(() => uniqueRefs(optionRows, 'account'), [optionRows]);
+  const initiatives = useMemo(() => uniqueRefs(optionRows, 'initiative'), [optionRows]);
   const nFiltered = list.data?.total ?? 0;
   const nAll = base.data?.total ?? 0;
   const stale = useMemo(() => {
@@ -382,7 +391,7 @@ function WorkInner({ now, tz }: { now: string; tz?: string }) {
 
   const doNow = groups.find((g) => g.key === 'focus:do_now')?.items.length ?? 0;
   const chase = groups.find((g) => g.key === 'focus:chase')?.items.length ?? 0;
-  const lead = leadFor({ tab: f.tab, n: stable.items.length, doNow: f.group === 'due' ? doNow : null, chase: f.group === 'due' ? chase : null, filtering, nFiltered, nAll, done: counts?.done ?? 0, overdueTrainings: stable.items.filter((i) => i.training?.overdue).length });
+  const lead = leadFor({ tab: f.tab, n: paged ? nFiltered : stable.items.length, doNow: f.group === 'due' ? doNow : null, chase: f.group === 'due' ? chase : null, filtering, nFiltered, nAll, done: counts?.done ?? 0, overdueTrainings: stable.items.filter((i) => i.training?.overdue).length });
   const cols = sections.length >= 3 ? '3' : sections.length === 2 ? '2' : '1';
 
   return (
@@ -449,16 +458,19 @@ function WorkInner({ now, tz }: { now: string; tz?: string }) {
                 <span className="text-caption text-muted tabular-nums" data-testid="n-of-m" aria-live="polite">
                   {nFiltered} of {nAll}
                 </span>
-                <SegmentedToggle
-                  label="Group by"
-                  size="sm"
-                  value={f.group}
-                  onChange={(g: WorkGrouping) => update({ group: g }, { immediate: true })}
-                  options={[
-                    { value: 'due', label: 'By when', disabled: flat },
-                    { value: 'initiative', label: 'By initiative', disabled: flat },
-                  ]}
-                />
+                {/* a flat tab (Closed, Snoozed) has no grouping: no toggle, rather than both options struck through */}
+                {flat ? null : (
+                  <SegmentedToggle
+                    label="Group by"
+                    size="sm"
+                    value={f.group}
+                    onChange={(g: WorkGrouping) => update({ group: g }, { immediate: true })}
+                    options={[
+                      { value: 'due', label: 'By when' },
+                      { value: 'initiative', label: 'By initiative' },
+                    ]}
+                  />
+                )}
               </span>
             </div>
             {checked.size > 0 ? (
@@ -533,13 +545,17 @@ function WorkInner({ now, tz }: { now: string; tz?: string }) {
                   </ListSection>
                 ))}
               </div>
-              <ListEnd>
-                {counts ? (
-                  <span className="tabular-nums">
-                    {counts.all_open} open · {counts.snoozed} snoozed · {counts.done} done
-                  </span>
-                ) : null}
-              </ListEnd>
+              {paged && list.data?.nextCursor ? (
+                <MoreRow loaded={list.data.items.length} total={list.data.total} busy={more.busy} failed={more.failed} onMore={() => void more.showMore()} />
+              ) : (
+                <ListEnd>
+                  {counts ? (
+                    <span className="tabular-nums">
+                      {counts.all_open} open · {counts.snoozed} snoozed · {counts.done} done
+                    </span>
+                  ) : null}
+                </ListEnd>
+              )}
             </div>
           )}
         </PanelBoundary>
@@ -593,7 +609,7 @@ function leadFor(x: { tab: WorkTab; n: number; doNow: number | null; chase: numb
       if (x.doNow === null) return <><b>{n} open</b>, by initiative.</>;
       return (
         <>
-          {x.doNow ? <b>{x.doNow} to do now</b> : <b>Nothing is due now</b>}
+          {x.doNow ? <b>{x.doNow} due today</b> : <b>Nothing is due today</b>}
           {`, ${n} open in all`}
           {x.chase ? `, ${x.chase} waiting on someone else` : ''}. {x.done ? `${x.done} done.` : ''}
         </>

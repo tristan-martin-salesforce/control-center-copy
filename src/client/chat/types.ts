@@ -3,7 +3,7 @@
  * Server shapes come from the contract; these add what only the client knows (streaming, tool args,
  * local errors, optimistic turns).
  */
-import type { ApiErrorBody, ChatMessage, ChatResource, ChatSseEventType, ContextRef, Proposal, Receipt } from '@/contract';
+import type { ApiErrorBody, ChatHoldView, ChatMessage, ChatPlan, ChatResource, ChatRoute, ChatSseEventType, ChatUsage, ContextRef, Proposal, Receipt } from '@/contract';
 
 export interface ChatToolView {
   id: string;
@@ -16,6 +16,10 @@ export interface ChatToolView {
   ok: boolean | null;
   /** BE-CHAT: the latest tool-progress (chat-started scans), if any. */
   progress?: { done: number; total: number };
+  /** Assistant v2: what the call cost on its own (a relay read, a sub-run). */
+  costUsd?: number;
+  /** A guard held the call for you (the contract's `held`): neutral, not failed. */
+  held?: boolean;
 }
 
 export interface ChatProposalView {
@@ -51,6 +55,25 @@ export interface ChatMessageView {
   stopped: boolean;
   /** Optimistic user message not yet confirmed by the server. */
   pending: boolean;
+  /** ASSIST-9: the live turn's spend so far (assistant, while it runs). */
+  spentUsd?: number;
+  spentModel?: string;
+  /** ASSIST-9: the settled message's tokens and cost (the receipt line). */
+  usage?: ChatUsage;
+  /** Spend governor: the live turn passed its hold and waits for an answer (the spend-ask card). */
+  spendAsk?: ChatSpendAskView;
+  /** Assistant v2: the router's choice (header "Haiku · a lookup") and the plan cards of the turn. */
+  route?: ChatRoute;
+  plans?: ChatPlan[];
+}
+
+/** A `spend-ask` the live turn is waiting on (POST /chat/spend-answer answers it). */
+export interface ChatSpendAskView {
+  holdId: string;
+  question: string;
+  spentUsd: number;
+  heldUsd: number;
+  moreUsd: number;
 }
 
 /** One in-flight (or just-finished, not yet reconciled) exchange. */
@@ -76,6 +99,17 @@ export interface LiveTurn {
   attempt: number;
   /** "Allow more" on a capped message: this turn may spend this much more (ChatRequest.allowExtraUsd). */
   allowExtraUsd?: number;
+  /** "Allow more" continues this stopped assistant message instead of re-sending the question (ASSIST-2). */
+  continueMessageId?: string;
+  /** ASSIST-9: the turn's spend so far (the latest `usage-delta`), and the model it is on. */
+  spentUsd?: number;
+  spentModel?: string;
+  /** Spend governor: the message's hold as it runs, and the ask it waits on (null once answered). */
+  hold?: ChatHoldView;
+  spendAsk?: ChatSpendAskView | null;
+  /** Assistant v2: the route from `start`, and the plan cards as they arrive (answered ones replace waiting ones). */
+  route?: ChatRoute;
+  plans: ChatPlan[];
 }
 
 /** What only the live turn knew, kept for the persisted assistant message after reconciliation. */

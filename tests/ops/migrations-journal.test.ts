@@ -20,7 +20,7 @@ const num = (tag: string) => Number(tag.slice(0, 4));
  * lanes), 0021 (D-65). Renumbering applied migrations would change nothing for drizzle, but keeps no one honest: a new
  * gap fails here and has to be explained in this list.
  */
-const KNOWN_GAPS = new Set([18, 19, 21]);
+const KNOWN_GAPS = new Set([18, 19, 21, 28]); // 28: reserved for p0-priority-fixes, which needed no column in the end (2026-11-20)
 
 describe('migration journal hygiene (E5)', () => {
   it('lists entries in the order drizzle applies them (the file order is the idx order)', () => {

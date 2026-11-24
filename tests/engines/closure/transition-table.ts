@@ -1,5 +1,5 @@
 /**
- * The expected closure transition table: every state × signal (docs/ui/ENGINES.md §3 renders it).
+ * The expected closure transition table: every state × signal (docs/reference/ENGINES.md §3 renders it).
  * Codes: `·` nothing (evidence attached) · `ctx` context only · `upd` fields only · `prop` proposal ·
  * `sib` sibling · `reopen` done/dismissed → open · `wake` snoozed → previous · else the target state
  * (`ip` in_progress, `woo` waiting_on_others, `wom` waiting_on_me, `ld` likely_done, `open`, `done`).

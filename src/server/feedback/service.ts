@@ -12,20 +12,25 @@
  */
 import { ledgerHash } from '@/db/ledger';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 
 import { FeedbackContextInput, type DiagnoseFeedbackRequest, type DiagnoseFeedbackResult, type FeedbackChannelState, type FeedbackReport, type FeedbackState, type MutationResult, type Settings, type StageFeedbackRequest, type StageFeedbackResult } from '@/contract';
 import { feedbackActionFor } from '@/lib/feedback/payload';
 import { loadSkill } from '@/llm/skill-loader';
 import { personaOf } from '@/personas';
 import { invalid } from '@/server/errors';
+import { buildInfo } from '@/server/version';
 
 import { FEEDBACK_CAP_USD, FEEDBACK_MODEL, FEEDBACK_SKILL, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, type FinishOutput } from './agent';
 import { readTeamConfig, resolveFeedbackChannel } from './channel';
 import { fallbackReport, pageFilesFor, reportContext } from './fallback';
-import { firstName, formatFeedbackMessage } from './format';
+import { collectDiagnostics, diagnosticsBlock } from './diagnostics';
+import { buildFlags, firstName, formatFeedbackMessage } from './format';
 import { serverVersion, type FeedbackHost } from './host';
 import { feedbackReads } from './reads';
 import { Scrubber } from './scrub';
+import { holdGate, PAUSED_FOR_SPEND } from '@/llm/spend';
 
 /** Below this the agent is not worth starting: the fallback report runs. */
 export const MIN_AGENT_USD = 0.05;
@@ -66,15 +71,26 @@ function safeContext(raw: FeedbackContextInput, s: Settings, sc: Scrubber, repoR
   };
 }
 
-function runPrompt(kind: string, text: string, ctx: FeedbackContextInput): string {
+/** PKG-8: the source tree is on this machine (a git checkout), so the agent may read code; a packaged build has none. */
+export function hasSourceTree(repoRoot: string | undefined): boolean {
+  try {
+    return fs.existsSync(path.join(repoRoot ?? process.cwd(), 'src'));
+  } catch {
+    return false;
+  }
+}
+
+function runPrompt(kind: string, text: string, ctx: FeedbackContextInput, o: { source: boolean; codes?: string } = { source: true }): string {
   const lines = [
     `Kind: ${kind}`,
     `Page: ${[ctx.page, ctx.route].filter(Boolean).join(' · ') || '(unknown)'}`,
     ctx.lookingAt ? `Looking at: ${ctx.lookingAt.kind.replace(/_/g, ' ')}${ctx.lookingAt.label ? ` "${ctx.lookingAt.label}"` : ''} (use feedback_entity${ctx.lookingAt.kind === 'work_item' ? ' and feedback_trace' : ''})` : 'Looking at: nothing in particular',
-    `Persona: ${ctx.persona ?? '(unknown)'} · version ${ctx.version || '?'}${ctx.sha ? ` (${ctx.sha.slice(0, 7)})` : ''}`,
+    `Persona: ${ctx.persona ?? '(unknown)'} · version ${ctx.version || '?'}${ctx.sha ? ` (${ctx.sha.slice(0, 7)})` : ''}${buildFlags(buildInfo()).map((f) => ` · ${f}`).join('')}`,
     ctx.viewport ? `Viewport: ${ctx.viewport}` : null,
     ctx.clientErrors.length ? `Browser errors (newest last):\n${ctx.clientErrors.map((e) => `- ${e}`).join('\n')}` : 'Browser errors: none',
-    pageFilesFor(ctx.route).length ? `The page's code starts at: ${pageFilesFor(ctx.route).join(', ')}` : null,
+    o.source && pageFilesFor(ctx.route).length ? `The page's code starts at: ${pageFilesFor(ctx.route).join(', ')}` : null,
+    o.source ? null : 'The source code is not on this machine (a packaged build): diagnose from the feedback_* reads only. Read, Grep and Glob are not available; leave diagnosis.files empty.',
+    o.codes ? `Error codes on this install (from the Diagnostics block): ${o.codes}` : null,
     '',
     'The user wrote:',
     '"""',
@@ -115,6 +131,9 @@ export async function diagnoseFeedback(h: FeedbackHost, body: DiagnoseFeedbackRe
   const ctx = safeContext(raw, s, sc, h.repoRoot);
   // The reads use the real ids (to find the entity) and scrub what they return.
   const reads = feedbackReads(h.ds, raw, sc);
+  // PKG-8 / R8: the machine diagnostics (codes, states, redacted log tail) that go into the post, and the agent's mode
+  const source = hasSourceTree(h.repoRoot);
+  const diag = await collectDiagnostics(h).catch(() => null);
 
   let report: FeedbackReport | null = null;
   let diagnosedBy: DiagnoseFeedbackResult['diagnosedBy'] = 'fallback';
@@ -127,7 +146,11 @@ export async function diagnoseFeedback(h: FeedbackHost, body: DiagnoseFeedbackRe
     if (cap < MIN_AGENT_USD) note = b.note ?? 'The Assistant’s daily limit is used up, so this was diagnosed without a model call';
     else {
       const skill = loadSkill(FEEDBACK_SKILL);
-      const prompt = runPrompt(body.kind, text, ctx);
+      const prompt = runPrompt(body.kind, text, ctx, { source, codes: diag ? [...diag.events.map((e) => e.code), ...diag.connectors.flatMap((c) => (c.code ? [c.code] : []))].filter((c, i, a) => a.indexOf(c) === i).slice(0, 10).join(', ') : '' });
+      // F-4: the report holds its estimate (the governor); past it the run asks in Health ▸ Spend and waits for you
+      const gov = h.spend ? await h.spend().catch(() => null) : null;
+      const held = gov ? await gov.estimate({ scope: 'feedback', jobKey: 'feedback', skill: 'feedback-diagnose' }).then((est) => gov.hold({ scope: 'feedback', jobKey: `feedback:${randomUUID()}`, skill: 'feedback-diagnose', model: FEEDBACK_MODEL }, est)).catch(() => null) : null;
+      const gate = gov && held?.ok ? holdGate(gov, held.hold, { minCeilingUsd: cap }) : null;
       const run = await h.agent.run({
         runId: `fb_${randomUUID().slice(0, 8)}`,
         model: FEEDBACK_MODEL,
@@ -135,22 +158,28 @@ export async function diagnoseFeedback(h: FeedbackHost, body: DiagnoseFeedbackRe
         prompt,
         reads,
         repoRoot: h.repoRoot ?? process.cwd(),
+        codeTools: source,
         costCapUsd: cap,
+        ...(gate ? { spend: gate, userLineUsd: b.capUsd } : {}),
         signal: opts.signal ?? new AbortController().signal,
+      }).finally(async () => {
+        if (gate && gov) await gov.settle(gate.hold, gate.hold.spentUsd).catch(() => undefined);
       });
       model = run.model;
       costUsd = run.costUsd;
-      await h.recordSpend({ model: run.model, skill: skill.versionTag, costUsd: run.costUsd, inputTokens: run.inputTokens, outputTokens: run.outputTokens, contentHash: ledgerHash(run.model, skill.versionTag, skill.body, prompt), ok: run.ok, ...(run.error ? { errorCode: run.error.code } : {}), latencyMs: run.latencyMs }).catch(() => undefined);
+      await h.recordSpend({ model: run.model, skill: skill.versionTag, costUsd: run.costUsd, inputTokens: run.inputTokens, outputTokens: run.outputTokens, cacheReadTokens: run.cacheReadTokens ?? 0, cacheWriteTokens: run.cacheWriteTokens ?? 0, contentHash: ledgerHash(run.model, skill.versionTag, skill.body, prompt), ok: run.ok, ...(run.error ? { errorCode: run.error.code } : {}), latencyMs: run.latencyMs }).catch(() => undefined);
       if (run.ok && run.output) {
         report = reportFrom(run.output, body.kind, ctx);
         diagnosedBy = 'agent';
-      } else note = `The diagnose run stopped (${run.error?.code ?? 'no report'}), so this report is the app’s own reading`;
+      } else if (run.error?.code === PAUSED_FOR_SPEND) note = 'The diagnose run reached its spend estimate and no more was allowed, so this report is the app’s own reading';
+      else note = `The diagnose run stopped (${run.error?.code ?? 'no report'}), so this report is the app’s own reading`;
     }
   }
   report ??= await fallbackReport({ kind: body.kind, text, ctx, reads });
   // Pass 2: the report itself, whatever wrote it.
   report = scrubReport(report, sc);
-  const message = formatFeedbackMessage(report, await h.me());
+  // PKG-4: modified + channel; PKG-8: the scrubbed Diagnostics block (the user sees and edits it all before Send)
+  const message = formatFeedbackMessage(report, await h.me(), buildInfo(), diag ? diagnosticsBlock(diag, sc) : null);
   return { report, message, scrubbed: sc.stats.count, diagnosedBy, model, costUsd, note, channel };
 }
 

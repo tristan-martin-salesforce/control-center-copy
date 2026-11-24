@@ -4,9 +4,13 @@
  *
  *   applySignal(item, signal, settings) → ClosureDecision
  *
- * Rules (docs/ui/ENGINES.md §3):
+ * Rules (docs/reference/ENGINES.md §3):
  * - Sure completion auto-closes as done with an inferred resolution and its evidence (L4 internal,
  *   undoable). Likely → likely_done ("Confirm"). Guess → evidence only.
+ * - R1, the correction rule Settle shares (correction.ts): an item the user reopened, kept or marked Not done, or one on
+ *   their ask-first lists (`mayAutoClose: false`), is never closed for them: a Sure completion only asks (Likely).
+ * - R2: a follow-up from the asker after a close for you (`contradiction` with `follow_up:`) reopens it within the
+ *   reopen window: "Reopened: PERSON wrote again · Undo".
  * - A reply after an ask closes the ask deterministically (`reply_in_thread`).
  * - Drive alone never closes: an edit is progress, "updates made" is likely done (R-UI-15).
  * - A Slack "done" is completion evidence (Sure closes, Likely asks).
@@ -21,6 +25,7 @@
  * - Engines move items forward only; backward moves go through a reopen decision.
  */
 import { cleanLikelyReason } from '../home/looks-done';
+import { blockText, REOPEN_BRAKE_TEXT, reopenBrake } from './correction';
 import type {
   ClosureItem,
   ClosureSettings,
@@ -204,7 +209,12 @@ function completion(
     return none(`Possible completion (guess): ${why}. Attached as evidence only`, undefined, { labels: [{ kind: 'guess', text: `Maybe done? ${why}` }, ...extraLabels] });
   }
   const res = inferResolution(s);
-  const autoClose = confidence === 'sure' && settings.autoCloseSure && item.autoCloseAllowed !== false;
+  const corrected = confidence === 'sure' && settings.autoCloseSure && item.mayAutoClose === false;
+  // W0-4: no re-close on what a reopen overruled, and ask-only after two reopens
+  const brake = confidence === 'sure' && settings.autoCloseSure && !corrected ? reopenBrake(item, s.at) : null;
+  const autoClose = confidence === 'sure' && settings.autoCloseSure && item.autoCloseAllowed !== false && item.mayAutoClose !== false && !brake;
+  if (corrected) why = `${why} (not closed for you: ${blockText(item.autoCloseBlock)})`;
+  else if (brake) why = `${why} (not closed for you: ${REOPEN_BRAKE_TEXT[brake]})`;
   if (autoClose) {
     const text = resolutionText(res.resolution, res.detail);
     const patch: Partial<Record<ClosureField, unknown>> = {
@@ -252,7 +262,7 @@ function reopenOrSibling(
   item: ClosureItem,
   s: Signal,
   settings: ClosureSettings,
-  opts: { sameDeliverable: boolean; cause: 'requirement' | 'contradiction' | 'loop_back'; by: string; summary?: string },
+  opts: { sameDeliverable: boolean; cause: 'requirement' | 'contradiction' | 'follow_up' | 'loop_back'; by: string; summary?: string },
 ): ClosureDecision {
   const windowDays = settings.reopenWindowDays;
   const closedAt = item.status === 'done' ? (item.doneAt ?? item.statusChangedAt) : (item.dismissedAt ?? item.statusChangedAt);
@@ -275,7 +285,9 @@ function reopenOrSibling(
         : `Reopened: ${opts.by} asked you directly`
       : opts.cause === 'contradiction'
         ? `Reopened: ${opts.by} says it isn't done`
-        : `Reopened: new requirement from ${opts.by}`;
+        : opts.cause === 'follow_up'
+          ? `Reopened: ${opts.by} wrote again`
+          : `Reopened: new requirement from ${opts.by}`;
 
   if (opts.sameDeliverable && recent) {
     const ruleKey = opts.cause === 'loop_back' ? 'loop_back_recent' : 'same_deliverable_recent';
@@ -308,7 +320,7 @@ function reopenOrSibling(
       ? handedOff
         ? `Looped back in: ${opts.by} asked you directly`
         : `New task: ${opts.by} asked you directly`
-      : `New task: ${opts.cause === 'contradiction' ? `${opts.by} says it isn't done` : `new requirement from ${opts.by}`}`;
+      : `New task: ${opts.cause === 'contradiction' ? `${opts.by} says it isn't done` : opts.cause === 'follow_up' ? `${opts.by} wrote again` : `new requirement from ${opts.by}`}`;
   const explanation = `${siblingHeadline} (${why})`;
   const label: Label = { kind: opts.cause === 'loop_back' && handedOff ? 'looped_back_in' : 'new_sibling', text: `${siblingHeadline} · Undo` };
   return base(explanation, {
@@ -401,7 +413,8 @@ function onDone(item: ClosureItem, s: Signal, settings: ClosureSettings): Closur
     return reopenOrSibling(item, s, settings, { sameDeliverable: sameDeliverable(item, s), cause: 'requirement', by: personName(s.actor), summary: s.summary });
   }
   if (s.type === 'evidence' && s.role === 'contradiction') {
-    return reopenOrSibling(item, s, settings, { sameDeliverable: true, cause: 'contradiction', by: personName(s.actor) });
+    const followUp = /^follow_up:/i.test((s.reason ?? '').trimStart());
+    return reopenOrSibling(item, s, settings, { sameDeliverable: true, cause: followUp ? 'follow_up' : 'contradiction', by: personName(s.actor) });
   }
   return none('Already done: evidence attached', { kind: 'already_done', text: 'Already done' });
 }

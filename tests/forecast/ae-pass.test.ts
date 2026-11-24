@@ -15,7 +15,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ActivityEntry, ForecastPayload, ForecastRow, SpecialistForecast } from '@/contract';
-import { buildForecastView, CHECK_FOUND_SHOW_MS, checkState, type ForecastCheckInput } from '@/engines/forecast';
+import { buildForecastView, CHECK_FOUND_SHOW_MS, checkState, type ForecastCheckInput } from '@/engines/forecast/view';
 import { guidePayload, guideSignals } from '@/guide/checklist';
 import { itemGuideFor } from '@/guide/items';
 import { appRoutes } from '@/server/chat/app-routes';
@@ -87,7 +87,8 @@ describe('Stage → Apply: one verb per step', () => {
     const prev = await m.previewDraft({ params: { id: d.id }, body: { mode: 'send' } } as never);
     expect(prev.dryRun).toBe(true);
     const content = String((prev.payload as { args: { content: string } }).args.content);
-    expect(content.split('\n').filter((l) => /^\|\d+\|SpecialistForecast__c\|/.test(l))).toHaveLength(1);
+    expect(content).toContain('## SPECIALIST FORECASTS TO UPDATE (1 row');
+    expect(content.split('\n').filter((l) => /^\|\d+\|/.test(l))).toHaveLength(1);
     // staged, waiting for its Apply on Activity; a second Stage stages nothing
     expect((await m.getForecast({} as never)).canvases.map((c) => c.draftId)).toEqual([d.id]);
     expect((await m.stageForecast({ body: {} } as never)).entity.draftId).toBeNull();

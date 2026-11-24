@@ -56,6 +56,30 @@ export interface BulkSpec {
   body?: string;
 }
 
+/**
+ * R3-9: the rows the user's own answers gave an opp (an Accept or a pick through this hook). The time → DC ripple
+ * (ToLogView `useDcRipple`) re-runs the DC suggestions only for these, never for a refetch that brings a scanner's opp.
+ */
+const answered = new Map<string, 'pending' | 'landed'>();
+/** Before the PATCH: the row's opp is the user's answer (the optimistic row is not "seen" until it lands). */
+export function answerStart(id: string, patch: { oppId?: string | null; target?: { kind: string } }): void {
+  if (patch.oppId || patch.target?.kind === 'opp') answered.set(id, 'pending');
+}
+/** After the PATCH: landed, or forgotten when it failed (the row is back as it was). */
+export function answerEnd(id: string, ok: boolean): void {
+  if (!answered.has(id)) return;
+  if (ok) answered.set(id, 'landed');
+  else answered.delete(id);
+}
+/** The answered rows not yet seen with their opp. */
+export function answeredRows(): ReadonlyMap<string, 'pending' | 'landed'> {
+  return answered;
+}
+/** Forget answered rows once a read shows them with their opp. */
+export function clearAnswered(ids: Iterable<string>): void {
+  for (const id of ids) answered.delete(id);
+}
+
 export function usePatchRows() {
   const shown = useRef(new Map<string, Shown>());
   const m = useOptimisticMutation({
@@ -67,12 +91,16 @@ export function usePatchRows() {
 
   /** Patch one row now (a Needs-you fix): optimistic, no toast unless it fails. */
   const one = useCallback(
-    async (e: ActivityEntry, patch: FixPatch, extra?: Shown): Promise<boolean> => {
+    // D-103 (c): `target` (the account itself) rides the same patch
+    async (e: ActivityEntry, patch: FixPatch & { target?: { kind: 'opp' | 'account' | 'internal'; id: string } }, extra?: Shown): Promise<boolean> => {
       if (extra) shown.current.set(e.id, extra);
+      answerStart(e.id, patch);
       try {
         await m.mutateAsync({ params: { id: e.id }, body: { ifVersion: m.versionOf(e.id) ?? e.version, patch } });
+        answerEnd(e.id, true);
         return true;
       } catch {
+        answerEnd(e.id, false);
         toast({ key: 'time:fix-err', tone: 'error', durationMs: null, title: "Couldn't save that row", body: 'It is back as it was. Try again, or edit it in the week’s rows.' });
         return false;
       } finally {
@@ -88,7 +116,7 @@ export function usePatchRows() {
    * with why (it stays until dismissed).
    */
   const many = useCallback(
-    async (rows: readonly ActivityEntry[], patchOf: (e: ActivityEntry) => FixPatch, spec: BulkSpec, extra?: Shown): Promise<number> => {
+    async (rows: readonly ActivityEntry[], patchOf: (e: ActivityEntry) => FixPatch, spec: BulkSpec, extra?: Shown | ((e: ActivityEntry) => Shown | undefined)): Promise<number> => {
       setBusy(true);
       const audits: string[] = [];
       const failures: BulkFailure[] = [];
@@ -99,12 +127,18 @@ export function usePatchRows() {
       };
       report();
       await runPool(rows, BULK_CONCURRENCY, async (e) => {
-        if (extra) shown.current.set(e.id, extra);
+        // what the row shows at once: one value for every row, or each row's own (an accepted suggestion's opp)
+        const show = typeof extra === 'function' ? extra(e) : extra;
+        if (show) shown.current.set(e.id, show);
+        const p = patchOf(e);
+        answerStart(e.id, p);
         try {
-          const res = await m.mutateAsync({ params: { id: e.id }, body: { ifVersion: m.versionOf(e.id) ?? e.version, patch: patchOf(e) } });
+          const res = await m.mutateAsync({ params: { id: e.id }, body: { ifVersion: m.versionOf(e.id) ?? e.version, patch: p } });
+          answerEnd(e.id, true);
           if (res.auditId) audits.push(res.auditId);
           done++;
         } catch (err) {
+          answerEnd(e.id, false);
           failures.push({ id: e.id, label: rowLabel(e), why: errorText(err, 160) });
         } finally {
           shown.current.delete(e.id);

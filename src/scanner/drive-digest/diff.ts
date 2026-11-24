@@ -4,6 +4,8 @@
  */
 import type { DriveChange, DriveDigest, DriveSample, SectionChange, SheetChange, SlideChange, TextDelta } from './types';
 
+// Payload bounds of one change entry (it is stored on the source item and read by the classifier); a cut list carries
+// its total, so nothing is hidden without a count.
 const CAP = 600;
 const LINE_CAP = 200;
 const MAX_LINES = 8;
@@ -15,11 +17,15 @@ export function textDelta(before: string, after: string): TextDelta {
   const a = after.split('\n').map((l) => l.trim()).filter(Boolean);
   const bs = new Set(b);
   const as = new Set(a);
+  const added = a.filter((l) => !bs.has(l));
+  const removed = b.filter((l) => !as.has(l));
   return {
     before: cap(before),
     after: cap(after),
-    linesAdded: a.filter((l) => !bs.has(l)).slice(0, MAX_LINES).map((l) => cap(l, LINE_CAP)),
-    linesRemoved: b.filter((l) => !as.has(l)).slice(0, MAX_LINES).map((l) => cap(l, LINE_CAP)),
+    linesAdded: added.slice(0, MAX_LINES).map((l) => cap(l, LINE_CAP)),
+    linesRemoved: removed.slice(0, MAX_LINES).map((l) => cap(l, LINE_CAP)),
+    ...(added.length > MAX_LINES ? { linesAddedTotal: added.length } : {}),
+    ...(removed.length > MAX_LINES ? { linesRemovedTotal: removed.length } : {}),
   };
 }
 
@@ -30,7 +36,12 @@ function lisIndexes(seq: number[]): Set<number> {
   const prev = new Array<number>(n).fill(-1);
   let best = 0;
   for (let i = 0; i < n; i++) {
-    for (let j = 0; j < i; j++) if (seq[j]! < seq[i]! && len[j]! + 1 > len[i]!) (len[i] = len[j]! + 1), (prev[i] = j);
+    for (let j = 0; j < i; j++) {
+      if (seq[j]! < seq[i]! && len[j]! + 1 > len[i]!) {
+        len[i] = len[j]! + 1;
+        prev[i] = j;
+      }
+    }
     if (n && len[i]! > len[best]!) best = i;
   }
   const out = new Set<number>();
@@ -149,6 +160,7 @@ export function diffDigests(a: DriveDigest, b: DriveDigest): DigestDiff | null {
     if (s.added.length) parts.push(`${s.added.length} tab added`);
     if (s.removed.length) parts.push(`${s.removed.length} tab removed`);
     if (s.changed.length) parts.push(`${s.changed.length} tab changed (${s.changed.map((c) => c.name).join(', ')})`);
+    if (b.sheetsNotRead) parts.push(`${b.sheetsNotRead} more tab${b.sheetsNotRead > 1 ? 's' : ''} not read`);
   } else {
     out.opaque = { sizeBefore: a.opaque?.size, sizeAfter: b.opaque?.size };
     out.counts = { added: 0, removed: 0, changed: 1, moved: 0 };

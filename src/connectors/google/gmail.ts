@@ -11,7 +11,8 @@
 import type { ConnectorHealthProbe, CoverageObject, Cursor, DeterministicFetcher, FetchResult, NormalizedSourceItem, PersonRef, TimeWindow } from '@/scanner/types';
 import { redact, redactExcerpt } from '../redact';
 import { encodeCursor, decodeCursor, extractDriveIds, extractUrls, h16, htmlToText, looksLikeHtml, normalizeText, parseAddress, splitAddressList, systemClock, throwIfAborted, truncate, type Clock } from '../util';
-import type { GoogleTools } from './client';
+// injected: the connector runtime's text port (src/connectors/runtime: GoogleWorkspaceClient behind direct_mcp)
+import type { TextToolPort as GoogleTools } from '../runtime/types';
 import { parseGmailBatch, parseGmailSearch, parseGmailThread, splitThreadBatch, type GmailMessage } from './parse';
 
 export interface Me {
@@ -30,6 +31,7 @@ export interface GmailFetcherOptions {
   searchPageSize?: number;
   maxListPages?: number;
   batchSize?: number;
+  /** Threads looked up per run; unset = every chosen message's thread (caps audit 2026-11-21: was 20 of up to 40). */
   maxThreadLookups?: number;
   maxBodyChars?: number;
   /** Extra sender patterns to flag as bulk. */
@@ -44,6 +46,22 @@ interface GmailCursorState {
 const SEEN_TTL_SEC = 7 * 86400;
 const BULK_SENDER = /(no-?reply|do-?not-?reply|notifications?@|newsletter|employeecomms@|mailer-daemon|marketing|bounce|@.*\.(?:concursolutions|amazonses)\.com)/i;
 const CAL_NOTICE_SUBJECT = /^(?:invitation|updated invitation|canceled event|cancell?ed|accepted|declined|tentatively accepted|proposed new time)\b/i;
+/** R15 (SCN-12): Google Docs/Sheets/Slides notification senders (comments, action items, shares). */
+const DOCS_SENDER = /(?:comments-noreply|drive-shares(?:-dm)?-noreply|docs-noreply)@(?:docs\.)?google\.com/i;
+const DOCS_ACTION_ITEM = /\bassigned (?:you )?an action item\b|\baction item assigned to you\b|\bassigned to you\b/i;
+const DOCS_MENTION = /\bmentioned you\b|\b(?:added|tagged) you (?:in|to) a comment\b|\breplied to (?:your|a) comment\b/i;
+
+/**
+ * R15 (SCN-12): a Google Docs "assigned you an action item" or comment-mention mail is an ask of me about that doc, not
+ * bulk mail (before, its no-reply sender put it in skip rule 4.1). Returns the kind and the doc it is about.
+ */
+export function docsAskOf(from: string, subject: string, body: string): { kind: 'action_item' | 'mention'; fileId: string | null } | null {
+  if (!DOCS_SENDER.test(from)) return null;
+  const text = `${subject}\n${body}`;
+  const kind = DOCS_ACTION_ITEM.test(text) ? 'action_item' : DOCS_MENTION.test(text) ? 'mention' : null;
+  if (!kind) return null;
+  return { kind, fileId: extractDriveIds(body)[0] ?? null };
+}
 
 /** Removes quoted history and signatures, leaving what the sender newly wrote. */
 export function newTextOf(body: string): string {
@@ -77,7 +95,7 @@ export class GmailFetcher implements DeterministicFetcher {
       searchPageSize: opts.searchPageSize ?? 50,
       maxListPages: opts.maxListPages ?? 6,
       batchSize: opts.batchSize ?? 10,
-      maxThreadLookups: opts.maxThreadLookups ?? 20,
+      maxThreadLookups: opts.maxThreadLookups ?? Number.POSITIVE_INFINITY,
       maxBodyChars: opts.maxBodyChars ?? 12_000,
       noiseSenders: opts.noiseSenders ?? [],
     };
@@ -237,7 +255,8 @@ export class GmailFetcher implements DeterministicFetcher {
 
     const fileRefs = extractDriveIds(rawBody);
     const urls = extractUrls(fresh).slice(0, 15);
-    const bulk = BULK_SENDER.test(m.from) || this.o.noiseSenders.some((r) => r.test(m.from));
+    const docsAsk = scope === 'inbox' ? docsAskOf(m.from, m.subject, rawBody) : null;
+    const bulk = !docsAsk && (BULK_SENDER.test(m.from) || this.o.noiseSenders.some((r) => r.test(m.from)));
     const full = redact(truncate(rawBody, this.o.maxBodyChars));
     const freshR = redact(truncate(fresh, this.o.maxBodyChars));
     const ex = redactExcerpt(normalizeText(fresh).slice(0, 1200));
@@ -267,8 +286,10 @@ export class GmailFetcher implements DeterministicFetcher {
         from: m.from,
         to: m.to,
         cc: m.cc,
-        toMe,
+        // R15: a Docs action item / comment mention is addressed to me, whatever the To line says.
+        toMe: toMe || !!docsAsk,
         ccMe,
+        ...(docsAsk ? { docsAsk: { kind: docsAsk.kind, ...(docsAsk.fileId ? { fileRef: docsAsk.fileId } : {}) } } : {}),
         replyTo: m.inReplyTo,
         messageIdHeader: m.messageIdHeader,
         snippet: ex.text.slice(0, 200),

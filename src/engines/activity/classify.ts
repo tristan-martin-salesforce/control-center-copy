@@ -2,6 +2,7 @@
  * Meeting classification (port of ap/engine.py classify_meeting): keyword table -> edge rules ->
  * overrides -> external-attendee CF swap. Every decision carries a `reason` (tenet: Legible).
  */
+import { meetingAccount, textAccount } from '@/engines/attribution/activity';
 import { isDinnerTitle } from './event-kinds';
 import { internalMeetingType, isInternalTaskType, namedInternalType } from './internal';
 import type { AccountMapping, ActivityMappings, CalendarEvidence, Confidence } from './types';
@@ -64,7 +65,16 @@ export function customerWorkOf(s: string): readonly [RegExp, string, string, str
   return null;
 }
 
+/**
+ * The account a text (and its participants' domains) names: the attribution engine's answer (src/engines/attribution
+ * activity.ts), which reads learned rules first, then the first account whose pattern the text matches, then a domain.
+ */
 export function resolveAccount(text: string, domains: readonly string[], m: ActivityMappings): AccountMapping | null {
+  return textAccount('manual', text, domains, m);
+}
+
+/** The pre-engine resolver (the parity baseline in tests/attribution/parity.test.ts): text first, then a domain. */
+export function legacyResolveAccount(text: string, domains: readonly string[], m: ActivityMappings): AccountMapping | null {
   const s = text.toLowerCase();
   for (const a of m.accounts) if (new RegExp(a.match, 'i').test(s)) return a;
   const ds = new Set(domains);
@@ -147,14 +157,16 @@ export function classifyMeeting(ev: CalendarEvidence, m: ActivityMappings, local
   };
   // the projection's account (its resolver, or the user's locked mapping) wins over a fresh title match: several
   // accounts can share a customer's name, and one trip must log to one of them (onsite lane, root cause 6)
-  const acct = (ev.accountKey ? accountByKey(m, ev.accountKey) : null) ?? resolveAccount(subject, ev.attendeeDomains, m);
+  // (src/engines/attribution: a learned series, domain or contact rule reads first, then the projection's, then the title)
+  const acct = meetingAccount({ summary: subject, attendeeDomains: ev.attendeeDomains, accountKey: ev.accountKey ?? null, seriesId: ev.seriesId ?? null }, m);
   if (acct) {
     out.accountKey = acct.key;
     out.whatId = acct.whatId;
     out.whatType = acct.whatType;
     out.whatName = acct.whatName;
     if (!acct.whatId) out.flags.push('NEEDS WhatId: pick an opp from candidates');
-    else if (acct.whatType === 'Account') out.flags.push('WhatId = account fallback (no single obvious opp)');
+    // D-103 (c): an account with no open opportunity is a settled target; the flag asks only when it has open opps
+    else if (acct.whatType === 'Account' && acct.openOpps !== 0) out.flags.push('WhatId = account fallback (no single obvious opp)');
     else if (!acct.team) out.flags.push(NOT_ON_TEAM_FLAG);
   }
 

@@ -10,7 +10,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { routes, Seed, type RouteKey, type RouteOutput } from '@/contract';
-import { autoApprove, classifyMeeting, finalizeStatus, heldNotOnTeam, newEntry, NOT_ON_TEAM_FLAG, NOT_ON_TEAM_SKIP, type ActivityMappings } from '@/engines/activity';
+import { autoApprove, finalizeStatus } from '@/engines/activity/propose';
+import { classifyMeeting, heldNotOnTeam, NOT_ON_TEAM_FLAG, NOT_ON_TEAM_SKIP } from '@/engines/activity/classify';
+import { newEntry } from '@/engines/activity/entry';
+import type { ActivityMappings } from '@/engines/activity/types';
 import { MockDataSource } from '@/server/datasource/mock';
 
 const NOW = '2026-11-06T18:00:00.000Z';

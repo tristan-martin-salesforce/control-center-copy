@@ -79,9 +79,18 @@ const sourceOf = (name: string) => {
  * 2 messages · 2 more tools"). A second phrase on the same source drops the source and reads lower-case.
  * Scan tools are shown as scan rows instead.
  */
+/**
+ * A guard that held something for you, not a failure (SEC-8 `remember`, SEC-9 `run reauth`): the tool result's `held`
+ * flag says so. Rows written before the flag fall back to the summary's ending, what you can say instead ("Not kept
+ * (say it in your words)", "Sign-in not started (say which connector)"). The row is neutral and the line does not count
+ * it as failed (UX.md "Raise a hand, never a red stop").
+ */
+export const isHeldForYou = (t: Pick<ChatToolView, 'ok' | 'summary' | 'held'>) =>
+  t.ok === false && (t.held === true || (t.held === undefined && /\(say [^)]+\)$/.test(t.summary.trim())));
+
 export function toolSummaryLine(tools: ChatToolView[]): { line: string; more: number; failed: number } {
   const shown = tools.filter((t) => !isScanTool(t));
-  const failed = shown.filter((t) => t.ok === false).length;
+  const failed = shown.filter((t) => t.ok === false && !isHeldForYou(t)).length;
   const head = shown.slice(0, 2);
   const parts = head.map((t, i) => {
     if (i === 0 || t.ok === null) return toolPhrase(t);

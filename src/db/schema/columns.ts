@@ -72,3 +72,10 @@ export const textArray = (name: string) =>
     .array()
     .notNull()
     .default(sql`'{}'::text[]`);
+
+/**
+ * 0036 (D-98, DM-6): the 15-character form of an Org62 id column, generated (`left(<source>, 15)`, stored) so every
+ * join between an 18-character id and a 15-character one compares these, indexed, instead of `left(x, 15)` by hand.
+ * Never written by app code (the undo replay skips generated columns).
+ */
+export const id15 = (name: string, source: string) => text(name).generatedAlwaysAs(sql.raw(`left("${source}", 15)`));

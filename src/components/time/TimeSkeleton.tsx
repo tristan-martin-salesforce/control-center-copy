@@ -1,11 +1,12 @@
 'use client';
 /**
- * Time's loading skeleton, data-free, in the shape of Log hours (docs/ui/time-redesign.md): the context head
+ * Time's loading skeleton, data-free, in the shape of Log hours (docs/archive/2026-build/time-redesign.md): the context head
  * (sentence · week arrows), the quarter header, then the path's sections, so nothing jumps when /time lands.
  * TimePage renders the body (the selected week's part) while the week loads; the route's loading.tsx and the shell's
  * pending-navigation skeleton render the whole page.
  */
-import { ContextHead, ContextPage } from '@/components/deals/context-frame';
+import { ContextPage } from '@/components/deals/context-frame';
+import { ActivityHead } from './ActivityHead';
 import { Button, IconButton, Skeleton } from '@/ui';
 
 const noop = () => {};
@@ -24,8 +25,7 @@ export function TimeBodySkeleton() {
 export function TimeSkeleton() {
   return (
     <ContextPage label="Time">
-      <ContextHead
-        title="Time"
+      <ActivityHead
         sentence="Loading the week…"
         actions={
           <div className="flex items-center gap-1">

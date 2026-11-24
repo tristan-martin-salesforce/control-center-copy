@@ -32,6 +32,7 @@ export type RouteKey =
   | 'settings'
   | 'history'
   | 'initiative'
+  | 'gettingStarted'
   | 'notFound';
 
 interface RouteDef {
@@ -62,8 +63,10 @@ export const ROUTES: readonly RouteDef[] = [
   { key: 'time', pattern: '/time', title: 'Activity' },
   { key: 'health', pattern: '/health', title: 'Health' },
   { key: 'settings', pattern: '/settings', title: 'Settings' },
-  { key: 'history', pattern: '/history', title: 'History' },
+  { key: 'history', pattern: '/history', title: 'Journal' },
   { key: 'initiative', pattern: '/initiatives/:id', title: 'Initiative' },
+  // 01 R9: five outcomes (app/getting-started/page.tsx, also loaded by the client router)
+  { key: 'gettingStarted', pattern: '/getting-started', title: 'Getting started' },
 ];
 
 export interface RouteMatch {

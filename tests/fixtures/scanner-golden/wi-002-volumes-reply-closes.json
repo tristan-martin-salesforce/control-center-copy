@@ -1,0 +1,43 @@
+{
+  "id": "wi-002-volumes-reply-closes",
+  "title": "Reply after the ask, in the channel thread: the volumes are sent, the item closes",
+  "storyline": "sample-data/CAST-work.md wi-002 (Send Gustavo the expected volumes), placeholders",
+  "me": { "name": "Pat Example", "slackId": "U0ME00001", "email": "me@example.com" },
+  "sources": [
+    {
+      "id": "s1",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-10-21T16:30:00.000Z",
+      "seen_at": "2026-10-21T16:40:00.000Z",
+      "from_me": false,
+      "body": "I can do a consumption model for a 12 month ramp. <@U0ME00001> can you send me the expected volumes (member interactions, profiles unified)?",
+      "meta": { "channelId": "C0SALT002", "channelType": "channel", "channelName": "saltmere-poc", "author": { "name": "PERSON_G", "email": "person_g@example.com", "externalId": "U0PERSONG" } },
+      "agent": [{ "propose": "i1" }]
+    },
+    {
+      "id": "s2",
+      "source": "slack",
+      "kind": "slack_message",
+      "occurred_at": "2026-10-21T17:05:00.000Z",
+      "seen_at": "2026-10-21T17:10:00.000Z",
+      "from_me": true,
+      "thread_of": "s1",
+      "body": "Rough volumes: 1.8M members, about 420k monthly contact-center interactions, 35% about claim status. Unified profile on roughly 1.2M active members. I will put the assumptions in the sizing sheet today.",
+      "meta": { "channelId": "C0SALT002", "channelType": "channel", "channelName": "saltmere-poc" }
+    }
+  ],
+  "items_expected": [
+    {
+      "id": "i1",
+      "kind": "ask",
+      "title": "Send PERSON_G the expected volumes for the Saltmere consumption model",
+      "keywords": ["volumes"],
+      "origin": "s1",
+      "ask_quote": "can you send me the expected volumes"
+    }
+  ],
+  "closures_expected": [
+    { "item": "i1", "expect": "closed", "class": "settled", "cite": "s2", "rule": "none", "why": "my reply in the ask's own thread carries the numbers asked for; the deliverable is in the text, so it is the model's call (no file, not a question title)" }
+  ]
+}

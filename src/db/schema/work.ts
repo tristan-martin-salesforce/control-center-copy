@@ -106,7 +106,7 @@ export const workItems = pgTable(
     lastReopenedAt: tstz('last_reopened_at'),
     // R-UI-22 (BE-0 addition, migration 0003): how it ended, who owns it, and my involvement.
     // A loop-back ("done (handed_off) -> open on a direct ask of me") is a reopen_decisions row
-    // with rule_key 'looped_back_in' (+ trigger_person_id); see docs/ui/DB-NOTES.md.
+    // with rule_key 'looped_back_in' (+ trigger_person_id); see docs/reference/DB-NOTES.md.
     /** Set only while terminal (done / dismissed / merged); cleared on reopen. */
     resolution: workItemResolution('resolution'),
     /** handed_off: the teammate (required); done_by_other: who did it (when known). */
@@ -154,6 +154,9 @@ export const workItems = pgTable(
     searchTsv: tsvector('search_tsv').generatedAlwaysAs(
       sql`to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, ''))`,
     ),
+    /** 0036 (D-98): your start-by override (`{value}`) and the dismissal (reason, note), were `cc.ext/work_items/<id>`. */
+    startByUser: jsonb('start_by_user').$type<{ value: string | null }>(),
+    dismissed: jsonb('dismissed').$type<Record<string, unknown>>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -13,6 +13,9 @@ import { useOptimisticMutation } from '@/client/optimistic/useOptimisticMutation
 import { Button, ChangedElsewhere, cn, Dialog } from '@/ui';
 import { changedKeys, isDirty, same, type SectionId } from './derive';
 import s from './settings.module.css';
+import { BlockHeadingLevel } from './heading-level';
+
+export { BlockHeadingLevel };
 import { navigate } from '@/components/shell/router';
 
 // ── Unsaved-changes guard ──────────────────────────────────────────────────────────────────
@@ -275,11 +278,12 @@ export function Instant({ children = '✓ Changes apply instantly' }: { children
 }
 
 export function Block({ id, title, help, actions, feedback, children }: { id?: string; title?: string; help?: ReactNode; actions?: ReactNode; feedback?: ReactNode; children: ReactNode }) {
+  const H = useContext(BlockHeadingLevel) === 2 ? 'h2' : 'h3';
   return (
     <div className={s.block} id={id}>
       {title || actions ? (
         <div className={s.blockHead}>
-          {title ? <h3>{title}</h3> : null}
+          {title ? <H>{title}</H> : null}
           {help ? <p>{help}</p> : null}
           {actions ? <div className={s.blockActs}>{actions}</div> : null}
         </div>
@@ -314,6 +318,22 @@ export function Row({
   children: ReactNode;
   testId?: string;
 }) {
+  // the helper (or the error that replaces it) describes the control: aria-describedby on the field the label names,
+  // added here so every Row links it without each control passing ids (WCAG 1.3.1, 3.3.1)
+  const descId = htmlFor ? `${htmlFor}-desc` : labelId ? `${labelId}-desc` : undefined;
+  const described = !!descId && !!(error || help);
+  useEffect(() => {
+    if (!described || !descId) return;
+    const field = htmlFor ? document.getElementById(htmlFor) : document.querySelector<HTMLElement>(`[aria-labelledby~="${labelId}"]`);
+    if (!field) return;
+    const tokens = (field.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    if (!tokens.includes(descId)) field.setAttribute('aria-describedby', [...tokens, descId].join(' '));
+    return () => {
+      const left = (field.getAttribute('aria-describedby') ?? '').split(/\s+/).filter((t) => t && t !== descId);
+      if (left.length) field.setAttribute('aria-describedby', left.join(' '));
+      else field.removeAttribute('aria-describedby');
+    };
+  }, [described, descId, htmlFor, labelId]);
   return (
     <div className={cn(s.row, top && s.top, edited && s.rowEdited)} data-edited={edited ? 'true' : undefined} data-testid={testId}>
       <div>
@@ -330,11 +350,13 @@ export function Row({
           {labelExtra}
         </div>
         {error ? (
-          <p className={cn(s.help, s.helpErr)} role="alert">
+          <p className={cn(s.help, s.helpErr)} role="alert" id={descId}>
             {error}
           </p>
         ) : help ? (
-          <p className={s.help}>{help}</p>
+          <p className={s.help} id={descId}>
+            {help}
+          </p>
         ) : null}
       </div>
       <div className={s.ctrl}>{children}</div>

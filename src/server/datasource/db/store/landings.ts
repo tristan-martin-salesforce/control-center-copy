@@ -6,12 +6,20 @@
  * Not audited: these rows are the history the syncs keep, written inside a change set (a batch staged, a row taken off
  * a canvas) or outside one (a read, the worker after a read-back). Every sync takes a per-user advisory lock, so two
  * at once never insert the same landing twice.
+ *
+ * D-98 (09 R5): an Applied Slack or Gmail item is a landing too (record kind `message`, the draft's id, destination
+ * `slack` / `gmail`), with one write per delivered attempt, recorded by `recordMessageLanding` in the delivery's own
+ * change set (no new write path: the Outbox adapter already wrote). The D-70 sync (Org62, VDP) never sees them:
+ * `loadLandingStore` reads only its own destinations.
  */
 import { randomUUID } from 'node:crypto';
 
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import type { Draft } from '@/contract';
+import type { DeliveryRecord } from '@/outbox';
+import { gmailLanding } from '@/outbox/adapters/gmail';
+import { slackLanding, type MessageLanding } from '@/outbox/adapters/slack';
 import type { Db, DbOrTx } from '@/db/client';
 import { landingWrites, recordLandings, useCases as useCasesTable } from '@/db/schema';
 import { planUseCases } from '@/engines/activity/use-cases';
@@ -25,12 +33,17 @@ import { loadUseCaseInput } from './use-cases';
 import { loadCandidates } from './vdp-candidates';
 
 const iso = (d: Date | string | null | undefined): string | null => (d ? new Date(d).toISOString() : null);
+
+/** The destinations the D-70 sync owns. */
+const SYNC_DESTINATIONS = ['org62', 'vdp'];
 const at = (s: string | null) => (s ? new Date(s) : null);
 
 export async function loadLandingStore(db: DbOrTx, userId: string): Promise<LandingStore> {
   // one after another: inside a transaction (a batch's) one client runs one query at a time
-  const ls = await db.select().from(recordLandings).where(eq(recordLandings.ownerUserId, userId)).orderBy(recordLandings.createdAt, recordLandings.id);
-  const ws = await db.select().from(landingWrites).where(eq(landingWrites.ownerUserId, userId)).orderBy(landingWrites.createdAt, landingWrites.id);
+  // D-70's destinations only: a message landing (slack / gmail, D-98) is the Outbox's history, not the sync's
+  const ls = await db.select().from(recordLandings).where(and(eq(recordLandings.ownerUserId, userId), inArray(recordLandings.destination, SYNC_DESTINATIONS))).orderBy(recordLandings.createdAt, recordLandings.id);
+  const mine = new Set(ls.map((l) => l.id));
+  const ws = (await db.select().from(landingWrites).where(eq(landingWrites.ownerUserId, userId)).orderBy(landingWrites.createdAt, landingWrites.id)).filter((w) => mine.has(w.landingId));
   const us = await db.select().from(useCasesTable).where(eq(useCasesTable.ownerUserId, userId)).orderBy(useCasesTable.createdAt, useCasesTable.id);
   return {
     landings: ls.map(
@@ -162,4 +175,91 @@ export async function writeLandingChanges(db: DbOrTx, userId: string, c: StoreCh
   };
   if (isTx(db)) return run(db);
   await (db as Db).transaction((tx) => run(tx));
+}
+
+// ---------------------------------------------------------------------------
+// D-98 (09 R5): Slack and Gmail items as landings
+// ---------------------------------------------------------------------------
+
+export const MESSAGE_RECORD_KIND = 'message';
+
+/** What the delivery left as (the channel's adapter says), or null for a record that left nothing (dry run, failed). */
+export function messageLandingOf(rec: DeliveryRecord): MessageLanding | null {
+  if (rec.dryRun || rec.state !== 'delivered' || !rec.result) return null;
+  if (rec.channel === 'slack') return slackLanding(rec.payload, rec.mode, rec.result);
+  if (rec.channel === 'gmail') return gmailLanding(rec.payload, rec.mode, rec.result);
+  return null;
+}
+
+/**
+ * Record (or update) the landing of one delivered Slack / Gmail attempt, inside the delivery's change set: the
+ * landing (record = the draft, its state from the mode and the read-back) and the attempt's write. A dry run, a
+ * failure and every other channel record nothing. Idempotent: the job saves each state change; the rows follow.
+ */
+export async function recordMessageLanding(tx: DbOrTx, userId: string, draftId: string, attemptId: string, rec: DeliveryRecord): Promise<boolean> {
+  const m = messageLandingOf(rec);
+  if (!m) return false;
+  const verified = rec.readback === 'confirmed';
+  const state = rec.readback === 'missing' ? 'missing' : verified ? 'verified' : rec.mode === 'draft' ? 'staged' : 'sent';
+  const at = rec.finishedAt ? new Date(rec.finishedAt) : new Date();
+  const readAt = rec.readbackAt ? new Date(rec.readbackAt) : null;
+  const verifiedAt = verified ? (readAt ?? at) : null;
+  const remote = verified || rec.readback === 'missing' ? { ...m.values, readback: rec.readback } : null;
+  const [l] = await tx
+    .insert(recordLandings)
+    .values({ ownerUserId: userId, recordKind: MESSAGE_RECORD_KIND, recordId: draftId, destination: m.destination, externalId: m.externalId, state, remoteValues: remote, verifiedAt, lastReadAt: readAt })
+    .onConflictDoUpdate({
+      target: [recordLandings.ownerUserId, recordLandings.recordKind, recordLandings.recordId, recordLandings.destination],
+      set: {
+        externalId: sql`coalesce(excluded.external_id, ${recordLandings.externalId})`,
+        state,
+        remoteValues: sql`coalesce(excluded.remote_values, ${recordLandings.remoteValues})`,
+        verifiedAt: sql`coalesce(excluded.verified_at, ${recordLandings.verifiedAt})`,
+        lastReadAt: sql`coalesce(excluded.last_read_at, ${recordLandings.lastReadAt})`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ id: recordLandings.id });
+  const wState = verified ? 'verified' : 'sent';
+  await tx
+    .insert(landingWrites)
+    .values({ ownerUserId: userId, landingId: l!.id, draftId, rowKey: `attempt:${attemptId}`, op: 'create', after: m.values, state: wState, origin: 'outbox', reason: `Applied in the Outbox (${rec.mode})`, sentAt: at, verifiedAt })
+    .onConflictDoUpdate({
+      target: [landingWrites.ownerUserId, landingWrites.draftId, landingWrites.rowKey],
+      targetWhere: sql`${landingWrites.draftId} is not null`,
+      set: { after: m.values, state: wState, verifiedAt: sql`coalesce(excluded.verified_at, ${landingWrites.verifiedAt})`, updatedAt: new Date() },
+    });
+  return true;
+}
+
+export interface MessageLandingRow {
+  draftId: string;
+  destination: 'slack' | 'gmail';
+  externalId: string | null;
+  state: string;
+  verifiedAt: string | null;
+  writes: { rowKey: string; state: string; values: Record<string, string | null>; sentAt: string | null; verifiedAt: string | null }[];
+}
+
+/** Where the user's Applied Slack and Gmail items landed (newest first), or one draft's. */
+export async function loadMessageLandings(db: DbOrTx, userId: string, draftId?: string): Promise<MessageLandingRow[]> {
+  const ls = await db
+    .select()
+    .from(recordLandings)
+    .where(and(eq(recordLandings.ownerUserId, userId), eq(recordLandings.recordKind, MESSAGE_RECORD_KIND), ...(draftId ? [eq(recordLandings.recordId, draftId)] : [])))
+    .orderBy(sql`${recordLandings.createdAt} desc`, recordLandings.id);
+  if (!ls.length) return [];
+  const ws = await db
+    .select()
+    .from(landingWrites)
+    .where(and(eq(landingWrites.ownerUserId, userId), inArray(landingWrites.landingId, ls.map((l) => l.id))))
+    .orderBy(landingWrites.createdAt, landingWrites.id);
+  return ls.map((l) => ({
+    draftId: l.recordId,
+    destination: l.destination as MessageLandingRow['destination'],
+    externalId: l.externalId,
+    state: l.state,
+    verifiedAt: iso(l.verifiedAt),
+    writes: ws.filter((w) => w.landingId === l.id).map((w) => ({ rowKey: w.rowKey, state: w.state, values: (w.after as Record<string, string | null>) ?? {}, sentAt: iso(w.sentAt), verifiedAt: iso(w.verifiedAt) })),
+  }));
 }

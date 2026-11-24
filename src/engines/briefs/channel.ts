@@ -13,7 +13,7 @@
  */
 import type { Brief, BriefHighlight, SourceRef, WatchCadence } from '@/contract';
 import type { CompletionModel } from '@/scanner/completion';
-import { nextLocalTime } from '@/worker/schedules';
+import { nextLocalTime } from '@/lib/local-time';
 
 import { localStamp } from '../nba/prompt/render';
 import { buildBriefPrompt, parseBriefReply, type BriefValidation } from './prompt/build';

@@ -5,7 +5,9 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CalendarEvent, Connector, Draft, HomePayload, Initiative, NbaCard, WorkItem, type HomeRow } from '@/contract';
-import { approveMin, buildHome, handsOnMin, type HomeInput } from '@/engines/home';
+import { approveMin, handsOnMin } from '@/engines/home/estimate';
+import { buildHome } from '@/engines/home/build';
+import type { HomeInput } from '@/engines/home/types';
 import { ribbonLayout, ribbonMaxLanes } from '@/components/home/model';
 import { createMockDataSource, type MockDataSource } from '@/server/datasource/mock';
 import { homeInputFromStore } from '@/server/datasource/mock/home';
@@ -54,7 +56,7 @@ describe('home: on the example seed', () => {
     expect(h.capacity.fits).toBe(h.capacity.youMinToday <= h.capacity.freeMin);
   });
 
-  it('Do now: ≤ 3 cards, rank 1 first, Outbox approvals as #2, nothing blocked', async () => {
+  it('Do now: ≤ 3 cards, rank 1 first, Outbox approvals in the third slot, nothing blocked', async () => {
     const h = await ds.getHome({ query: { wide: false } });
     const cards = h.doNow.cards;
     expect(cards.length).toBe(3);
@@ -63,9 +65,9 @@ describe('home: on the example seed', () => {
     expect(cards[0]!.id).toBe('w_acme_build');
     expect(cards[0]!.now?.item.id).toBe('w_acme_build');
     expect(cards[0]!.verb.action).toBe('open_in_claude');
-    expect(cards[1]!.kind).toBe('outbox');
-    expect(cards[1]!.verb.href).toBe('/outbox');
-    expect(cards[1]!.drafts.length).toBeGreaterThan(0);
+    expect(cards[2]!.kind).toBe('outbox');
+    expect(cards[2]!.verb.href).toBe('/outbox');
+    expect(cards[2]!.drafts.length).toBeGreaterThan(0);
     expect(h.doNow.total).toBeGreaterThanOrEqual(cards.length);
     for (const c of cards) expect(c.state).not.toBe('blocked');
   });
@@ -325,12 +327,12 @@ describe('home: a synthetic day (the corrected-capacity scenario)', () => {
     expect(h.doNow.cards.find((c) => c.id === 'w_smoke')!.readInState).toBeUndefined();
   });
 
-  it('Do now is the smoke test, the Outbox and the sizing; the blocked answer is #4 in Reply & approve', () => {
-    expect(h.doNow.cards.map((c) => c.id)).toEqual(['w_smoke', 'outbox', 'w_sizing']);
+  it('Do now is the smoke test, the sizing and the Outbox; the blocked answer is #4 in Respond', () => {
+    expect(h.doNow.cards.map((c) => c.id)).toEqual(['w_smoke', 'w_sizing', 'outbox']);
     expect(h.doNow.cards[0]!.stateLabel).toBe('Start by 08:35');
-    expect(h.doNow.cards[1]!.title).toBe('Approve 3 drafts');
+    expect(h.doNow.cards[2]!.title).toBe('Approve 3 drafts');
     expect(h.doNow.total).toBe(5);
-    expect(h.doNow.elsewhereNote).toBe('#4 is in Reply & approve, #5 in Log & fix.');
+    expect(h.doNow.elsewhereNote).toBe('#4 is in Respond, #5 in Log & fix.');
     const answer = h.sections.find((s) => s.id === 'reply')!.rows.find((r) => r.id === 'w_answer')!;
     expect(answer.state).toBe('blocked');
     expect(answer.why).toBe('~5m once Sam answers');
@@ -338,7 +340,7 @@ describe('home: a synthetic day (the corrected-capacity scenario)', () => {
 
   it('the masthead names the focal meeting and the day in one sentence', () => {
     const text = h.masthead.sentence.map((s) => s.text).join('');
-    expect(text).toBe('Today turns on the 13:30 ACME review: smoke-test both demos by 08:35, approve 3 drafts, and back-work the Globex numbers by 17:00.');
+    expect(text).toBe('Today turns on the 13:30 ACME review: smoke-test both demos by 08:35, back-work the Globex numbers by 17:00, and approve 3 drafts.');
     expect(h.masthead.sentence.filter((s) => s.em).map((s) => s.text)).toEqual(['13:30', 'ACME', '08:35', 'Globex', '17:00']);
     expect(h.masthead.ahead.map((s) => s.text).join('')).toMatch(/^Tomorrow: Q4 log due 12:00, 18.5 of 60 h in\./);
     expect(h.masthead.tzLabel).toBe('MT');

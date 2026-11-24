@@ -38,8 +38,10 @@ export function parseMcpList(stdout: string): McpServerStatus[] {
 }
 
 /** `claude mcp list` health-checks each server but does not start any OAuth flow. It can take ~10-40 s. */
-export async function listMcp(exec: ExecFn = run, claudeBin = 'claude'): Promise<{ ok: boolean; servers: McpServerStatus[] }> {
+export async function listMcp(exec: ExecFn = run, claudeBin = 'claude'): Promise<{ ok: boolean; servers: McpServerStatus[]; missing?: boolean }> {
   const r = await exec(claudeBin, ['mcp', 'list'], { timeoutMs: 90_000 });
+  // the CLI itself is not installed (spawn ENOENT): DEP.CLAUDE.MISSING, not "could not list"
+  if (r.spawnError === 'ENOENT') return { ok: false, servers: [], missing: true };
   if (r.code !== 0 || r.spawnError) return { ok: false, servers: [] };
   return { ok: true, servers: parseMcpList(r.stdout) };
 }

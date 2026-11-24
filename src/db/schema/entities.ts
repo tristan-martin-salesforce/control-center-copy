@@ -16,7 +16,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-import { tstz, createdAt, updatedAt, ownerUserId, confidence, amount, textArray } from './columns';
+import { tstz, createdAt, updatedAt, ownerUserId, confidence, amount, textArray, id15 } from './columns';
 import {
   sourceSystem,
   userVerdict,
@@ -54,10 +54,15 @@ export const accounts = pgTable(
     isWatched: boolean('is_watched').notNull().default(false),
     notes: text('notes'),
     archivedAt: tstz('archived_at'),
+    /** 0036 (D-98): business state that lived in the kv side-car (`cc.ext/accounts/<id>`): my DC status, the Org62 link. */
+    dcStatus: text('dc_status'),
+    org62Url: text('org62_url'),
+    org62AccountId15: id15('org62_account_id15', 'org62_account_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    index('accounts_owner_org62_id15_idx').on(t.ownerUserId, t.org62AccountId15),
     uniqueIndex('accounts_owner_org62_uidx')
       .on(t.ownerUserId, t.org62AccountId)
       .where(sql`${t.org62AccountId} IS NOT NULL`),
@@ -112,10 +117,22 @@ export const opportunities = pgTable(
     }),
     org62ModifiedAt: tstz('org62_modified_at'),
     archivedAt: tstz('archived_at'),
+    /**
+     * 0036 (D-98): business state that lived in the kv side-car (`cc.ext/opportunities/<id>`): the DC flag (false =
+     * unset), the Org62 next step, the products, the opp owner (a people id, no FK: an owner may not be a person row
+     * yet) and when the daily book read stopped listing it.
+     */
+    dcAssigned: boolean('dc_assigned').notNull().default(false),
+    nextStep: text('next_step'),
+    products: text('products').array(),
+    ownerPersonId: uuid('owner_person_id'),
+    leftBookAt: tstz('left_book_at'),
+    org62OpportunityId15: id15('org62_opportunity_id15', 'org62_opportunity_id'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    index('opportunities_owner_org62_id15_idx').on(t.ownerUserId, t.org62OpportunityId15),
     uniqueIndex('opportunities_owner_org62_uidx').on(t.ownerUserId, t.org62OpportunityId),
     index('opportunities_account_idx').on(t.accountId),
     index('opportunities_owner_open_close_idx').on(t.ownerUserId, t.closeDate).where(sql`NOT ${t.isClosed}`),
@@ -354,6 +371,9 @@ export const mappingRules = pgTable(
     }),
     hitCount: integer('hit_count').notNull().default(0),
     lastHitAt: tstz('last_hit_at'),
+    /** 0032 (attribution engine): corrections that disagreed with it; a rule decays and is replaced once they reach hit_count. */
+    missCount: integer('miss_count').notNull().default(0),
+    lastMissAt: tstz('last_miss_at'),
     enabled: boolean('enabled').notNull().default(true),
     note: text('note'),
     createdAt: createdAt(),
@@ -386,6 +406,8 @@ export const vdpRecords = pgTable(
     /** Org62 ids as VDP stores them (15 or 18 chars); `accountId`/`opportunityId` are the local rows they match. */
     salesforceAccountId: text('salesforce_account_id'),
     salesforceOpportunityId: text('salesforce_opportunity_id'),
+    salesforceAccountId15: id15('salesforce_account_id15', 'salesforce_account_id'),
+    salesforceOpportunityId15: id15('salesforce_opportunity_id15', 'salesforce_opportunity_id'),
     archived: boolean('archived').notNull().default(false),
     lastActivityAt: tstz('last_activity_at'),
     /** A complete read no longer listed it (gone, or no longer mine). Kept, never deleted. */
@@ -405,10 +427,16 @@ export const vdpRecords = pgTable(
     missingItems: textArray('missing_items'),
     sourceItemId: uuid('source_item_id').references(() => sourceItems.id, { onDelete: 'set null' }),
     lastSeenAt: tstz('last_seen_at').notNull().defaultNow(),
+    /**
+     * 0036 (D-98, mirror convention): when this row's child tables (vdp_use_cases, vdp_assets, vdp_members) were last
+     * written from a read. Null: written before 0036, so readers fall back to `detail` until the next read or backfill.
+     */
+    mirroredAt: tstz('mirrored_at'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
+    index('vdp_records_owner_opp_id15_idx').on(t.ownerUserId, t.salesforceOpportunityId15),
     uniqueIndex('vdp_records_owner_slug_uidx').on(t.ownerUserId, t.vdpSlug),
     index('vdp_records_opportunity_idx').on(t.opportunityId),
   ],

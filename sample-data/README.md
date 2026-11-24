@@ -1,6 +1,6 @@
-# Control Center sample dataset
+# Command Center sample dataset
 
-A synthetic copy of the Control Center Postgres database: 120 tables, about 16.7k rows, one fictional user. It exists so that a person or an LLM can learn the shape of every table, how tables join, and the daily scenarios the app handles, without any real data.
+A synthetic copy of the Command Center Postgres database: 120 tables, about 16.7k rows, one fictional user. It exists so that a person or an LLM can learn the shape of every table, how tables join, and the daily scenarios the app handles, without any real data.
 
 ## 1. What this is, and the privacy guarantee
 
@@ -13,7 +13,7 @@ A synthetic copy of the Control Center Postgres database: 120 tables, about 16.7
 
 ## 2. How it relates to the app
 
-Control Center is a locally run personal-ops cockpit for sellers. Connectors read (never write) Slack, Gmail, Calendar, Drive, Gemini notes, Org62, VDP and local Claude sessions into `source_items`. Engines turn items into `work_items` (the to-do list) with evidence, prioritise them (`priority_*`), propose next best actions, and draft replies, VDP updates and Org62 activity logs in the Outbox (`drafts`). Nothing leaves without approval: the user approves a draft, an adapter sends or stages it, and a read-back verifies it landed. Every change goes through a `change_set` and leaves `audit_events`. A worker runs scheduled `jobs`, scans and LLM calls under a daily budget. See `docs/ARCHITECTURE.md` and `docs/TENETS.md` in the repo root.
+Command Center is a locally run personal-ops cockpit for sellers. Connectors read (never write) Slack, Gmail, Calendar, Drive, Gemini notes, Org62, VDP and local Claude sessions into `source_items`. Engines turn items into `work_items` (the to-do list) with evidence, prioritise them (`priority_*`), propose next best actions, and draft replies, VDP updates and Org62 activity logs in the Outbox (`drafts`). Nothing leaves without approval: the user approves a draft, an adapter sends or stages it, and a read-back verifies it landed. Every change goes through a `change_set` and leaves `audit_events`. A worker runs scheduled `jobs`, scans and LLM calls under a daily budget. See `docs/ARCHITECTURE.md` and `docs/TENETS.md` in the repo root.
 
 ## 3. How to load it
 

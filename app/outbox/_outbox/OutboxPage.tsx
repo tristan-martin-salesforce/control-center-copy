@@ -15,10 +15,14 @@
  * Live (docs/UX.md "Live updates"): a new draft enters at its place (the top of its section), marked in the AI color,
  * while the draft you selected stays selected and in view (the section cap grows to keep it). A draft sent or applied
  * elsewhere fades out; the one open in the panel stays, and the panel says "Sent or applied elsewhere".
+ *
+ * The header is the kit's PageHeader (the topbar holds the title). "Review N" opens the drain mode (OutboxReview.tsx,
+ * the kit's ReviewQueue) over the drafts that wait on you; the list stays the default. Counts: the sentence, the
+ * Review button and the sidebar badge all read outboxCount (src/engines/activity/needs-count.ts).
  */
 import { AppLink } from '@/components/shell/AppLink';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { adminDraftHref, type OutboxItem } from '@/contract';
 import { api } from '@/client/api';
 import { toast } from '@/client/toast';
@@ -28,6 +32,8 @@ import { useResumeExtra, useResumeScroll, useResumeSelection } from '@/client/re
 import { useChatContext } from '@/components/chat';
 import { destinationLabel } from '@/components/composer';
 import { DomainClock, StatusBadge } from '@/components/domain';
+import { outboxCount, outboxPhrase } from '@/engines/activity/needs-count';
+import { PageHeader } from '@/components/kit';
 import { focusItemSoon, useOpenKeys, usePageClock, useStableList } from '@/components/lists/hooks';
 import { ListEnd, ListFrame, SelectionPosition, StaleRefresh } from '@/components/lists/ListFrame';
 import { ListSection, SectionAction } from '@/components/lists/ListSection';
@@ -35,11 +41,14 @@ import { canApprove, OUTBOX_SECTIONS, outboxSection, sentBreakdown, stagedLabel,
 import { shownCount } from '@/components/lists/grouping';
 import { useFollowWhenGone, useListPanel, useWide } from '@/components/lists/panel';
 import { useArrivalHold, useSelectionSurvives } from '@/components/lists/live-list';
-import { EmptyState, LivePill, PanelBoundary, PanelError, usePanelState } from '@/ui';
+import { Button, EmptyState, LivePill, PanelBoundary, PanelError, usePanelState } from '@/ui';
 import { OutboxRow, rowSource, type RowFlow } from './OutboxRow';
 import { openDeepLink } from '@/components/detail/nba/ClaudeLaunchPanel';
 import { OutboxListSkeletonBody } from './OutboxSkeleton';
+import { OutboxReview, reviewableDrafts } from './OutboxReview';
 import { useOutboxSend } from './useOutboxSend';
+import { releaseApproveKind } from './release';
+import { markUploaded } from './ReleaseParts';
 import { navigate } from '@/components/shell/router';
 
 type SectionKey = OutboxSection;
@@ -165,7 +174,7 @@ function OutboxInner({ now, tz }: { now: string; tz?: string }) {
         const where = outcome === 'staged' ? stagedWhere(draft.destination) : null;
         toast({
           key: `outbox:${draft.id}`,
-          title: outcome === 'staged' ? (stagedLabel(draft.destination) ?? 'Draft pushed') : 'Sent',
+          title: outcome === 'staged' ? (stagedLabel(draft.destination) ?? 'Draft saved') : 'Sent',
           body: `${where ? `Find it ${where}. ` : ''}Checking it landed. The row shows Verified when it does.`,
           tone: 'success',
         });
@@ -173,13 +182,27 @@ function OutboxInner({ now, tz }: { now: string; tz?: string }) {
     },
   });
 
+  // D-90: "Mark uploaded" on a release upload hand-off: recorded by the server, nothing is sent (no confirm dialog, no undo)
+  const markHandedOff = useCallback(
+    async (it: OutboxItem) => {
+      try {
+        await markUploaded(it.draft);
+        toast({ key: `outbox:${it.draft.id}`, title: 'Marked uploaded', body: 'The hand-off is recorded. Nothing was sent: next, approve the announcement.', tone: 'success' });
+      } catch (err) {
+        toast({ key: `outbox:${it.draft.id}`, tone: 'error', title: "Couldn't mark it uploaded", body: err instanceof Error ? err.message : undefined, durationMs: null });
+      }
+      void q.refetch();
+    },
+    [q],
+  );
   const approve = useCallback(
     (it: OutboxItem) => {
       if (!canApprove(it.group)) return;
       setSel(it.draft.id);
+      if (releaseApproveKind(it) === 'mark') return void markHandedOff(it);
       send.approve(it.draft);
     },
-    [send, setSel],
+    [send, setSel, markHandedOff],
   );
   // REJECT-1: turn a draft down. It leaves the Outbox, nothing is sent, the task stays open; Undo on the toast.
   const reject = useCallback(
@@ -238,8 +261,13 @@ function OutboxInner({ now, tz }: { now: string; tz?: string }) {
 
   const pending = sections.find((s) => s.key === 'approve')?.items ?? [];
   const approveAll = () => send.approveAll(pending.map((i) => i.draft));
+  // Drain mode: one draft at a time (the list stays the default view)
+  const [reviewing, setReviewing] = useState(false);
+  const reviewable = useMemo(() => reviewableDrafts(flat ?? []), [flat]);
+  const refetch = useCallback(() => void q.refetch(), [q]);
   useCommands([
     { id: 'outbox.settings', title: 'Outbox: sending settings (dry run, undo window)', group: 'View', run: () => navigate('/settings?section=sending') },
+    ...(reviewable.length && !reviewing ? [{ id: 'outbox.review', title: `Outbox: review ${reviewable.length} one at a time`, group: 'Outbox', keywords: ['drain', 'queue', 'approve'], run: () => setReviewing(true) }] : []),
     ...(pending.length > 1 ? [{ id: 'outbox.approve-all', title: `Outbox: approve all ${pending.length} (one confirm each)`, group: 'Outbox', keywords: ['batch', 'send'], run: approveAll }] : []),
   ]);
   const activeSource = active ? rowSource(active) : null;
@@ -272,21 +300,15 @@ function OutboxInner({ now, tz }: { now: string; tz?: string }) {
   const counts = q.data?.counts;
   const failed = sections.find((s) => s.key === 'retry')?.items.length ?? 0;
   const sent = sections.find((s) => s.key === 'sent')?.items ?? [];
-  const lead = pending.length ? (
+  // one count: the sentence, the Review button and the sidebar badge (navCounts.outbox, pinned by tests/ui/counts-parity)
+  const waiting = outboxCount({ pending: pending.length, failed });
+  const lead = waiting.pending ? (
     <>
-      <b>
-        {pending.length} {pending.length === 1 ? 'draft waits' : 'drafts wait'} for your approval
-      </b>
-      {failed ? (
-        <>
-          , and <b>{failed} failed</b>
-        </>
-      ) : null}
-      . Nothing is sent until you confirm each one.
+      <b data-testid="outbox-count">{outboxPhrase(waiting)}</b>. Nothing is sent until you confirm each one.
     </>
-  ) : failed ? (
+  ) : waiting.failed ? (
     <>
-      <b>{failed} failed to send.</b> Retry shows a fresh preview and asks again.
+      <b data-testid="outbox-count">{outboxPhrase(waiting)}.</b> Retry shows a fresh preview and asks again.
     </>
   ) : (
     <>
@@ -316,40 +338,66 @@ function OutboxInner({ now, tz }: { now: string; tz?: string }) {
     );
   };
 
+  const sub = q.data ? (
+    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="dry-run-mode">
+      {dryRun ? (
+        <>
+          <StatusBadge tone="neutral" icon="lock">
+            Dry run is on
+          </StatusBadge>
+          <span className="cc-hide-narrow">Approving renders the exact payload and records it here. Nothing leaves this machine.</span>
+        </>
+      ) : (
+        <>
+          <StatusBadge tone="warning" icon="send">
+            Live send is on
+          </StatusBadge>
+          <span className="cc-hide-narrow">Approve shows the payload, asks you to confirm, then waits {undoSec} s so you can undo before it goes.</span>
+        </>
+      )}
+      <AppLink href="/settings?section=sending" className="font-bold text-link hover:underline">
+        Sending settings
+      </AppLink>
+    </span>
+  ) : null;
+
+  if (reviewing)
+    return (
+      <>
+        <OutboxReview items={flat ?? []} send={send} dryRun={dryRun} now={now} tz={tz} onEdit={openDetails} onExit={() => setReviewing(false)} refetch={refetch} />
+        {send.overlays}
+      </>
+    );
+
   return (
     <>
       <ListFrame
         label="Outbox"
         data-state={state}
-        lead={q.isLoading ? 'Loading the Outbox…' : lead}
-        sub={
-          q.data ? (
-            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1" data-testid="dry-run-mode">
-              {dryRun ? (
-                <>
-                  <StatusBadge tone="neutral" icon="lock">
-                    Dry run is on
-                  </StatusBadge>
-                  <span className="cc-hide-narrow">Approving renders the exact payload and records it here. Nothing leaves this machine.</span>
-                </>
-              ) : (
-                <>
-                  <StatusBadge tone="warning" icon="send">
-                    Live send is on
-                  </StatusBadge>
-                  <span className="cc-hide-narrow">Approve shows the payload, asks you to confirm, then waits {undoSec} s so you can undo before it goes.</span>
-                </>
-              )}
-              <AppLink href="/settings?section=sending" className="font-bold text-link hover:underline">
-                Sending settings
-              </AppLink>
-            </span>
-          ) : null
-        }
-        aside={
+        header={
           <>
-            {q.isError && q.data ? <StaleRefresh onRetry={() => void q.refetch()} /> : null}
-            <SelectionPosition index={explicit && activeId ? allIds.indexOf(activeId) : -1} total={allIds.length} noun="draft" />
+            <PageHeader
+              route="outbox"
+              titleIn="topbar"
+              inset={false}
+              rule={false}
+              sentence={<span data-testid="list-lead">{q.isLoading ? 'Loading the Outbox…' : lead}</span>}
+              actions={
+                <>
+                  {q.isError && q.data ? <StaleRefresh onRetry={() => void q.refetch()} /> : null}
+                  <span className="text-caption text-muted">
+                    {/* while a row is selected, where it sits among every row; otherwise what waits on you (the sentence's number) */}
+                    <SelectionPosition index={explicit && activeId ? allIds.indexOf(activeId) : -1} total={explicit && activeId ? allIds.length : waiting.total} noun={explicit && activeId ? 'draft' : 'waiting'} nouns={explicit && activeId ? 'drafts' : 'waiting'} />
+                  </span>
+                  {reviewable.length ? (
+                    <Button size="sm" variant="secondary" icon="preview" onClick={() => setReviewing(true)} title="Go through the drafts one at a time: a approve · e edit · x reject · j skip" data-testid="outbox-review-open">
+                      Review {reviewable.length}
+                    </Button>
+                  ) : null}
+                </>
+              }
+            />
+            {sub ? <div className="cc-list-sub">{sub}</div> : null}
           </>
         }
         bodyRef={bodyRef}
@@ -360,7 +408,11 @@ function OutboxInner({ now, tz }: { now: string; tz?: string }) {
           ) : state === 'error' || (q.isError && !q.data) ? (
             <PanelError title="The Outbox failed to load" error={q.error} onRetry={() => void q.refetch()} />
           ) : state === 'empty' ? (
-            <EmptyState icon="send" title="The Outbox is empty" body="Drafts you ask to send land here for approval. Nothing is sent without you." />
+            <EmptyState
+              icon="send"
+              title="The Outbox is empty"
+              body="A draft lands here when you ask for one (Draft on a task, or the Assistant) or when the app drafts a reply to something that waits on you after a scan. Nothing is sent without you."
+            />
           ) : (
             <div
               {...lk.containerProps}
@@ -407,6 +459,7 @@ function OutboxInner({ now, tz }: { now: string; tz?: string }) {
                           onExpand={() => toggleExpand(it.draft.id)}
                           onRetryFlow={send.retry}
                           onDismissFlow={send.reset}
+                          onMarkUploaded={() => void markHandedOff(it)}
                         />
                     ))}
                   </ListSection>

@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { parseWorkOrder } from '@/engines/activity';
+import { parseWorkOrder } from '@/engines/activity/canvas-parse';
 import { cell, eventRow, meetingTypeFor, quarterHours, renderWorkOrder, sfInstant, splitWorkOrder, type WorkOrderInput } from '@/engines/activity/slackbot';
 
 const OWNER = '005XX0000000OWNAAA';
@@ -16,7 +16,7 @@ const RT = '012XX0000000RTYAAA';
 const row = (over: Partial<Parameters<typeof eventRow>[0]> = {}) =>
   eventRow({ id: 'act-1', subject: 'ACCOUNT_1 | Discovery', start: '2026-11-04T16:00:00-07:00', end: '2026-11-04T17:00:00-07:00', durationH: 1, taskType: 'Customer Discovery', whatOrg62Id: '006XX0000000OPPAAA', origin: 'calendar', ...over });
 
-const input = (events = [row()], updates: WorkOrderInput['updates'] = []): WorkOrderInput => ({ ownerName: 'PERSON_ME', ownerOrg62Id: OWNER, recordTypeId: RT, generatedAt: '2026-11-10T20:00:00.000Z', events, updates, sourceLabel: 'Control Center · batch Nov 2–8' });
+const input = (events = [row()], updates: WorkOrderInput['updates'] = []): WorkOrderInput => ({ ownerName: 'PERSON_ME', ownerOrg62Id: OWNER, recordTypeId: RT, generatedAt: '2026-11-10T20:00:00.000Z', events, updates, sourceLabel: 'Command Center · batch Nov 2–8' });
 
 describe('event rows', () => {
   it('uses Org62 UTC instants and quarter hours; keeps the exact end unless the hours were changed (D-40)', () => {
@@ -63,7 +63,7 @@ describe('event rows', () => {
     const parsed = parseWorkOrder(md);
     expect(parsed.adds).toHaveLength(1);
     expect(parsed.adds[0]).toMatchObject({ kind: 'event', subject: 'ACCOUNT_1 / Discovery', startsAt: '2026-11-04T23:00:00.000Z', description: `Workshop with the ACCOUNT_1 team on the data model. · CC#${id}` });
-    expect(md.split('\n').find((l) => l.startsWith('|1|Event|'))).toMatch(new RegExp(` · CC#${id}\\|$`));
+    expect(md.split('\n').find((l) => l.startsWith('|1|ACCOUNT_1 / Discovery|'))).toMatch(new RegExp(` · CC#${id}\\|$`));
   });
 
   it('cells never break the table', () => {
@@ -73,15 +73,20 @@ describe('event rows', () => {
 });
 
 describe('work order', () => {
-  it('renders the rules with the owner and record type, then the ADD and UPDATE tables', () => {
+  it('renders the rules with the owner and record type, then one table per object and verb (WO-1)', () => {
     const md = renderWorkOrder(input([row(), row({ id: 'act-2', taskType: 'Workshop', durationH: 2 })], [{ recordId: '00UXX0000000EVTAAA', field: 'Duration__c', newValue: '1.5', currentValue: '(blank)', why: 'Time never filled' }]));
     expect(md).toContain(`Execute it in Org62 for PERSON_ME (User Id ${OWNER}) without asking for more context.`);
-    expect(md).toContain(`RecordTypeId \`${RT}\` (Solutions Event), OwnerId \`${OWNER}\``);
-    expect(md).toContain('# ADD (2 rows · 3.00 h of activities)');
-    expect(md).toContain('|1|Event|ACCOUNT_1 / Discovery|2026-11-04T23:00:00.000Z|2026-11-05T00:00:00.000Z|Customer Discovery|1|006XX0000000OPPAAA||Discovery session: ACCOUNT_1. · CC#act-1|');
-    expect(md).toContain('|2|Event|ACCOUNT_1 / Discovery|2026-11-04T23:00:00.000Z|2026-11-05T01:00:00.000Z|Workshop|2|006XX0000000OPPAAA|Data Cloud Workshop|');
-    expect(md).toContain('# UPDATE (1 rows)');
-    expect(md).toContain('|1|Event|00UXX0000000EVTAAA|Duration__c|1.5|(blank)|Time never filled|');
+    expect(md).toContain(`RecordTypeId \`${RT}\` (Solutions Event) and OwnerId \`${OWNER}\``);
+    expect(md).toContain('## EVENTS TO CREATE (2 rows · 3.00 h of activities)');
+    expect(md).toContain('|1|ACCOUNT_1 / Discovery|2026-11-04T23:00:00.000Z|2026-11-05T00:00:00.000Z|Customer Discovery|1|006XX0000000OPPAAA||Discovery session: ACCOUNT_1. · CC#act-1|');
+    expect(md).toContain('|2|ACCOUNT_1 / Discovery|2026-11-04T23:00:00.000Z|2026-11-05T01:00:00.000Z|Workshop|2|006XX0000000OPPAAA|Data Cloud Workshop|');
+    expect(md).toContain('## EVENTS TO UPDATE (1 row)');
+    expect(md).toContain('|#|Subject|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c|Duration__c|WhatId|Meeting_Type__c|Description|');
+    expect(md).toContain('|#|Record Id|Field|New value|Current value|Why|');
+    expect(md).not.toContain('|Object|');
+    // a table only when it has rows: no DC or use-case tables here
+    expect(md).not.toMatch(/^## (DEAL CONTRIBUTIONS|USE CASES)/m);
+    expect(md).toContain('|1|00UXX0000000EVTAAA|Duration__c|1.5|(blank)|Time never filled|');
     expect(md).not.toMatch(/Tristan/);
   });
 
@@ -91,8 +96,8 @@ describe('work order', () => {
     const parts = splitWorkOrder(md, 6000);
     expect(parts.length).toBeGreaterThan(1);
     for (const p of parts) expect(p.length).toBeLessThanOrEqual(6400);
-    expect(parts[1]).toMatch(/^# ADD \(80 rows .*\(continued\)\n\n\|#\|Object\|/);
-    const rows = parts.join('\n').split('\n').filter((l) => /^\|\d+\|Event\|/.test(l));
+    expect(parts[1]).toMatch(/^## EVENTS TO CREATE \(80 rows .*\(continued\)\n\n\|#\|Subject\|/);
+    const rows = parts.join('\n').split('\n').filter((l) => /^\|\d+\|ACCOUNT_/.test(l));
     expect(rows).toHaveLength(80);
   });
 });

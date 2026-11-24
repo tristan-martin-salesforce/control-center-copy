@@ -1,0 +1,211 @@
+{
+  "items": [
+    {
+      "connector": "gmail",
+      "kind": "email",
+      "externalId": "18f0000000000001",
+      "dedupeKey": "gmail:18f0000000000001",
+      "contentHash": "7190cac39cd42a04",
+      "occurredAt": "2026-03-10T16:05:00.000Z",
+      "author": {
+        "name": "AE_1",
+        "email": "ae.one@example.com",
+        "isMe": false,
+        "isExternal": false
+      },
+      "participants": [
+        {
+          "name": "ME",
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        },
+        {
+          "name": "SE_2",
+          "email": "se.two@example.com",
+          "isMe": false,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://mail.google.com/mail/u/0/#all/18f0000000000001",
+      "title": "Re: ACME_CORP data cloud workshop agenda",
+      "excerpt": "Hi ME, Can you send the updated deck for the workshop by Thursday? I also need the architecture slide refreshed with the new Snowflake zero-copy flow. Draft is here: https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit demo login: workshop_user / pw: [REDACTED:login_pair] (shared org) Thanks, AE_1",
+      "redacted": true,
+      "threadRef": "gmail-thread:18f00000000000b1",
+      "fileRefs": [
+        "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+      ],
+      "payload": {
+        "direction": "received",
+        "scope": "inbox",
+        "subject": "Re: ACME_CORP data cloud workshop agenda",
+        "from": "AE_1 <ae.one@example.com>",
+        "to": "ME <me@example.com>",
+        "cc": "SE_2 <se.two@example.com>",
+        "toMe": true,
+        "ccMe": false,
+        "replyTo": "<msg-0000@mail.example.com>",
+        "messageIdHeader": "<msg-0001@mail.example.com>",
+        "snippet": "Hi ME, Can you send the updated deck for the workshop by Thursday? I also need the architecture slide refreshed with the new Snowflake zero-copy flow. Draft is here: https://docs.google.com/presentati",
+        "bodyNew": "Hi ME,\n\nCan you send the updated deck for the workshop by Thursday? I also need the architecture slide refreshed with the new Snowflake zero-copy flow.\n\nDraft is here: https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit\n\ndemo login: workshop_user / pw: [REDACTED:login_pair] (shared org)\n\nThanks,\nAE_1",
+        "bodyFull": "Hi ME,\n\nCan you send the updated deck for the workshop by Thursday? I also need the architecture slide refreshed with the new Snowflake zero-copy flow.\n\nDraft is here: https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit\n\ndemo login: workshop_user / pw: [REDACTED:login_pair] (shared org)\n\nThanks,\nAE_1\n\nOn Mon, Mar 9, 2026 at 3:00 PM ME <me@example.com> wrote:\n> I'll send the deck once the architecture slide is final.\n> Thanks",
+        "urls": [
+          "https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit"
+        ],
+        "hasAttachment": false,
+        "mentionsAttachment": false,
+        "bulk": false,
+        "calendarNotice": false,
+        "repliedByMe": true,
+        "threadSize": 2,
+        "lastMessageFromMe": true
+      }
+    },
+    {
+      "connector": "gmail",
+      "kind": "email",
+      "externalId": "18f0000000000002",
+      "dedupeKey": "gmail:18f0000000000002",
+      "contentHash": "38315f366f7cc5a9",
+      "occurredAt": "2026-03-10T16:20:00.000Z",
+      "author": {
+        "name": "CUSTOMER_1",
+        "email": "cust.one@customer.example",
+        "isMe": false,
+        "isExternal": true
+      },
+      "participants": [
+        {
+          "name": "ME",
+          "email": "me@example.com",
+          "isMe": true,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://mail.google.com/mail/u/0/#all/18f0000000000002",
+      "title": "Deck attached: ACME_CORP workshop",
+      "excerpt": "Please see attached the revised requirements. We now also need Private Connect for GCP in scope. Regards, CUSTOMER_1",
+      "redacted": false,
+      "threadRef": "gmail-thread:18f00000000000a1",
+      "payload": {
+        "direction": "received",
+        "scope": "inbox",
+        "subject": "Deck attached: ACME_CORP workshop",
+        "from": "CUSTOMER_1 <cust.one@customer.example>",
+        "to": "ME <me@example.com>",
+        "cc": "",
+        "toMe": true,
+        "ccMe": false,
+        "messageIdHeader": "<msg-0002@mail.customer.example>",
+        "snippet": "Please see attached the revised requirements. We now also need Private Connect for GCP in scope. Regards, CUSTOMER_1",
+        "bodyNew": "Please see attached the revised requirements. We now also need Private Connect for GCP in scope.\n\nRegards,\nCUSTOMER_1",
+        "bodyFull": "Please see attached the revised requirements. We now also need Private Connect for GCP in scope.\n\nRegards,\nCUSTOMER_1",
+        "urls": [],
+        "hasAttachment": true,
+        "mentionsAttachment": true,
+        "bulk": false,
+        "calendarNotice": false,
+        "repliedByMe": false,
+        "threadSize": 1,
+        "lastMessageFromMe": false
+      }
+    },
+    {
+      "connector": "gmail",
+      "kind": "email",
+      "externalId": "18f0000000000003",
+      "dedupeKey": "gmail:18f0000000000003",
+      "contentHash": "910ddc83e0f03943",
+      "occurredAt": "2026-03-10T16:40:00.000Z",
+      "author": {
+        "name": "Employee Comms",
+        "email": "employeecomms@example.com",
+        "isMe": false,
+        "isExternal": false
+      },
+      "participants": [
+        {
+          "email": "all-employees@example.com",
+          "isMe": false,
+          "isExternal": false
+        }
+      ],
+      "permalink": "https://mail.google.com/mail/u/0/#all/18f0000000000003",
+      "title": "The Daily: weekly roundup",
+      "excerpt": "Welcome to The Daily Read more",
+      "redacted": false,
+      "threadRef": "gmail-thread:18f0000000000003",
+      "payload": {
+        "direction": "received",
+        "scope": "inbox",
+        "subject": "The Daily: weekly roundup",
+        "from": "Employee Comms <employeecomms@example.com>",
+        "to": "all-employees@example.com",
+        "cc": "",
+        "toMe": false,
+        "ccMe": false,
+        "messageIdHeader": "<msg-0003@mail.example.com>",
+        "snippet": "Welcome to The Daily Read more",
+        "bodyNew": "Welcome to The Daily \n Read more",
+        "bodyFull": "Welcome to The Daily \n Read more",
+        "urls": [],
+        "hasAttachment": false,
+        "mentionsAttachment": false,
+        "bulk": true,
+        "calendarNotice": false,
+        "repliedByMe": false,
+        "threadSize": 1,
+        "lastMessageFromMe": false
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "kind": "mailbox_range",
+      "ref": "gmail:inbox",
+      "from": "2026-03-10T17:00:00.000Z",
+      "to": "2026-03-10T18:00:00.000Z",
+      "meta": {
+        "query": "in:anywhere -in:sent -in:drafts -in:spam -in:trash -category:promotions -category:social after:1773161400 before:1773165600",
+        "listed": 3,
+        "fetched": 3,
+        "listTruncated": false
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18f0000000000001",
+      "from": "2026-03-10T16:05:00.000Z",
+      "to": "2026-03-10T16:05:00.000Z",
+      "meta": {
+        "threadId": "18f00000000000b1",
+        "scope": "inbox"
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18f0000000000002",
+      "from": "2026-03-10T16:20:00.000Z",
+      "to": "2026-03-10T16:20:00.000Z",
+      "meta": {
+        "threadId": "18f00000000000a1",
+        "scope": "inbox"
+      }
+    },
+    {
+      "kind": "email",
+      "ref": "18f0000000000003",
+      "from": "2026-03-10T16:40:00.000Z",
+      "to": "2026-03-10T16:40:00.000Z",
+      "meta": {
+        "threadId": "18f0000000000003",
+        "scope": "inbox"
+      }
+    }
+  ],
+  "nextCursor": {
+    "value": "{\"lastEpoch\":1773160800,\"seen\":{\"18f0000000000001\":1773158700,\"18f0000000000002\":1773159600,\"18f0000000000003\":1773160800}}",
+    "at": "2026-03-10T18:00:00.000Z"
+  },
+  "complete": true
+}

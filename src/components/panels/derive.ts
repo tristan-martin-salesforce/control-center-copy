@@ -232,7 +232,8 @@ export type ConnectorPrimaryKind = 'reauth' | 'rescan';
 export function connectorPrimary(c: Pick<Connector, 'state' | 'reauth'>): { kind: ConnectorPrimaryKind; label: string } {
   const r = c.reauth;
   if (BROKEN.has(c.state) && r && r.kind !== 'instructions') {
-    const label = r.kind === 'terminal_command' ? 'Open Terminal' : r.kind === 'refresh_script' ? 'Run refresh' : r.label;
+    // a refresh script reads its own words ("Re-auth VDP", the error catalog's), the same as Setup and Activity ▸ VDP
+    const label = r.kind === 'terminal_command' ? 'Open Terminal' : r.kind === 'refresh_script' ? r.label || 'Run refresh' : r.label;
     return { kind: 'reauth', label };
   }
   return { kind: 'rescan', label: 'Rescan' };

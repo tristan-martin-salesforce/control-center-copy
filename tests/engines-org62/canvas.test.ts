@@ -1,23 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import {
-  applyMarks,
-  diffEntries,
-  diffWorkOrder,
-  durationBackfillUpdates,
-  legacyDeleteUpdates,
-  markFor,
-  parseMarks,
-  parseWorkOrder,
-  quarterProgress,
-  refOf,
-  renderReviewCanvas,
-  renderWorkOrder,
-  reviewLine,
-  splitWorkOrderParts,
-  weeklyRollup,
-  withMark,
-  type ActivityEntry,
-} from '@/engines/activity';
+import { applyMarks, diffEntries, diffWorkOrder, markFor, parseMarks, parseWorkOrder, withMark } from '@/engines/activity/canvas-parse';
+import { durationBackfillUpdates, legacyDeleteUpdates, renderWorkOrder, splitWorkOrderParts } from '@/engines/activity/canvas-workorder';
+import { quarterProgress, weeklyRollup } from '@/engines/activity/rollup';
+import { refOf } from '@/engines/activity/entry';
+import { renderReviewCanvas, reviewLine } from '@/engines/activity/canvas-review';
+import type { ActivityEntry } from '@/engines/activity/types';
 import { CFG, NOW, OPP_ACME, OPP_GLOBEX, ev62, entry } from '../fixtures/org62/activity';
 
 const ID = { ownerName: 'Test User' };
@@ -53,21 +40,25 @@ describe('work-order canvas render', () => {
   it('table rows use the autopilot cell conventions', () => {
     const { markdown } = workOrder();
     const lines = markdown.split('\n');
-    expect(lines).toContain('# ADD (5 rows · 5.75 h of activities)');
-    expect(lines).toContain('|#|Object|Subject / Opportunity|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c / Role|Duration__c / Split %|WhatId / Opportunity__c|Meeting_Type__c|Description / Comments__c|');
+    // WO-1: one table per object and verb, no Object column
+    expect(lines).toContain('## EVENTS TO CREATE (4 rows · 5.75 h of activities)');
+    expect(lines).toContain('|#|Subject|StartDateTime (UTC)|EndDateTime (UTC)|SE_Task_Type__c|Duration__c|WhatId|Meeting_Type__c|Description|');
+    expect(lines).toContain('## DEAL CONTRIBUTIONS TO CREATE (1 row)');
+    expect(lines).toContain('|#|Opportunity|Opportunity__c|Opportunity_Role__c|Split_Percentage__c|Comments__c|');
     const ev = lines.find((l) => l.includes('ACME / design session'))!; // "|" became "/"
-    expect(ev).toBe('|2|Event|ACME / design session|2026-11-02T16:00:00.000Z|2026-11-02T17:00:00.000Z|Customer Discovery|1.0|006PLACEHOLDER0001||CC#101 / calendar 2026-11-02 / CF: external attendees (acme.example)|');
+    expect(ev).toBe('|2|ACME / design session|2026-11-02T16:00:00.000Z|2026-11-02T17:00:00.000Z|Customer Discovery|1.0|006PLACEHOLDER0001||CC#101 / calendar 2026-11-02 / CF: external attendees (acme.example)|');
     // Legacy re-create carries the REPLACES prefix; a Neither build has no WhatId; the future row is absent.
     expect(lines.find((l) => l.includes('Legacy re-create'))).toContain('REPLACES E9 (legacy record type) / CC#104');
     expect(lines.find((l) => l.includes('Demo tooling build'))).toMatch(/\|Asset Creation\|3\.5\|\|\|CC#103 \/ build 2026-11-03 \/ evidence: git 15 commits\|$/);
     expect(markdown).not.toContain('Future meeting');
-    expect(lines.find((l) => l.startsWith('|5|Deal_Contribution__c'))).toBe('|5|Deal_Contribution__c|ACME - Data 360 Expansion|||AI + Data Architect|50|006PLACEHOLDER0001||Line one ⏎ Line two / with pipe|');
+    expect(lines.find((l) => l.includes('ACME - Data 360 Expansion'))).toBe('|1|ACME - Data 360 Expansion|006PLACEHOLDER0001|AI + Data Architect|50|Line one ⏎ Line two / with pipe|');
   });
 
-  it('UPDATE table: duration backfill and legacy delete', () => {
+  it('EVENTS TO UPDATE table: duration backfill and legacy delete', () => {
     const { markdown } = workOrder();
-    expect(markdown).toContain("|1|Event|E7|Duration__c|1.5|(blank)|Time(Hrs) never filled: End − Start of 'Blank 'dur' / thing'|");
-    expect(markdown).toContain('|2|Event|E9|Delete|n/a|Sales Engineer Events record type, no SE Task Type|Replaced by the ADD row whose Description starts with REPLACES E9|');
+    expect(markdown).toContain('## EVENTS TO UPDATE (2 rows)');
+    expect(markdown).toContain("|1|E7|Duration__c|1.5|(blank)|Time(Hrs) never filled: End − Start of 'Blank 'dur' / thing'|");
+    expect(markdown).toContain('|2|E9|Delete|n/a|Sales Engineer Events record type, no SE Task Type|Replaced by the EVENTS TO CREATE row whose Description starts with REPLACES E9|');
   });
 
   it('splits into canvas-sized parts at row boundaries, repeating the table header', () => {
@@ -75,8 +66,8 @@ describe('work-order canvas render', () => {
     const { markdown } = renderWorkOrder({ entries: many, nowIso: NOW, cfg: CFG, identity: ID });
     const parts = splitWorkOrderParts(markdown, 4000);
     expect(parts.length).toBeGreaterThan(2);
-    expect(parts[1]).toMatch(/^# ADD \(120 rows .*\) \(continued\)\n\n\|#\|Object\|/);
-    const total = parts.join('\n').split('\n').filter((l) => /^\|\d+\|Event\|/.test(l)).length;
+    expect(parts[1]).toMatch(/^## EVENTS TO CREATE \(120 rows .*\) \(continued\)\n\n\|#\|Subject\|/);
+    const total = parts.join('\n').split('\n').filter((l) => /^\|\d+\|Row /.test(l)).length;
     expect(total).toBe(120);
   });
 });

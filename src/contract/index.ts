@@ -1,6 +1,6 @@
 /**
- * Control Center API contract: zod schemas are the single source of truth.
- * Import from '@/contract' (types and schemas). See docs/ui/CONTRACT.md.
+ * Command Center API contract: zod schemas are the single source of truth.
+ * Import from '@/contract' (types and schemas). See docs/reference/CONTRACT.md.
  */
 export * from './common';
 export * from './envelope';
@@ -34,4 +34,6 @@ export * from './forecast';
 
 export * from './version';
 export * from './spend-audit';
+export * from './spend';
 export * from './landings';
+export * from './priority';

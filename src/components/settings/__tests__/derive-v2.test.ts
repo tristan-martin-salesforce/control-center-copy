@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { DisplaySettings, SETTINGS_SECTION_SCHEMAS, type PolicyRule, type RankRow } from '@/contract';
-import { asSectionId, compareRanks, daysLabel, hoursPerDay, matchSections, normaliseWatchTarget, policyChanges, scoreBreakdown, SECTIONS } from '../derive';
+import { asSectionId, compareRanks, daysLabel, groupOf, hoursPerDay, matchSections, normaliseWatchTarget, policyChanges, scoreBreakdown, SECTION_GROUPS, SECTIONS } from '../derive';
 
 const w = { customer_facing: 3, meeting_proximity: 3, due_urgency: 2.5, manager_ask: 2, deal_value: 1.5, lead_time: 2, age: 0.5, effort_fit: 1 };
 const rule: PolicyRule = { id: 'r_customer', text: 'Customer-facing beats internal', enabled: true, when: { customerFacing: true }, boost: 1.5 };
 const row = (id: string, rank: number, moved = 0, score = 10 - rank): RankRow => ({ workItemId: id, title: id.toUpperCase(), rank, score, moved, topReason: null });
 
 describe('settings v2: nav', () => {
-  it('has the grouped sections and falls back to Profile & role', () => {
-    // Time sits after Display; SETTLE-1: Closing work after Thresholds; SCAN-SET: Scanning; D-55: Role & rules after Profile; D-56: Feedback; D-57: About last
-    expect(SECTIONS.map((s) => s.id)).toEqual(['profile', 'role', 'display', 'time', 'policy', 'thresholds', 'closing', 'agent', 'sending', 'budgets', 'connectors', 'watches', 'scanning', 'feedback', 'about']);
+  it('has five sections plus a folded Advanced, and falls back to Me ▸ Profile & hours', () => {
+    // 01-ui-audit R8 (2026-11-20): Me · Sources · Sending · Budgets · Data, then Advanced (policy, thresholds, closing)
+    expect(SECTION_GROUPS.map((g) => g.label)).toEqual(['Me', 'Sources', 'Sending', 'Budgets', 'Data', 'Advanced']);
+    expect(SECTION_GROUPS.filter((g) => g.collapsed).map((g) => g.id)).toEqual(['advanced']);
+    expect(SECTIONS.map((s) => s.id)).toEqual(['profile', 'role', 'display', 'time', 'connectors', 'watches', 'scanning', 'sending', 'agent', 'feedback', 'budgets', 'data', 'about', 'policy', 'thresholds', 'closing']);
     expect(matchSections('@channel')).toEqual(['scanning']);
     expect(matchSections('get up to speed')).toEqual(['scanning']);
     expect(asSectionId('budgets')).toBe('budgets');
@@ -17,11 +19,37 @@ describe('settings v2: nav', () => {
     expect(asSectionId(null)).toBe('profile');
   });
 
+  it('keeps every old ?section= link landing where it did, inside its new section', () => {
+    const OLD_TO_NEW: Record<string, string> = {
+      profile: 'me', role: 'me', display: 'me', time: 'me',
+      connectors: 'sources', watches: 'sources', scanning: 'sources',
+      agent: 'sending', sending: 'sending', feedback: 'sending',
+      budgets: 'budgets', about: 'data',
+      policy: 'advanced', thresholds: 'advanced', closing: 'advanced',
+    };
+    for (const [old, group] of Object.entries(OLD_TO_NEW)) {
+      expect(asSectionId(old)).toBe(old);
+      expect(groupOf(asSectionId(old)).id).toBe(group);
+    }
+  });
+
+  it('opens a section by its own id on its first page', () => {
+    expect(asSectionId('me')).toBe('profile');
+    expect(asSectionId('sources')).toBe('connectors');
+    expect(asSectionId('sending')).toBe('sending');
+    expect(asSectionId('data')).toBe('data');
+    expect(asSectionId('advanced')).toBe('policy');
+  });
+
   it('finds a setting by label, keyword or current value', () => {
     expect(matchSections('dry run')).toEqual(['sending']);
     expect(matchSections('theme')).toEqual(['display']);
     expect(matchSections('denver', { profile: 'SE (IC) · America/Denver' })).toEqual(['profile']);
     expect(matchSections('zzz')).toEqual([]);
+    expect(matchSections('retention')).toEqual(['data']);
+    expect(matchSections('backups')).toEqual(['data']);
+    expect(matchSections('modified')).toEqual(['about']);
+    expect(matchSections('autopilot')).toEqual(['sending']);
   });
 });
 

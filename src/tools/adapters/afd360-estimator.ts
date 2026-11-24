@@ -1,19 +1,19 @@
 /**
  * afd360-estimator adapter (cli). Runs the deterministic engine's `export` with an explicit
- * `--out` inside a Control Center run folder. Without --out the CLI writes an `exports/` folder
+ * `--out` inside a Command Center run folder. Without --out the CLI writes an `exports/` folder
  * next to the estimate (verified read-only against the CLI source), so --out is mandatory here.
  *
  * argv comes from the manifest and is passed to spawn() as an array (no shell).
  */
 import { spawn } from 'node:child_process';
 import { access, mkdir, stat } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { inStateDir } from '@/lib/state-folder';
 import type { ToolManifest } from '../manifest';
 import { BaseAdapter, ToolError, abortError, expandHome, nowIso, render, type HealthResult, type RunCtx, type ToolResult } from './base';
 
 export function defaultRunsRoot(): string {
-  return path.join(os.homedir(), 'Library', 'Application Support', 'control-center', 'tool-runs');
+  return inStateDir('tool-runs');
 }
 
 export class Afd360EstimatorAdapter extends BaseAdapter {

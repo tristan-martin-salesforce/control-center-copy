@@ -3,11 +3,11 @@
  * after the cached prefix). Deterministic: the same persona and settings give the same bytes (no clock, fixed
  * order), so it never breaks prompt caching between runs.
  */
-import { fillThresholds } from './text';
+import { fillThresholds, roleTitle } from './text';
 import type { ResolvedPersona } from './types';
 
 export function renderPersonaBlock(p: ResolvedPersona): string {
-  const lines: string[] = ['## Persona', `Role: ${p.levelLabel} (${p.label}), ${p.preamble}.`];
+  const lines: string[] = ['## Persona', `Role: ${roleTitle(p)}, ${p.preamble}.`];
   const active = p.duties.filter((d) => d.active);
   if (active.length) {
     lines.push('Duties:');

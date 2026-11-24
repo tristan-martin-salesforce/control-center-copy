@@ -6,14 +6,15 @@
  */
 import fs from 'node:fs';
 
-import type { CanUseTool, HookCallback, McpServerConfig, Options, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
+import type { CanUseTool, HookCallback, McpServerConfig, Options, SDKMessage } from '@/llm/provider';
+import { agentQuery as sdkQuery } from '@/llm/provider';
 
-import { claudeGatewayConfig, scannerEnv, type GatewayConfig } from '@/llm/claude-env';
+import { claudeGatewayConfig, scannerEnv, scannerSettingSources, type GatewayConfig } from '@/llm/claude-env';
+import { ledgerHash, type CallMeasurement } from '@/db/ledger';
 import { defaultClaudeExecutable, defaultScannerCwd } from '@/llm/env';
 import { classifyError, errorText } from '@/llm/errors';
-import { estimateCallCostUsd, SCANNER_MODEL } from '@/llm/models';
-import { addUsage, usageFromBlock, usageFromModelUsage, type UsageTotals } from '@/llm/usage';
+import { estimateCallCostUsd, longPromptThresholdOf, SCANNER_MODEL } from '@/llm/models';
+import { addUsage, RequestMeter, usageFromBlock, usageFromModelUsage, type UsageTotals } from '@/llm/usage';
 import type { LoadedSkill } from '@/llm/skill-loader';
 import type { QueryFn } from '@/llm/skill-runner';
 import { isRealTool } from '@/llm/skill-runner';
@@ -37,6 +38,8 @@ export interface OneCallResult {
    * Absent (a fake, an older caller): unknown, treated as "it may have been called".
    */
   called?: boolean;
+  /** 0027: requests and their prompt sizes, tools loaded, and the prefix hash (callers book it as `measure`). */
+  measure?: CallMeasurement;
 }
 
 /** A string argument longer than this reaches the model as a stand-in; the hook swaps the real value in. */
@@ -133,7 +136,8 @@ export async function runOneToolCall(c: OneCallInput): Promise<OneCallResult> {
     permissionMode: 'dontAsk',
     canUseTool,
     hooks: { PreToolUse: [{ hooks: [preToolUse] }], PostToolUse: [{ hooks: [postToolUse] }] },
-    settingSources: ['user'],
+    // COST-8: no settings files; the gateway env and apiKeyHelper are passed below.
+    settingSources: scannerSettingSources(),
     skills: [],
     persistSession: false,
     maxTurns,
@@ -150,19 +154,24 @@ export async function runOneToolCall(c: OneCallInput): Promise<OneCallResult> {
   const prompt = `## Run\nCall \`${full}\` exactly once with these arguments:\n\`\`\`json\n${JSON.stringify(standIn)}\n\`\`\`\n${filled ? `${filled.trim()}\n` : ''}Then reply DONE.`;
   const watchdog = setTimeout(() => fail('timeout', 'The lookup took too long.'), c.timeoutMs ?? 90_000);
   const usage = new Map<string, number>();
+  const meter = new RequestMeter(longPromptThresholdOf);
+  let toolCount: number | undefined;
   const blocks = new Map<string, UsageTotals>(); // D0: the tokens behind each estimate (a lookup that dies before its result)
   let result = { ...base, started: true };
   let resultCost: number | null = null;
   const q = (c.queryFn ?? (sdkQuery as unknown as QueryFn))({ prompt, options });
   try {
     for await (const msg of q as AsyncIterable<SDKMessage>) {
-      if (msg.type === 'assistant') {
+      if (msg.type === 'system' && msg.subtype === 'init') {
+        toolCount = (msg.tools ?? []).length;
+      } else if (msg.type === 'assistant') {
         const m = msg.message as unknown as { id?: string; model?: string; content?: Array<{ type: string; name?: string }>; usage?: Record<string, number | null> };
         for (const b of m.content ?? []) if (b.type === 'tool_use' && b.name && b.name !== full && isRealTool(b.name)) fail('disallowed_tool', 'The lookup tried another tool and was stopped.');
         if (m.usage) {
           const key = m.id ?? `m${usage.size}`;
           usage.set(key, estimateCallCostUsd(m.model ?? model, m.usage));
           blocks.set(key, usageFromBlock(m.model ?? model, m.usage));
+          meter.observe(key, m.model ?? model, m.usage);
           if ([...usage.values()].reduce((a, c) => a + c, 0) > cap) fail('cost_cap', 'The lookup hit its cost cap.');
         }
       } else if (msg.type === 'user' && captured === null) {
@@ -194,6 +203,8 @@ export async function runOneToolCall(c: OneCallInput): Promise<OneCallResult> {
     const u = addUsage(...blocks.values());
     result = { ...result, inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: u.cacheReadTokens, cacheWriteTokens: u.cacheWriteTokens };
   }
+  // 0027: the relay's prefix is its skill plus the one tool; its requests are what the meter saw.
+  result = { ...result, measure: { ...meter.measure(), ...(toolCount != null ? { toolCount } : {}), prefixHash: ledgerHash(model, full, skill.body) } };
   const f = failure as { code: string; message: string } | null;
   if (f?.code === 'disallowed_tool') return { ...result, called, costUsd, text: null, code: f.code, message: f.message };
   if (captured !== null) return { ...result, called: true, costUsd, text: captured, code: 'ok', message: '' };

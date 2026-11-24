@@ -14,6 +14,9 @@ import { sql } from 'drizzle-orm';
 import type { FirstScanProgress } from '@/contract';
 import type { DbOrTx } from '@/db/client';
 import { stateDir } from '@/ops/paths';
+import type { FirstScanSourceProgress } from '@/scanner/runtime/first-scan';
+
+import { firstScanSources } from './scan-cadence';
 
 interface FileState {
   lookbackDays?: number;
@@ -28,6 +31,8 @@ interface FileState {
   /** FS-LATE: channel scopes that joined after the first scan had finished → when. */
   late?: Record<string, string>;
   doneAt?: string;
+  /** FTI first scan: per source read / found / spend (src/scanner/runtime/first-scan.ts noteProgress). */
+  sources?: Record<string, FirstScanSourceProgress>;
 }
 
 export function readFirstScanFile(env: Record<string, string | undefined> = process.env): FileState | null {
@@ -79,5 +84,6 @@ export async function loadFirstScanProgress(db: DbOrTx, userId: string, file: Fi
     spentUsd: Math.round(Number(file.spentUsd ?? 0) * 1e4) / 1e4,
     doneAt: file.doneAt ? iso(file.doneAt) : null,
     scopes,
+    ...(firstScanSources(file.sources) ? { sources: firstScanSources(file.sources) } : {}),
   };
 }
